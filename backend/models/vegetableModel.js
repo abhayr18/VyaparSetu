@@ -1,0 +1,154 @@
+/**
+ * Vegetable Model
+ * All SQL queries for the vegetables table.
+ * Services call these — no direct DB access from controllers.
+ *
+ * Search strategy:
+ *   - name LIKE '%q%'            → direct name match
+ *   - search_keywords LIKE '%q%' → keyword alias match
+ *   Both are OR'd so partial typing like "shev" hits शेवगा
+ *   and any keyword containing "shev".
+ */
+
+const { getDb, saveDb } = require('../database/db');
+
+// ─── Helper ───────────────────────────────────────────────────────────────────
+function rowToObj(columns, row) {
+  const obj = {};
+  columns.forEach((col, i) => { obj[col] = row[i]; });
+  return obj;
+}
+
+function execSelect(sql, params = []) {
+  const db = getDb();
+  const result = db.exec(sql, params);
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map((row) => rowToObj(columns, row));
+}
+
+// ─── Queries ──────────────────────────────────────────────────────────────────
+
+/**
+ * Get all vegetables ordered by name.
+ */
+function findAll() {
+  return execSelect(
+    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+     FROM vegetables
+     WHERE is_deleted = 0
+     ORDER BY name ASC`
+  );
+}
+
+/**
+ * Find a single vegetable by ID.
+ */
+function findById(id) {
+  const rows = execSelect(
+    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+     FROM vegetables WHERE id = ?`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Find by name — used for duplicate check (case-insensitive).
+ * @param {string} name
+ * @param {number|null} excludeId
+ */
+function findByName(name, excludeId = null) {
+  const sql = excludeId
+    ? `SELECT id FROM vegetables WHERE LOWER(name) = LOWER(?) AND id != ? AND is_deleted = 0`
+    : `SELECT id FROM vegetables WHERE LOWER(name) = LOWER(?) AND is_deleted = 0`;
+  const params = excludeId ? [name.trim(), excludeId] : [name.trim()];
+  const rows = execSelect(sql, params);
+  return rows[0] || null;
+}
+
+/**
+ * Smart search — matches name OR search_keywords using LIKE.
+ * Partial match: "shev" → शेवगा (if keyword contains "shev")
+ * Structure is ready for fuzzy/FTS upgrade later.
+ * @param {string} query
+ */
+function search(query) {
+  const like = `%${query.trim()}%`;
+  return execSelect(
+    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+     FROM vegetables
+     WHERE (name LIKE ? OR search_keywords LIKE ?) AND is_deleted = 0
+     ORDER BY
+       CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
+       name ASC`,
+    [like, like, like]
+  );
+}
+
+/**
+ * Insert a new vegetable or reactivate a deleted one.
+ */
+function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
+  const db = getDb();
+  
+  // Check if a record already exists with this name (even if deleted)
+  const rows = execSelect(`SELECT id FROM vegetables WHERE LOWER(name) = LOWER(?)`, [name.trim()]);
+  
+  if (rows.length > 0) {
+    // Reactivate and update existing soft-deleted record
+    const existingId = rows[0].id;
+    db.run(
+      `UPDATE vegetables
+       SET rate = ?, unit = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [rate, unit.trim(), search_keywords.trim(), notes.trim(), existingId]
+    );
+  } else {
+    // Insert fresh record
+    db.run(
+      `INSERT INTO vegetables (name, rate, unit, search_keywords, notes)
+       VALUES (?, ?, ?, ?, ?)`,
+      [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim()]
+    );
+  }
+  
+  saveDb();
+  
+  const resultRows = execSelect(
+    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+     FROM vegetables WHERE LOWER(name) = LOWER(?)`,
+    [name.trim()]
+  );
+  return resultRows[0];
+}
+
+/**
+ * Update an existing vegetable.
+ */
+function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
+  const db = getDb();
+  db.run(
+    `UPDATE vegetables
+     SET name = ?, rate = ?, unit = ?, search_keywords = ?, notes = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim(), id]
+  );
+  saveDb();
+  return findById(id);
+}
+
+/**
+ * Delete a vegetable by ID.
+ */
+function remove(id) {
+  const existing = findById(id);
+  if (!existing) return false;
+  const db = getDb();
+  db.run(`UPDATE vegetables SET is_deleted = 1 WHERE id = ?`, [id]);
+  saveDb();
+  return true;
+}
+
+module.exports = { findAll, findById, findByName, search, create, update, remove };

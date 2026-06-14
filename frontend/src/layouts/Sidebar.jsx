@@ -1,0 +1,114 @@
+/**
+ * Sidebar Component — Light sidebar inspired by Vyapar/MyBillBook
+ * White background with green active state, rounded nav items.
+ */
+
+import { NavLink } from 'react-router-dom';
+import { useTranslation } from '../hooks/useTranslation';
+import { LeafIcon } from '../components/Icons';
+
+// ─── Nav Icon SVGs ────────────────────────────────────────────────────────────
+const NavIcons = {
+  Dashboard: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+      <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+    </svg>
+  ),
+  Customers: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+    </svg>
+  ),
+  Vegetables: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 3.5 1 9.8a7 7 0 0 1-9 8.2z"/>
+      <path d="M9 22v-4"/>
+    </svg>
+  ),
+  Billing: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/>
+      <line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="14" y2="16"/>
+    </svg>
+  ),
+  Udhar: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23"/>
+      <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+    </svg>
+  ),
+  Reports: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10"/>
+      <line x1="12" y1="20" x2="12" y2="4"/>
+      <line x1="6"  y1="20" x2="6"  y2="14"/>
+    </svg>
+  ),
+  Backup: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 16 20 20 4 20 4 16"/>
+      <polyline points="8 12 12 16 16 12"/>
+      <line x1="12" y1="4" x2="12" y2="16"/>
+    </svg>
+  ),
+  Settings: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+    </svg>
+  ),
+};
+
+const NAV_ITEMS = [
+  { key: 'dashboard',  to: '/',           icon: NavIcons.Dashboard,  label: 'nav.dashboard'  },
+  { key: 'customers',  to: '/customers',  icon: NavIcons.Customers,  label: 'nav.customers'  },
+  { key: 'vegetables', to: '/vegetables', icon: NavIcons.Vegetables, label: 'nav.vegetables' },
+  { key: 'billing',    to: '/billing',    icon: NavIcons.Billing,    label: 'nav.billing'    },
+  { key: 'udhar',      to: '/udhar',      icon: NavIcons.Udhar,      label: 'nav.udhar'      },
+  { key: 'reports',    to: '/reports',    icon: NavIcons.Reports,    label: 'nav.reports'    },
+  { key: 'backup',     to: '/backup',     icon: NavIcons.Backup,     label: 'nav.backup'     },
+  { key: 'settings',   to: '/settings',   icon: NavIcons.Settings,   label: 'nav.settings'   },
+];
+
+export default function Sidebar() {
+  const { t } = useTranslation();
+
+  return (
+    <aside className="sidebar" id="main-sidebar">
+      {/* Brand */}
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-name" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <LeafIcon style={{ width: '18px', height: '18px', color: 'var(--color-primary)', flexShrink: 0 }} />
+          <span>{t('common.appName')}</span>
+        </div>
+        <div className="sidebar-brand-tag">{t('common.tagline')}</div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        <div className="nav-section-label">Menu</div>
+        {NAV_ITEMS.map(({ key, to, icon: Icon, label }) => (
+          <NavLink
+            key={key}
+            to={to}
+            end={to === '/'}
+            id={`nav-${key}`}
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          >
+            <Icon />
+            <span>{t(label)}</span>
+          </NavLink>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className="sidebar-footer">
+        VyapaarSetu v1.0
+      </div>
+    </aside>
+  );
+}

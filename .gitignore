@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# SQLite databases
+*.db
+database/vyapaarsetu.db
+
+# Drive credentials
+database/drive_tokens.json
+
+# Local backups
+backups/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE configurations
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
