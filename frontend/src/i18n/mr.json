@@ -4,6 +4,7 @@
     "customers": "ग्राहक",
     "vegetables": "भाजीपाला",
     "billing": "पावत्या",
+    "transactions": "व्यवहार",
     "udhar": "उधार / क्रेडिट",
     "reports": "अहवाल",
     "backup": "बॅकअप व पुनर्स्थापना",
@@ -347,5 +348,48 @@
     "saveSuccess": "सेटिंग्ज यशस्वीरित्या जतन केल्या.",
     "saveError": "सेटिंग्ज जतन करण्यात त्रुटी आली.",
     "saving": "जतन होत आहे..."
+  },
+  "transactions": {
+    "title": "व्यवहार व्यवस्थापन",
+    "subtitle": "ग्राहकानुसार भाजीपाला विक्री आणि दैनंदिन खरेदीचा मागोवा घ्या",
+    "entryTitle": "नवीन व्यवहार नोंदवा",
+    "historyTitle": "ग्राहक दैनंदिन खरेदी व इतिहास",
+    "selectCustomer": "ग्राहक निवडा",
+    "selectVegetable": "भाजीपाला निवडा",
+    "weight": "वजन (किलो)",
+    "rate": "दर (₹/किलो)",
+    "baseAmount": "रक्कम",
+    "commission": "कमिशन (८%)",
+    "finalAmount": "अंतिम रक्कम",
+    "saveTransaction": "व्यवहार सेव्ह करा",
+    "saving": "सेव्ह होत आहे...",
+    "saveSuccess": "व्यवहार सेव्ह झाला",
+    "todayPurchase": "आजची खरेदी",
+    "totalTransactions": "एकूण व्यवहार",
+    "totalWeight": "एकूण वजन",
+    "totalBaseAmount": "एकूण रक्कम",
+    "totalCommission": "एकूण कमिशन",
+    "totalFinalAmount": "अंतिम एकूण",
+    "dateFilter": {
+      "today": "आज",
+      "yesterday": "काल",
+      "specificDate": "तारीख निवडा",
+      "dateRange": "कालावधी"
+    },
+    "startDate": "सुरू तारीख",
+    "endDate": "शेवट तारीख",
+    "customerRequired": "ग्राहक निवडणे आवश्यक आहे",
+    "vegetableRequired": "भाजीपाला निवडणे आवश्यक आहे",
+    "weightRequired": "वैध वजन (० पेक्षा जास्त) टाका",
+    "rateRequired": "वैध दर टाका",
+    "noTransactions": "निवडलेल्या तारखेसाठी कोणतेही व्यवहार आढळले नाहीत.",
+    "noCustomerSelected": "कृपया दैनंदिन खरेदी इतिहास पाहण्यासाठी ग्राहक निवडा.",
+    "deleteConfirmTitle": "व्यवहार हटवा",
+    "deleteConfirmMsg": "तुम्हाला हा व्यवहार हटवायचा आहे का?",
+    "deleteSuccess": "व्यवहार यशस्वीरित्या हटवला.",
+    "generateBill": "आजचे बिल बनवा",
+    "billGeneratedSuccess": "आजचे बिल यशस्वीरित्या बनवले"
   }
 }
+
+

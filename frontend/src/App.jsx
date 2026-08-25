@@ -13,6 +13,7 @@ import DashboardPage  from './pages/DashboardPage';
 import CustomersPage  from './pages/CustomersPage';
 import VegetablesPage from './pages/VegetablesPage';
 import BillingPage    from './pages/BillingPage';
+import TransactionsPage from './pages/TransactionsPage';
 import UdharPage      from './pages/UdharPage';
 import ReportsPage    from './pages/ReportsPage';
 import BackupPage     from './pages/BackupPage';
@@ -27,17 +28,19 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<MainLayout />}>
-            <Route index         element={<DashboardPage  />} />
-            <Route path="customers"  element={<CustomersPage  />} />
-            <Route path="vegetables" element={<VegetablesPage />} />
-            <Route path="billing"    element={<BillingPage    />} />
-            <Route path="udhar"      element={<UdharPage      />} />
-            <Route path="reports"    element={<ReportsPage    />} />
-            <Route path="backup"     element={<BackupPage     />} />
-            <Route path="settings"   element={<SettingsPage   />} />
+            <Route index         element={<DashboardPage    />} />
+            <Route path="customers"    element={<CustomersPage    />} />
+            <Route path="vegetables"   element={<VegetablesPage   />} />
+            <Route path="billing"      element={<BillingPage      />} />
+            <Route path="transactions" element={<TransactionsPage />} />
+            <Route path="udhar"        element={<UdharPage        />} />
+            <Route path="reports"      element={<ReportsPage      />} />
+            <Route path="backup"       element={<BackupPage       />} />
+            <Route path="settings"     element={<SettingsPage     />} />
           </Route>
         </Routes>
       </BrowserRouter>
     </LanguageProvider>
   );
 }
+

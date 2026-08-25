@@ -150,6 +150,54 @@ async function initializeDatabase() {
       )
     `);
 
+    // ─── Module 5: Customer Vegetable Transactions ─────────────────────────
+    db.run(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id             INTEGER NOT NULL,
+        vegetable_id            INTEGER NOT NULL,
+        vegetable_name_snapshot TEXT    NOT NULL,
+        weight                  REAL    NOT NULL,
+        unit                    TEXT    NOT NULL DEFAULT 'kg',
+        rate                    REAL    NOT NULL,
+        base_amount             REAL    NOT NULL,
+        commission_rate         REAL    NOT NULL DEFAULT 0.08,
+        commission_amount       REAL    NOT NULL,
+        final_amount            REAL    NOT NULL,
+        payment_type            TEXT    DEFAULT 'Credit',
+        payment_mode            TEXT    DEFAULT 'Credit',
+        paid_amount             REAL    DEFAULT 0.0,
+        remaining_amount        REAL    DEFAULT 0.0,
+        transaction_date        TEXT    NOT NULL,
+        created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(customer_id) REFERENCES customers(id),
+        FOREIGN KEY(vegetable_id) REFERENCES vegetables(id)
+      )
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_customer_date 
+      ON transactions(customer_id, transaction_date)
+    `);
+
+    db.run(`
+      CREATE INDEX IF NOT EXISTS idx_transactions_date 
+      ON transactions(transaction_date)
+    `);
+
+    // Auto-migration check for payment columns in existing transactions table
+    try {
+      db.exec("SELECT payment_type FROM transactions LIMIT 1");
+    } catch (e) {
+      logger.info('Migrating transactions table: adding payment_type, payment_mode, paid_amount, remaining_amount columns...');
+      try { db.run("ALTER TABLE transactions ADD COLUMN payment_type TEXT DEFAULT 'Credit'"); } catch (err) {}
+      try { db.run("ALTER TABLE transactions ADD COLUMN payment_mode TEXT DEFAULT 'Credit'"); } catch (err) {}
+      try { db.run("ALTER TABLE transactions ADD COLUMN paid_amount REAL DEFAULT 0.0"); } catch (err) {}
+      try { db.run("ALTER TABLE transactions ADD COLUMN remaining_amount REAL DEFAULT 0.0"); } catch (err) {}
+    }
+
+
     // ─── Auto-Migration Checks for Soft Delete ───────────────────────────────
     try {
       db.exec("SELECT is_deleted FROM customers LIMIT 1");
