@@ -11,6 +11,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { useTranslation } from '../hooks/useTranslation';
 import { generateBillWhatsAppMessage, createWhatsAppShareUrl } from '../utils/whatsappShare';
+import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
 
 export default function TodayBillModal({ isOpen, onClose, bill }) {
   const { t, language } = useTranslation();
@@ -22,6 +23,8 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
   const items = bill.items || [];
   const customerName = bill.customer_name || bill.customer?.name || '';
   const customerMobile = bill.customer_mobile || bill.customer?.mobile || '';
+  // null when this bill predates the commission_rate column — see parseStoredPercent.
+  const billRate = parseStoredPercent(bill.commission_rate);
 
   // Generate WhatsApp Share URL
   const waMessage = generateBillWhatsAppMessage(bill, language, t);
@@ -159,7 +162,15 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
               <strong>₹{Number(bill.subtotal).toFixed(2)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0284c7' }}>
-              <span>{t('billing.commissionAmount')}:</span>
+              {/* The rate comes off the bill, not from Settings: a bill issued before
+                  the vendor changed the rate was charged at the old one, and showing
+                  today's figure against last month's amount would not add up. It is
+                  omitted rather than defaulted when the bill predates the column. */}
+              <span>
+                {t('billing.commissionAmount')}
+                {billRate === null ? '' : ` (${formatCommissionPercent(billRate)})`}
+                :
+              </span>
               <strong>+₹{Number(bill.commission_amount).toFixed(2)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: '#16a34a', fontWeight: 800, marginTop: '4px' }}>

@@ -42,17 +42,13 @@ function purgeAppModules() {
 }
 
 /**
- * Creates an isolated, schema-initialized database and returns the app modules
- * bound to it. Call this in each test that touches the database.
+ * Points the app at `dbFile`, runs the real boot-time initialization against it,
+ * and returns the app modules bound to that database.
  *
- * @returns {Promise<object>} models, services and raw db handles for this test
+ * Order matters: env first, then cache purge, then require.
  */
-export async function freshDb() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vyapaarsetu-test-'));
-  tempDirs.push(dir);
-
-  // Order matters: env first, then cache purge, then require.
-  process.env.DB_PATH = path.join(dir, 'test.db');
+async function bindAppTo(dbFile) {
+  process.env.DB_PATH = dbFile;
   purgeAppModules();
 
   const { initializeDatabase } = require('../../database/init.js');
@@ -74,6 +70,14 @@ export async function freshDb() {
     raw: db.getDb(),
     // Exposed so tests can assert that re-running init is non-destructive.
     initializeDatabase,
+    /**
+     * Loads any app module through the harness's require instance, by path from
+     * `backend/` — e.g. requireApp('services/dashboardService.js'). Use it for
+     * modules the list below does not name, and to patch a dependency: this is
+     * the same registry the app uses, so a module changed here is the module the
+     * app sees.
+     */
+    requireApp: (relativePath) => require(path.join(APP_ROOT, relativePath)),
     customerModel: require('../../models/customerModel.js'),
     vegetableModel: require('../../models/vegetableModel.js'),
     billModel: require('../../models/billModel.js'),
@@ -86,6 +90,48 @@ export async function freshDb() {
     creditService: require('../../services/creditService.js'),
     settingsService: require('../../services/settingsService.js'),
   };
+}
+
+/** A new temp directory, registered for cleanup. */
+function tempDbFile() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vyapaarsetu-test-'));
+  tempDirs.push(dir);
+  return path.join(dir, 'test.db');
+}
+
+/**
+ * Creates an isolated, schema-initialized database and returns the app modules
+ * bound to it. Call this in each test that touches the database.
+ *
+ * @returns {Promise<object>} models, services and raw db handles for this test
+ */
+export async function freshDb() {
+  return bindAppTo(tempDbFile());
+}
+
+/**
+ * Builds a database in an *older* shape, then boots the app against it — the
+ * upgrade path a shop PC actually takes when it installs a new version.
+ *
+ * freshDb() can never catch a migration bug, because a brand-new database already
+ * has the current schema and every migration finds nothing to do. The whole point
+ * of the migration system is the case freshDb() cannot reach.
+ *
+ * The fixture SQL is executed with sql.js directly, deliberately bypassing
+ * init.js, so it cannot drift as the baseline schema changes.
+ *
+ * @param {string} setupSql Old-shape DDL, plus any rows that must survive.
+ */
+export async function legacyDb(setupSql) {
+  const dbFile = tempDbFile();
+
+  const SQL = await require('sql.js')();
+  const legacy = new SQL.Database();
+  legacy.run(setupSql);
+  fs.writeFileSync(dbFile, Buffer.from(legacy.export()));
+  legacy.close();
+
+  return bindAppTo(dbFile);
 }
 
 /** Deletes every temp database this file created. Call from afterAll. */

@@ -190,14 +190,26 @@ function getLedger(customerId) {
   );
 
   // Summary totals
+  //
+  // totalCredit − totalRecovered must land exactly on outstanding, because the
+  // vendor reads those three figures side by side and a customer will do the
+  // subtraction. Adjustments were previously left out of both, so any written-off
+  // or corrected balance made the summary contradict the outstanding beside it.
+  //
+  // A signed adjustment belongs on whichever side its sign puts it: a positive one
+  // is debt added, a negative one is debt forgiven and reads as recovery.
+  const adjustments = transactions.filter((t) => t.transaction_type === 'CREDIT_ADJUSTMENT');
+
   const totalBilled  = bills.reduce((s, b) => s + Number(b.final_amount  || 0), 0);
   const totalPaid    = bills.reduce((s, b) => s + Number(b.paid_amount   || 0), 0);
   const totalCredit  = transactions
     .filter(t => t.transaction_type === 'CREDIT_ADDED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0);
+    .reduce((s, t) => s + Number(t.amount || 0), 0)
+    + adjustments.reduce((s, t) => s + Math.max(0, Number(t.amount) || 0), 0);
   const totalRecovered = transactions
     .filter(t => t.transaction_type === 'PAYMENT_RECEIVED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0);
+    .reduce((s, t) => s + Number(t.amount || 0), 0)
+    + adjustments.reduce((s, t) => s + Math.max(0, -(Number(t.amount) || 0)), 0);
 
   return {
     customer,

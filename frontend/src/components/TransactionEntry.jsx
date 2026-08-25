@@ -7,7 +7,7 @@
  * - Payment Type Selector: Paid (Full), Credit (Udhar), Partial
  * - Payment Mode Selector: Cash, UPI, Other
  * - Live Payment Calculations (Paid Amount vs Remaining Udhar)
- * - Automatic 8% commission calculation & total computation
+ * - Commission calculated at the shop's configured rate & total computation
  * - Read-only calculated fields (Base Amount, Commission, Final Amount)
  * - Non-blocking toast feedback
  */
@@ -16,13 +16,19 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import VegetableAutocomplete from './VegetableAutocomplete';
+import {
+  calculateTransactionTotals,
+  formatCommissionPercent,
+  DEFAULT_COMMISSION_PERCENT,
+} from '../utils/money';
 
 export default function TransactionEntry({
   customers = [],
   vegetables = [],
   onSubmitTransaction,
   loading = false,
-  onCustomerSelectForHistory
+  onCustomerSelectForHistory,
+  commissionRate = DEFAULT_COMMISSION_PERCENT
 }) {
   const { t } = useTranslation();
 
@@ -51,12 +57,16 @@ export default function TransactionEntry({
     return () => clearTimeout(timer);
   }, []);
 
-  // Calculate totals in real-time
+  // Calculate totals in real-time, at the shop's configured commission rate.
+  // The server recalculates from the same setting, so what is shown here is what
+  // gets saved.
   const numWeight = parseFloat(weight) || 0;
   const numRate = parseFloat(rate) || 0;
-  const baseAmount = Math.round(numWeight * numRate * 100) / 100;
-  const commissionAmount = Math.round(baseAmount * 0.08 * 100) / 100;
-  const finalAmount = Math.round((baseAmount + commissionAmount) * 100) / 100;
+  const { baseAmount, commissionAmount, finalAmount } = calculateTransactionTotals(
+    numWeight,
+    numRate,
+    commissionRate
+  );
 
   // Paid & Remaining calculations
   let calculatedPaid = 0;
@@ -128,7 +138,6 @@ export default function TransactionEntry({
       weight: numWeight,
       rate: numRate,
       unit: selectedVegetable.unit || 'kg',
-      commission_rate: 0.08,
       payment_type: paymentType,
       payment_mode: paymentType === 'Credit' ? 'Credit' : paymentMode,
       paid_amount: calculatedPaid,
@@ -391,7 +400,7 @@ export default function TransactionEntry({
 
           <div>
             <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
-              {t('transactions.commission')}
+              {t('transactions.commission')} ({formatCommissionPercent(commissionRate)})
             </span>
             <strong style={{ fontSize: '1.05rem', color: '#0284c7' }}>
               ₹{commissionAmount.toFixed(2)}

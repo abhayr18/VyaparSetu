@@ -4,6 +4,7 @@
  */
 
 const { getDb, saveDb } = require('../database/db');
+const { DEFAULT_COMMISSION_PERCENT } = require('../utils/calculation');
 
 function rowToObj(columns, row) {
   const obj = {};
@@ -21,6 +22,9 @@ function execSelect(sql, params = []) {
 
 /**
  * Creates a new transaction record.
+ *
+ * @param {object} data
+ * @param {number} [data.commission_rate=8] Commission as a percentage.
  */
 function create({
   customer_id,
@@ -30,7 +34,7 @@ function create({
   unit = 'kg',
   rate,
   base_amount,
-  commission_rate = 0.08,
+  commission_rate = DEFAULT_COMMISSION_PERCENT,
   commission_amount,
   final_amount,
   payment_type = 'Credit',
@@ -66,13 +70,14 @@ function create({
     ]
   );
 
+  // last_insert_rowid() is per-connection and reflects this INSERT specifically.
+  // The previous SELECT MAX(id) WHERE customer_id = ? returned the wrong row as
+  // soon as anything else inserted for the same customer in between, and it had
+  // to run before saveDb() to be even approximately right.
+  const newId = execSelect('SELECT last_insert_rowid() AS id')[0]?.id;
+
   saveDb();
 
-  const idRes = execSelect(
-    `SELECT MAX(id) AS id FROM transactions WHERE customer_id = ?`,
-    [customer_id]
-  );
-  const newId = idRes[0]?.id;
   return findById(newId);
 }
 
@@ -187,7 +192,66 @@ function getDailyCustomerSummary(customerId, date) {
 
 
 /**
+ * Finds a customer's transactions on a date that have not yet been billed.
+ *
+ * Bill generation reads this rather than every transaction on the date, so a
+ * second run finds nothing and cannot bill the same sales twice.
+ */
+function findUnbilledByCustomerAndDate(customerId, date) {
+  return execSelect(
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+     FROM transactions t
+     JOIN customers c ON t.customer_id = c.id
+     WHERE t.customer_id = ? AND t.transaction_date = ? AND t.bill_id IS NULL
+     ORDER BY t.created_at DESC, t.id DESC`,
+    [customerId, date]
+  );
+}
+
+/**
+ * Marks transactions as consolidated into a bill.
+ *
+ * Only claims rows that are still unbilled, and returns how many it claimed. A
+ * caller that asked for N and got fewer raced with another bill and must not
+ * proceed.
+ *
+ * @returns {number} rows claimed
+ */
+function markAsBilled(ids, billId) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+
+  const db = getDb();
+  const placeholders = ids.map(() => '?').join(', ');
+  db.run(
+    `UPDATE transactions SET bill_id = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id IN (${placeholders}) AND bill_id IS NULL`,
+    [billId, ...ids]
+  );
+
+  const claimed = execSelect(
+    `SELECT COUNT(*) AS n FROM transactions WHERE id IN (${placeholders}) AND bill_id = ?`,
+    [...ids, billId]
+  );
+  saveDb();
+  return Number(claimed[0]?.n || 0);
+}
+
+/** Releases transactions back to unbilled, used when a bill is deleted. */
+function clearBillLink(billId) {
+  const db = getDb();
+  db.run(
+    `UPDATE transactions SET bill_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE bill_id = ?`,
+    [billId]
+  );
+  saveDb();
+  return true;
+}
+
+/**
  * Deletes a transaction by ID.
+ *
+ * Callers must reverse the credit this transaction booked first — see
+ * transactionService.deleteTransaction, which does both inside one transaction.
  */
 function deleteById(id) {
   const db = getDb();
@@ -200,8 +264,11 @@ module.exports = {
   create,
   findById,
   findByCustomerAndDate,
+  findUnbilledByCustomerAndDate,
   findByCustomerAndDateRange,
   findAll,
   getDailyCustomerSummary,
+  markAsBilled,
+  clearBillLink,
   deleteById
 };

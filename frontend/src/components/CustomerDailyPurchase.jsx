@@ -14,6 +14,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import TodayBillModal from './TodayBillModal';
+import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
 
 export default function CustomerDailyPurchase({
   customers = [],
@@ -297,6 +298,14 @@ export default function CustomerDailyPurchase({
                       </td>
                       <td style={{ padding: '0.75rem 1rem', color: '#0284c7' }}>
                         ₹{Number(tx.commission_amount).toFixed(2)}
+                        {/* Per row, not in the header: the vendor may have changed the
+                            rate between two of these sales, and each was charged at
+                            whatever was configured that day. */}
+                        {parseStoredPercent(tx.commission_rate) === null ? null : (
+                          <span style={{ color: '#64748b', fontSize: '0.8rem' }}>
+                            {' '}({formatCommissionPercent(tx.commission_rate)})
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: '#16a34a' }}>
                         ₹{Number(tx.final_amount).toFixed(2)}

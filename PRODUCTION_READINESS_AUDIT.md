@@ -13,7 +13,7 @@ The feature surface is genuinely good — 11 modules, bilingual UI, transliterat
 | Severity | Area | Count | Headline |
 |---|---|---|---|
 | **P0 — Blocker** | Financial correctness | 5 | Customer debt doubles when a bill is generated; deleting an entry never refunds the debt |
-| **P0 — Blocker** | Storage engine | 1 | Every single write rewrites the entire DB file; write cost grows linearly and is already 4× slower at 10k rows |
+| **P0 — Blocker** | Storage engine | 2 | Every single write rewrites the entire DB file; write cost grows linearly and is already 4× slower at 10k rows. Foreign keys are silently disabled by the first write |
 | **P1 — Critical** | Security | 7 | Zero authentication, API bound to all network interfaces, `CORS: *`, OAuth tokens in plaintext |
 | **P1 — Critical** | Data durability | 3 | Non-atomic DB writes — a power cut mid-save corrupts the whole ledger |
 | **P2 — High** | Reliability | 6 | No error boundary (white screen on any render error), no pagination, N+1 queries |
@@ -130,6 +130,32 @@ Three compounding problems:
 **Fix — the single highest-value change in this document:** replace `sql.js` with **`better-sqlite3`**. It is a real embedded SQLite: incremental writes (O(size of change), not O(size of DB)), WAL mode, crash-safe atomic commits, and genuine transactions. The API is synchronous like `sql.js`, so the model layer's shape barely changes — `db.exec(sql, params)` becomes `db.prepare(sql).all(params)`, and every `saveDb()` call simply disappears.
 
 The historical objection to `better-sqlite3` was native compilation; it now ships prebuilt binaries for Windows/macOS/Linux on all supported Node versions. If native modules are genuinely unacceptable, the fallback is to keep `sql.js` but make `saveDb()` (a) atomic via write-to-temp + `fs.rename`, (b) debounced/batched rather than per-statement, and (c) asynchronous. That mitigates corruption and blocking but **not** the O(n) growth — it is a stopgap, not a fix.
+
+### P0.9 — Foreign keys are declared throughout the schema and enforced only until the first write
+
+*Found during Phase 0 implementation, after the initial audit. It is the reason several of the P0 bugs above could corrupt data as far as they did.*
+
+`backend/database/db.js`. `initDb()` runs `PRAGMA foreign_keys = ON` once, at startup. Every `FOREIGN KEY` clause in the schema depends on it, because SQLite defaults the pragma to **off** and it is a **per-connection** setting.
+
+`saveDb()` calls `db.export()` after every write. In `sql.js`, `export()` closes the SQLite connection and reopens it to serialize the file. The reopened connection is a *new* connection, and it starts with `foreign_keys` back at its default of off.
+
+So the enforcement window is: on at boot, off from the first insert onward, for the entire life of the process. Every `REFERENCES` clause in `init.js` was decoration. Empirically — this is the assertion in `tests/invariants/persistence.test.js:235`:
+
+```
+PRAGMA foreign_keys immediately after initDb()      → 1
+PRAGMA foreign_keys after one customer is created   → 0
+```
+
+What that permits, all of which the money tests then confirmed:
+- `bill_items` rows pointing at a `vegetable_id` that does not exist — a printed bill line item for a vegetable the shop never carried.
+- `credit_transactions` rows pointing at a deleted `bill_id` or `customer_id` — debt attached to nobody, which still counts toward the shop's outstanding total.
+- `billModel.remove()` deleting a `bills` row while its `bill_items` children remain, since nothing rejected the parent delete. The orphans then attach to whatever `bills.id` SQLite reuses next.
+
+This is quieter than the other P0s and worse in one specific way: the ledger bugs produce a *wrong number*, which a vendor can eventually notice. This produces rows that are *unexplainable* — no path back to the customer or the sale — and there is nothing to notice until someone asks where a figure came from.
+
+**Fix:** re-apply the pragma at every point a connection can be created — in `initDb()`, in `reloadDb()`, and in `saveDb()` immediately after `export()`. A single `applyConnectionPragmas(handle)` used by all three keeps the three call sites from drifting. This is also why the Phase 1 migration to `better-sqlite3` matters here: a real connection that is never silently reopened makes this class of bug structurally impossible rather than something the code has to remember.
+
+Note that turning enforcement on for the first time *breaks code that was relying on it being off* — `billModel.remove()` was deleting parents before children and started failing immediately. That is the fix working. Migrations must also run with `PRAGMA foreign_keys = OFF` explicitly, since the drop-and-rename table rebuild pattern legitimately needs it disabled.
 
 ---
 
@@ -491,3 +517,39 @@ Phase 0 loses its riskiest step; Phase 2 shrinks to the cheap hardening items an
 | **4** | Serve `dist` from Express; Electron/Windows packaging; code splitting; CI; README rewrite | 3–5 days |
 
 Deferred (design the seam, don't build): authentication (P1.1), offline-first service worker (P3.8) — drop the README claim instead unless it's genuinely wanted.
+
+---
+
+## Implementation status
+
+### Phase 0 — complete (2026-08-25)
+
+Test suite: **136 passing, 9 files** (`cd backend && npm test`). It started at 68 passing / 29 failing, where every failure was a reproduction of a bug listed here. Nothing below was made to pass by weakening an assertion — every change was to application source.
+
+| Gap | Status | What changed |
+|---|---|---|
+| **P0.1** debt doubles on bill generation | Fixed | `billModel.create(data, { bookCredit })`. There is now exactly one writer to `credit_balance` per unit of debt. A directly-entered bill books its own; a bill consolidated from transactions does not, because the transactions already did. |
+| **P0.2** bill generation not idempotent | Fixed | `transactions.bill_id` marks consolidated rows. `markAsBilled` claims them with `WHERE bill_id IS NULL` and reports the row count; a second click finds nothing to claim and the bill is refused. The guard is in the `UPDATE`'s `WHERE`, not in a prior `SELECT`, so a concurrent double-submit cannot slip between the two. |
+| **P0.3** delete doesn't reverse the balance | Fixed | `deleteTransaction` reverses the exact `CREDIT_ADDED` rows carrying its `transaction_id`, then deletes them, inside one transaction. It refuses outright once the transaction has been consolidated into a bill. |
+| **P0.4** ledger rows untraceable | Fixed | `credit_transactions.transaction_id → transactions(id)`, migration 6. This is what makes P0.3 and P0.9's orphan detection possible — reversal needs to know which rows it owns. |
+| **P0.5** commission rate ignored | Fixed | Percentage is canonical everywhere: `8.0` means 8%. `normalizeCommissionPercent` guards on `Number.isFinite` and `< 0` instead of `Number(x) \|\| 0.08`, which had made a deliberate 0% impossible. `frontend/src/utils/money.js` mirrors the backend so the on-screen preview cannot drift from the saved figure, and both entry screens now read the shop's configured rate rather than a hardcoded 8%. |
+| **P0.7** transaction creation not atomic | Fixed | `db.transaction(fn)` with a depth counter, since SQLite has no nested `BEGIN` but the call graph nests (service → model). `saveDb()` no-ops while a transaction is open, which also closes a pre-existing hole: `billModel.create` was serializing the database mid-transaction via a nested `saveDb()`. |
+| **P0.9** foreign keys silently off | Fixed | `applyConnectionPragmas` at all three points a connection can appear, including after every `export()`. |
+| **P2.8** destructive auto-migration | Fixed | `backend/database/migrations.js` with `schema_version`. Nothing is dropped; every migration is guarded so it is a no-op on an already-correct database. The `DROP TABLE bills` path in `init.js` is gone. Pulled forward from Phase 1 because Phase 0's schema changes needed it. |
+| **P2.9** fragile row-ID retrieval | Fixed | `last_insert_rowid()` replaces `SELECT MAX(id) WHERE customer_id = ?`, and runs before `saveDb()` rather than after. |
+| **P2.10** sign lost on adjustments | Fixed | `creditModel.recordAdjustment` stores the signed amount. `customerModel.getLedger`'s summary folds signed adjustments into both sides, so `totalCredit − totalRecovered` lands exactly on `outstanding` — the three figures a vendor reads side by side while a customer does the subtraction. |
+| **P2.11** SQL string interpolation | Fixed | The interpolated balance read in `transactionService` is parameterized. |
+| **P2.15–P2.17** no test runner, test wrote to the live DB | Fixed | Vitest with `pool: 'forks'`. The harness redirects `DB_PATH` to a temp file and refuses to run if it detects it is pointing at the real shop database. |
+| Ledger reconciliation as a runtime check | Done | `creditModel.findBalanceMismatches()` runs the same invariant the tests end on against live data; the dashboard shows which customers are affected and by how much. A check that cannot run reports as *not ok* rather than clean. |
+| The upgrade path itself under test | Done | `tests/invariants/migration.test.js` boots the app against a database in an old shape — the case the rest of the suite is structurally blind to, since a new database is already current and every migration correctly finds nothing to do. Two fixtures: the schema read verbatim out of the database that failed to boot (what a shop PC upgrading today actually holds), and the earliest shape the migrations claim to handle (the only fixture that exercises migrations 2–4 at all — without it those three are code nothing ever runs). Each asserts the migrated schema converges with a fresh one column by column and index by index, that no row is lost, that `0.08` becomes `8.0` without changing what was charged, that a second boot is a no-op and does not multiply the rate again, that a rate the vendor had already configured is not reset to the default, and that a sale still books correctly afterwards. |
+
+**One bug found by shipping, not by the suite.** The first boot against the real database failed outright: `no such column: bill_id`. The new baseline block created an index over a column that migration 7 adds. `CREATE TABLE IF NOT EXISTS` is a no-op on an existing table, so against an older database the baseline's column list is aspiration rather than fact — and `CREATE INDEX` is the one statement that will not tolerate the gap. A second latent instance existed for `credit_transactions(transaction_id)`. Both indexes now live in their owning migration, next to the `ALTER TABLE` that adds the column, and the rule is written into the `init.js` header where the next person to add an index will read it.
+
+The interesting part is why 118 passing tests said nothing. Every one of them started from `freshDb()`, where the column exists before the index is built. This is the failure mode a test count hides: the suite was not thin, it was pointed away from the seam. Putting the bad line back now fails all 18 migration tests, under both fixtures, with that exact boot error — checked, not assumed.
+
+**Known limits of the Phase 0 fixes, stated rather than buried:**
+
+- **The reconciliation check cannot see the bug that motivated it.** It detects *divergence* between `credit_balance` and the sum of the passbook. P0.1 doubled the debt by writing both sides together — a balance increment and a matching ledger row — so both were wrong by the same amount and the two still agreed. A vendor auditing that customer would find the passbook confirming the inflated balance. What the check does catch is a write that half-landed (the P0.7 atomicity class) and a sign stored backwards (P2.10). So the invariant tests are the primary defense here and this is a backstop, not the other way round.
+- **Migration 5 cannot repair the 800% overcharges.** Converting the rate column leaves rows written as `base × 0.08` internally consistent, but rows written at a literal `8.0` were genuinely overcharged and no column conversion recovers the intended figure. The migration counts them (`commission_amount > base_amount`) and logs a warning naming the count, so an operator reviews and re-enters rather than a wrong number passing as correct. Moot for this deployment — the data is disposable — but it would matter on a real dataset.
+- **P0.6 (money as floating point) is untouched.** Every fix above rounds to paise at each step, which contains the drift but does not remove it. Integer paise remains a Phase 1 item.
+- **P0.8 stands.** `saveDb()` is now atomic (write-to-temp + `rename`) and deferred until after `COMMIT`, which removes the corruption-on-power-cut window and the mid-transaction serialization. The O(n)-per-write growth is unchanged and only the `better-sqlite3` migration fixes it. `better-sqlite3` 13.x was verified installable on this machine (SQLite 3.53.4), so Phase 1 has no blocker.

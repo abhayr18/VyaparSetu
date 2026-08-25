@@ -6,6 +6,7 @@
 import { useEffect } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { useTransactions } from '../hooks/useTransactions';
+import useSettings from '../hooks/useSettings';
 import TransactionEntry from '../components/TransactionEntry';
 import CustomerDailyPurchase from '../components/CustomerDailyPurchase';
 
@@ -76,6 +77,10 @@ export default function TransactionsPage() {
     deleteTransaction
   } = useTransactions();
 
+  // The commission rate is a shop-wide setting. It is read here so the live totals
+  // in the entry form match what the server will calculate and store.
+  const { settings } = useSettings();
+
   // Auto hide toast after 3 seconds
   useEffect(() => {
     if (toastMessage) {
@@ -110,6 +115,7 @@ export default function TransactionsPage() {
         onSubmitTransaction={createTransaction}
         loading={loading}
         onCustomerSelectForHistory={(cId) => setActiveCustomerId(cId)}
+        commissionRate={settings.commission_rate}
       />
 
       {/* MODULE B: Customer Daily Purchase & Transaction History */}

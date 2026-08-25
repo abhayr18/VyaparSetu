@@ -39,12 +39,22 @@ export function LanguageProvider({ children }) {
   /**
    * Translate a dot-notated key.
    * Falls back to the key itself if translation is missing.
+   *
+   * `vars` fills `{{name}}` placeholders. Interpolating rather than concatenating
+   * in JSX lets each language put the values where its own grammar needs them —
+   * Marathi does not order a sentence the way English does.
+   *
    * @param {string} key - e.g. 'nav.dashboard'
+   * @param {Object} [vars] - e.g. { stored: '400.00' }
    * @returns {string}
    */
-  const t = useCallback((key) => {
+  const t = useCallback((key, vars) => {
     const translations = TRANSLATIONS[language] || TRANSLATIONS.en;
-    return resolvePath(translations, key) ?? key;
+    const text = resolvePath(translations, key) ?? key;
+    if (!vars || typeof text !== 'string') return text;
+    return text.replace(/\{\{(\w+)\}\}/g, (match, name) =>
+      Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
+    );
   }, [language]);
 
   const toggleLanguage = useCallback(() => {

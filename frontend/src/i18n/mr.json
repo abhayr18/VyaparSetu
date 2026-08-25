@@ -48,7 +48,12 @@
     "status": "पेमेंट स्थिती",
     "balance": "बाकी उधार",
     "mobile": "मोबाईल नंबर",
-    "actions": "क्रिया"
+    "actions": "क्रिया",
+    "ledgerMismatchTitle": "उधार बाकी आणि पासबुक जुळत नाही",
+    "ledgerMismatchBody": "बाकी सांगण्यापूर्वी या ग्राहकांची नोंद तपासा. ग्राहकाचे खाते उघडून चुकीची वाटणारी नोंद पुन्हा टाका.",
+    "ledgerMismatchRow": "नोंदलेली ₹{{stored}}, पासबुक ₹{{ledger}}",
+    "ledgerMismatchMore": "आणि अजून {{count}}",
+    "ledgerCheckFailed": "उधार बाकी तपासणी करता आली नाही. बाकी रकमेची खात्री नाही."
   },
   "common": {
     "loading": "लोड होत आहे...",
@@ -231,7 +236,7 @@
     "discountValue": "सवलत मूल्य",
     "discountAmount": "सवलत रक्कम",
     "commissionRate": "कमिशन दर",
-    "commissionAmount": "कमिशन (८%)",
+    "commissionAmount": "कमिशन",
     "remainingAmount": "उर्वरित बाकी",
     "paymentType": "पेमेंट प्रकार",
     "paymentStatus": "पेमेंट स्थिती",
@@ -359,7 +364,7 @@
     "weight": "वजन (किलो)",
     "rate": "दर (₹/किलो)",
     "baseAmount": "रक्कम",
-    "commission": "कमिशन (८%)",
+    "commission": "कमिशन",
     "finalAmount": "अंतिम रक्कम",
     "saveTransaction": "व्यवहार सेव्ह करा",
     "saving": "सेव्ह होत आहे...",

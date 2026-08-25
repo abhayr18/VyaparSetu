@@ -48,7 +48,12 @@
     "status": "Status",
     "balance": "Balance",
     "mobile": "Mobile Number",
-    "actions": "Actions"
+    "actions": "Actions",
+    "ledgerMismatchTitle": "Udhar balances do not match the passbook",
+    "ledgerMismatchBody": "Check these customers before quoting a balance. Reopen the customer's ledger and re-enter the entry that looks wrong.",
+    "ledgerMismatchRow": "stored ₹{{stored}}, passbook ₹{{ledger}}",
+    "ledgerMismatchMore": "and {{count}} more",
+    "ledgerCheckFailed": "The udhar balance check could not run. Treat balances as unverified."
   },
   "common": {
     "loading": "Loading...",
@@ -231,7 +236,7 @@
     "discountValue": "Discount Value",
     "discountAmount": "Discount Amount",
     "commissionRate": "Commission Rate",
-    "commissionAmount": "Commission (8%)",
+    "commissionAmount": "Commission",
     "remainingAmount": "Remaining Amount",
     "paymentType": "Payment Type",
     "paymentStatus": "Payment Status",
@@ -359,7 +364,7 @@
     "weight": "Weight (kg)",
     "rate": "Rate (₹/kg)",
     "baseAmount": "Base Amount",
-    "commission": "Commission (8%)",
+    "commission": "Commission",
     "finalAmount": "Final Amount",
     "saveTransaction": "Save Transaction",
     "saving": "Saving...",

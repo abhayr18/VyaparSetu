@@ -92,6 +92,7 @@ export default function DashboardPage() {
     pendingCustomers = [],
     lastBackup = null,
     internetOnline = false,
+    ledgerCheck = null,
   } = data || {};
 
   const statusBadgeColor = internetOnline ? 'var(--color-success)' : '#9ca3af';
@@ -160,6 +161,59 @@ export default function DashboardPage() {
           border: '1px solid #fecaca',
         }}>
           <AlertIcon style={{ flexShrink: 0 }} /> {error}
+        </div>
+      )}
+
+      {/* Udhar reconciliation warning.
+          A customer's stored balance must equal the sum of their passbook. When it
+          does not, the vendor must not read either figure out loud — so this sits
+          above the KPIs rather than in the slim bar at the bottom. */}
+      {ledgerCheck && ledgerCheck.ok === false && (
+        <div style={{
+          background: 'var(--color-error-bg)', color: 'var(--color-error)',
+          padding: '12px 16px', borderRadius: 'var(--border-radius-sm)',
+          marginBottom: 18, fontSize: '0.85rem',
+          border: '1px solid #fecaca',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
+            <AlertIcon style={{ flexShrink: 0 }} />
+            {ledgerCheck.error
+              ? t('dashboard.ledgerCheckFailed')
+              : t('dashboard.ledgerMismatchTitle')}
+          </div>
+
+          {!ledgerCheck.error && (
+            <>
+              <div style={{ marginTop: 6, fontWeight: 500 }}>
+                {t('dashboard.ledgerMismatchBody')}
+              </div>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontWeight: 500 }}>
+                {(ledgerCheck.mismatches || []).map((m) => (
+                  <li key={m.id} style={{ marginBottom: 2 }}>
+                    <strong>{m.name}</strong>
+                    {' — '}
+                    {t('dashboard.ledgerMismatchRow', {
+                      stored: fmtFull(m.stored_balance).replace('₹ ', ''),
+                      ledger: fmtFull(m.ledger_balance).replace('₹ ', ''),
+                    })}
+                  </li>
+                ))}
+                {ledgerCheck.mismatchCount > (ledgerCheck.mismatches || []).length && (
+                  <li>
+                    {t('dashboard.ledgerMismatchMore', {
+                      count: ledgerCheck.mismatchCount - (ledgerCheck.mismatches || []).length,
+                    })}
+                  </li>
+                )}
+              </ul>
+              <Link
+                to="/udhar"
+                style={{ display: 'inline-block', marginTop: 8, color: 'inherit', fontWeight: 700 }}
+              >
+                {t('nav.udhar')} →
+              </Link>
+            </>
+          )}
         </div>
       )}
 
