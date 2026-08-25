@@ -19,6 +19,11 @@
  *
  * Adding a migration: append an entry with the next version number. Never edit
  * or renumber a released one — an installed shop PC has already recorded it.
+ *
+ * These functions operate on the raw better-sqlite3 handle (the value initDb()
+ * returns), not the execSelect/execRun surface the models use: the runner has to
+ * toggle `PRAGMA foreign_keys` and drive its own BEGIN/COMMIT around each
+ * migration, which is below the level that surface models.
  */
 
 const logger = require('../utils/logger');
@@ -34,12 +39,8 @@ const BASELINE_VERSION = 1;
 
 /** PRAGMA table_info for a table, keyed by column name. `{}` if absent. */
 function columnInfo(db, table) {
-  const res = db.exec(`PRAGMA table_info(${table})`);
-  if (!res.length) return {};
-  const { columns, values } = res[0];
   const out = {};
-  for (const row of values) {
-    const col = Object.fromEntries(columns.map((c, i) => [c, row[i]]));
+  for (const col of db.pragma(`table_info(${table})`)) {
     out[col.name] = col;
   }
   return out;
@@ -50,22 +51,24 @@ function hasColumn(db, table, column) {
 }
 
 function tableExists(db, table) {
-  const res = db.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`, [table]);
-  return res.length > 0;
+  const row = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+  return row !== undefined;
 }
 
 /** Adds a column only if it is missing, so the call is safe to repeat. */
 function addColumnIfMissing(db, table, column, definition) {
   if (!tableExists(db, table) || hasColumn(db, table, column)) return false;
-  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   logger.info(`  + ${table}.${column}`);
   return true;
 }
 
 /** First value of the first row, or null. */
 function scalar(db, sql, params = []) {
-  const res = db.exec(sql, params);
-  return res.length && res[0].values.length ? res[0].values[0][0] : null;
+  const value = db.prepare(sql).pluck().get(params);
+  return value === undefined ? null : value;
 }
 
 // ─── The migrations ──────────────────────────────────────────────────────────
@@ -157,7 +160,7 @@ const MIGRATIONS = [
         );
       }
 
-      db.run(`
+      db.exec(`
         CREATE TABLE transactions_migration_5 (
           id                      INTEGER PRIMARY KEY AUTOINCREMENT,
           customer_id             INTEGER NOT NULL,
@@ -182,7 +185,7 @@ const MIGRATIONS = [
         )
       `);
 
-      db.run(`
+      db.exec(`
         INSERT INTO transactions_migration_5
           (id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
            base_amount, commission_rate, commission_amount, final_amount,
@@ -201,15 +204,15 @@ const MIGRATIONS = [
         FROM transactions
       `);
 
-      db.run('DROP TABLE transactions');
-      db.run('ALTER TABLE transactions_migration_5 RENAME TO transactions');
+      db.exec('DROP TABLE transactions');
+      db.exec('ALTER TABLE transactions_migration_5 RENAME TO transactions');
 
       // Indexes belong to the dropped table and must be recreated.
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
         ON transactions(customer_id, transaction_date)
       `);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
 
       logger.info(`  ~ transactions.commission_rate converted to percentage (${fractionRows} row(s))`);
     },
@@ -224,7 +227,7 @@ const MIGRATIONS = [
      */
     up(db) {
       addColumnIfMissing(db, 'credit_transactions', 'transaction_id', 'INTEGER REFERENCES transactions(id)');
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_credit_transactions_transaction
         ON credit_transactions(transaction_id)
       `);
@@ -241,7 +244,7 @@ const MIGRATIONS = [
      */
     up(db) {
       addColumnIfMissing(db, 'transactions', 'bill_id', 'INTEGER REFERENCES bills(id)');
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_transactions_bill
         ON transactions(bill_id)
       `);
@@ -252,7 +255,7 @@ const MIGRATIONS = [
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
 function createVersionTable(db) {
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version    INTEGER PRIMARY KEY,
       name       TEXT     NOT NULL,
@@ -267,7 +270,7 @@ function currentVersion(db) {
 }
 
 function stamp(db, version, name) {
-  db.run(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (?, ?)`, [version, name]);
+  db.prepare(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (?, ?)`).run(version, name);
 }
 
 /**
@@ -292,21 +295,23 @@ function runMigrations(db) {
 
   for (const migration of pending) {
     // A rebuild cannot run inside a transaction while foreign keys are enforced,
-    // because the DROP + RENAME would be checked against rows mid-copy.
-    db.run('PRAGMA foreign_keys = OFF');
-    db.run('BEGIN TRANSACTION');
+    // because the DROP + RENAME would be checked against rows mid-copy. The
+    // pragma is a no-op inside a transaction, so it is toggled outside the
+    // BEGIN/COMMIT that brackets each migration.
+    db.pragma('foreign_keys = OFF');
+    db.exec('BEGIN');
     try {
       migration.up(db);
       stamp(db, migration.version, migration.name);
-      db.run('COMMIT');
+      db.exec('COMMIT');
       applied.push(migration.version);
       logger.info(`Migration ${migration.version} applied: ${migration.name}`);
     } catch (err) {
-      db.run('ROLLBACK');
+      db.exec('ROLLBACK');
       logger.error(`Migration ${migration.version} (${migration.name}) failed: ${err.message}`);
       throw err;
     } finally {
-      db.run('PRAGMA foreign_keys = ON');
+      db.pragma('foreign_keys = ON');
     }
   }
 

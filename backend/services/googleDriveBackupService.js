@@ -7,11 +7,14 @@
 const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
-const { DB_PATH, reloadDb } = require('../database/db');
+const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
 const backupService = require('./backupService');
 const logger = require('../utils/logger');
 
-const TOKENS_PATH = path.resolve(__dirname, '../../database/drive_tokens.json');
+// Kept beside the database file in backend/database/, not in a separate top-level
+// database/ folder — one home for every app-owned persistent artifact, so there is
+// no second location to keep in sync or accidentally launch against.
+const TOKENS_PATH = path.resolve(__dirname, '../database/drive_tokens.json');
 
 // Initialize the Google OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
@@ -172,26 +175,39 @@ async function uploadBackupToDrive() {
     parents: [folderId],
   };
 
-  const media = {
-    mimeType: 'application/octet-stream',
-    body: fs.createReadStream(DB_PATH),
-  };
+  // Stream a WAL-safe snapshot rather than DB_PATH itself: an online backup folds
+  // the -wal sidecar in and writes one self-contained file, so the upload can't
+  // miss commits that a raw read of the main file would. Removed in `finally`
+  // once the upload (which drains the stream) resolves.
+  const snapshotPath = path.join(backupService.BACKUP_DIR, `drive-upload-${filename}`);
+  await backupTo(snapshotPath);
 
-  logger.info(`Uploading current database to Drive as: ${filename}`);
-  const response = await drive.files.create({
-    resource: fileMetadata,
-    media: media,
-    fields: 'id, name, size, createdTime',
-  });
+  try {
+    const media = {
+      mimeType: 'application/octet-stream',
+      body: fs.createReadStream(snapshotPath),
+    };
 
-  logger.info(`Database snapshot uploaded successfully. Drive File ID: ${response.data.id}`);
+    logger.info(`Uploading current database to Drive as: ${filename}`);
+    const response = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, name, size, createdTime',
+    });
 
-  return {
-    id: response.data.id,
-    filename: response.data.name,
-    size: Number(response.data.size || 0),
-    createdAt: response.data.createdTime,
-  };
+    logger.info(`Database snapshot uploaded successfully. Drive File ID: ${response.data.id}`);
+
+    return {
+      id: response.data.id,
+      filename: response.data.name,
+      size: Number(response.data.size || 0),
+      createdAt: response.data.createdTime,
+    };
+  } finally {
+    if (fs.existsSync(snapshotPath)) {
+      try { fs.unlinkSync(snapshotPath); } catch (e) { /* ignore cleanup errors */ }
+    }
+  }
 }
 
 /**
@@ -242,7 +258,8 @@ async function restoreFromDrive(driveFileId) {
 
   // 1. Trigger local safety backup first
   logger.info('Creating local safety backup prior to Google Drive restoration...');
-  const safetyBackupBuffer = fs.readFileSync(DB_PATH);
+  // WAL-safe snapshot of the current database to roll back to on failure.
+  const safetyBackupBuffer = serialize();
   const safetyInfo = await backupService.createBackup();
   const safetyFilename = safetyInfo.filename;
 
@@ -269,9 +286,10 @@ async function restoreFromDrive(driveFileId) {
 
     logger.info('Google Drive backup file downloaded successfully to temp path.');
 
-    // 4. Overwrite active database with downloaded content
+    // 4. Replace active database with downloaded content. reloadDb owns the
+    // on-disk write (atomic rename + stale -wal/-shm cleanup), so we hand it the
+    // bytes rather than writing DB_PATH ourselves.
     const downloadedBuffer = fs.readFileSync(tempDownloadPath);
-    fs.writeFileSync(DB_PATH, downloadedBuffer);
     reloadDb(downloadedBuffer);
 
     // Clean up temp file
@@ -293,9 +311,8 @@ async function restoreFromDrive(driveFileId) {
       try { fs.unlinkSync(tempDownloadPath); } catch (e) {}
     }
 
-    // Revert files and memory connections
+    // Revert database to the pre-restore snapshot.
     try {
-      fs.writeFileSync(DB_PATH, safetyBackupBuffer);
       reloadDb(safetyBackupBuffer);
       logger.info('Successfully reverted database to local safety backup.');
     } catch (rollbackErr) {

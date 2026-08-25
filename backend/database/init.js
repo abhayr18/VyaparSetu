@@ -22,9 +22,14 @@
  * so forgiving: an index over a column a migration has not added yet raises "no
  * such column" and the boot fails. So an index over a migration-added column is
  * created *by that migration*, next to the `ALTER TABLE` that adds it.
+ *
+ * Both helpers below run schema DDL on the raw better-sqlite3 handle initDb()
+ * returns: db.exec() for parameterless CREATE/INSERT statements, a prepared
+ * statement for the seed rows. There is no saveDb() step any more — better-sqlite3
+ * writes straight to the file, so a committed statement is already durable.
  */
 
-const { initDb, saveDb } = require('./db');
+const { initDb } = require('./db');
 const { runMigrations, currentVersion } = require('./migrations');
 const logger = require('../utils/logger');
 
@@ -36,7 +41,7 @@ const logger = require('../utils/logger');
  */
 function createBaselineSchema(db) {
   // ─── Application Settings ──────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       key         TEXT    NOT NULL UNIQUE,
@@ -47,7 +52,7 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Audit Log ─────────────────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       action      TEXT    NOT NULL,
@@ -59,7 +64,7 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Module 1: Customers ───────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       name           TEXT    NOT NULL,
@@ -74,7 +79,7 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Module 2: Vegetables ──────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS vegetables (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       name            TEXT    NOT NULL UNIQUE,
@@ -90,7 +95,7 @@ function createBaselineSchema(db) {
 
   // ─── Module 3: Billing ─────────────────────────────────────────────────────
   // commission_rate is a percentage (8.0 means 8%), matching what Settings shows.
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS bills (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_number        TEXT    NOT NULL UNIQUE,
@@ -115,7 +120,7 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS bill_items (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_id        INTEGER NOT NULL,
@@ -136,7 +141,7 @@ function createBaselineSchema(db) {
   // commission_rate is a percentage, the same unit as bills.commission_rate.
   // bill_id is NULL until the day's sales are consolidated into a bill; that is
   // what makes bill generation idempotent.
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
       id                      INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id             INTEGER NOT NULL,
@@ -163,18 +168,18 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
     ON transactions(customer_id, transaction_date)
   `);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
   // No index on transactions(bill_id) here — see the note below on why an index
   // over a migration-added column belongs to its migration.
 
   // ─── Module 4: Credit Transactions (the udhar passbook) ────────────────────
   // transaction_id links a ledger row to the sale that created it, so deleting
   // the sale can reverse exactly the debt it booked.
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS credit_transactions (
       id                         INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id                INTEGER NOT NULL,
@@ -192,7 +197,7 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_credit_transactions_customer
     ON credit_transactions(customer_id)
   `);
@@ -216,12 +221,11 @@ function seedSettings(db) {
     ['default_payment_mode', 'Cash', 'Default payment type mode'],
   ];
 
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)`
+  );
   for (const [key, value, description] of seedData) {
-    db.run(`INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)`, [
-      key,
-      value,
-      description,
-    ]);
+    insert.run(key, value, description);
   }
 }
 
@@ -229,14 +233,12 @@ function seedSettings(db) {
  * Brings the database to the current schema. Called once at boot.
  */
 async function initializeDatabase() {
-  const db = await initDb();
+  const db = initDb();
 
   try {
     createBaselineSchema(db);
     runMigrations(db);
     seedSettings(db);
-
-    saveDb();
 
     logger.info(`Database initialized successfully (schema version ${currentVersion(db)})`);
   } catch (err) {

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const dns = require('dns').promises;
-const { DB_PATH, reloadDb } = require('../database/db');
+const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
 const logger = require('../utils/logger');
 
 const BACKUP_DIR = path.resolve(__dirname, '../../backups');
@@ -33,9 +33,6 @@ async function createBackup() {
     throw new Error('Database file does not exist to backup.');
   }
 
-  // Read current database file into memory buffer
-  const dbBuffer = fs.readFileSync(DB_PATH);
-  
   // Format filename and set full destination path
   const filename = generateBackupFilename();
   const destPath = path.join(BACKUP_DIR, filename);
@@ -46,8 +43,11 @@ async function createBackup() {
     return createBackup();
   }
 
-  // Write file to backups directory
-  fs.writeFileSync(destPath, dbBuffer);
+  // Online backup API rather than a byte copy of DB_PATH. Under WAL the most
+  // recent commits live in the -wal sidecar, so fs.readFileSync(DB_PATH) would
+  // capture a stale database missing the latest sales. backup() folds the WAL in
+  // and writes one self-contained file.
+  await backupTo(destPath);
   logger.info(`Backup created successfully at: ${destPath}`);
 
   const stats = fs.statSync(destPath);
@@ -118,7 +118,9 @@ async function restoreBackup(filename) {
 
   // 1. Create a safety backup first
   logger.info('Creating safety backup prior to database restore...');
-  const safetyBackupBuffer = fs.readFileSync(DB_PATH);
+  // A consistent snapshot of the live database (WAL folded in) to roll back to if
+  // the restore fails. serialize() is WAL-safe where a raw file read would not be.
+  const safetyBackupBuffer = serialize();
   const safetyInfo = await createBackup();
   const safetyFilename = safetyInfo.filename;
   logger.info(`Safety backup created at name: ${safetyFilename}`);
@@ -127,9 +129,11 @@ async function restoreBackup(filename) {
   const selectedBackupBuffer = fs.readFileSync(targetPath);
 
   try {
-    // 3. Try to restore DB
+    // 3. Try to restore DB. reloadDb owns the on-disk replacement (atomic
+    // temp-write + rename, and clears the stale -wal/-shm sidecars), so there is
+    // no separate fs.writeFileSync here — writing DB_PATH ourselves while the old
+    // -wal still sat beside it would splice two databases together.
     logger.info(`Starting restore from backup file: ${filename}`);
-    fs.writeFileSync(DB_PATH, selectedBackupBuffer);
     reloadDb(selectedBackupBuffer);
     logger.info('Database restored successfully from backup.');
     return {
@@ -140,8 +144,7 @@ async function restoreBackup(filename) {
   } catch (err) {
     logger.error('Database restore failed. Attempting fail-safe rollback to safety backup...', err);
     try {
-      // Revert files on disk and in-memory
-      fs.writeFileSync(DB_PATH, safetyBackupBuffer);
+      // Revert to the pre-restore snapshot.
       reloadDb(safetyBackupBuffer);
       logger.info('Database successfully reverted to safety state.');
     } catch (rollbackErr) {

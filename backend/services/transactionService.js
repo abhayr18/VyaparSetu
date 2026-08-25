@@ -14,7 +14,7 @@ const {
   normalizeCommissionPercent,
   DEFAULT_COMMISSION_PERCENT,
 } = require('../utils/calculation');
-const { getDb, transaction } = require('../database/db');
+const { execRun, execGet, transaction } = require('../database/db');
 
 /**
  * Returns local YYYY-MM-DD date string.
@@ -126,8 +126,6 @@ async function createTransaction(payload) {
     // three places. Written separately, a failure between them left the balance
     // and the passbook disagreeing with no way to tell which was right.
     const created = transaction(() => {
-      const db = getDb();
-
       const newTransaction = transactionModel.create({
         customer_id: Number(customer_id),
         vegetable_id: Number(vegetable_id),
@@ -147,19 +145,19 @@ async function createTransaction(payload) {
       });
 
       if (finalRemaining > 0) {
-        db.run(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+        execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
           finalRemaining,
           customer_id,
         ]);
 
-        const balanceRow = db.exec(`SELECT credit_balance FROM customers WHERE id = ?`, [
+        const balanceRow = execGet(`SELECT credit_balance FROM customers WHERE id = ?`, [
           customer_id,
         ]);
-        const balanceAfter = balanceRow[0]?.values[0][0] || 0;
+        const balanceAfter = balanceRow?.credit_balance || 0;
 
         // transaction_id ties this ledger row to the sale, so deleting the sale
         // can reverse exactly the debt it booked.
-        db.run(
+        execRun(
           `INSERT INTO credit_transactions
              (customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
            VALUES (?, ?, 'CREDIT_ADDED', ?, ?, ?, ?)`,
@@ -251,8 +249,6 @@ async function generateBillFromTransactions({ customerId, date }) {
 
   try {
     const createdBill = transaction(() => {
-      const db = getDb();
-
       const bill = billModel.create(
         {
           bill_number: billNumber,
@@ -287,7 +283,7 @@ async function generateBillFromTransactions({ customerId, date }) {
       // Point the existing ledger rows at this bill so the passbook and the bill
       // agree, without adding rows that would inflate the balance.
       const placeholders = transactionIds.map(() => '?').join(', ');
-      db.run(
+      execRun(
         `UPDATE credit_transactions SET bill_id = ?
          WHERE transaction_id IN (${placeholders}) AND transaction_type = 'CREDIT_ADDED'`,
         [bill.id, ...transactionIds]
@@ -403,20 +399,18 @@ async function deleteTransaction(id) {
     }
 
     transaction(() => {
-      const db = getDb();
-
       // Reverse exactly what this sale booked, read from the ledger rather than
       // recomputed, so a later change to the pricing rules cannot make the
       // reversal disagree with the original charge.
-      const bookedRes = db.exec(
-        `SELECT COALESCE(SUM(amount), 0) FROM credit_transactions
+      const bookedRow = execGet(
+        `SELECT COALESCE(SUM(amount), 0) AS booked FROM credit_transactions
          WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
         [id]
       );
-      const booked = Number(bookedRes[0]?.values[0][0] || 0);
+      const booked = Number(bookedRow?.booked || 0);
 
       if (booked > 0) {
-        db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
           booked,
           existing.customer_id,
         ]);
@@ -425,7 +419,7 @@ async function deleteTransaction(id) {
       // The ledger rows go with the sale. Keeping a reversal entry would be the
       // other reasonable choice, but the vendor's passbook is short and read by
       // hand — a cancelled sale is clearer absent than present twice.
-      db.run(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
+      execRun(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
 
       transactionModel.deleteById(id);
     });

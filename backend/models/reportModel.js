@@ -1,20 +1,5 @@
 // backend/models/reportModel.js
-const { getDb } = require('../database/db');
-
-// Helper to map rows
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => rowToObj(columns, row));
-}
+const { execSelect } = require('../database/db');
 
 /** Get sales summary + bills list for date range */
 function getSalesSummary(startDate, endDate) {

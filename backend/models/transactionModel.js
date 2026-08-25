@@ -3,22 +3,8 @@
  * Database operations for customer vegetable transactions.
  */
 
-const { getDb, saveDb } = require('../database/db');
+const { execSelect, execRun } = require('../database/db');
 const { DEFAULT_COMMISSION_PERCENT } = require('../utils/calculation');
-
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
 
 /**
  * Creates a new transaction record.
@@ -43,9 +29,7 @@ function create({
   remaining_amount = 0,
   transaction_date
 }) {
-  const db = getDb();
-
-  db.run(
+  const info = execRun(
     `INSERT INTO transactions (
       customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
       base_amount, commission_rate, commission_amount, final_amount,
@@ -70,13 +54,10 @@ function create({
     ]
   );
 
-  // last_insert_rowid() is per-connection and reflects this INSERT specifically.
-  // The previous SELECT MAX(id) WHERE customer_id = ? returned the wrong row as
-  // soon as anything else inserted for the same customer in between, and it had
-  // to run before saveDb() to be even approximately right.
-  const newId = execSelect('SELECT last_insert_rowid() AS id')[0]?.id;
-
-  saveDb();
+  // lastInsertRowid is per-connection and reflects this INSERT specifically. The
+  // previous SELECT MAX(id) WHERE customer_id = ? returned the wrong row as soon
+  // as anything else inserted for the same customer in between.
+  const newId = Number(info.lastInsertRowid);
 
   return findById(newId);
 }
@@ -118,8 +99,8 @@ function findByCustomerAndDateRange(customerId, startDate, endDate) {
     `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
      FROM transactions t
      JOIN customers c ON t.customer_id = c.id
-     WHERE t.customer_id = ? 
-       AND t.transaction_date >= ? 
+     WHERE t.customer_id = ?
+       AND t.transaction_date >= ?
        AND t.transaction_date <= ?
      ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC`,
     [customerId, startDate, endDate]
@@ -165,7 +146,7 @@ function findAll({ customerId, date, startDate, endDate }) {
  */
 function getDailyCustomerSummary(customerId, date) {
   const rows = execSelect(
-    `SELECT 
+    `SELECT
        COUNT(t.id) AS total_transactions,
        SUM(t.weight) AS total_weight,
        SUM(t.base_amount) AS total_base_amount,
@@ -220,9 +201,8 @@ function findUnbilledByCustomerAndDate(customerId, date) {
 function markAsBilled(ids, billId) {
   if (!Array.isArray(ids) || ids.length === 0) return 0;
 
-  const db = getDb();
   const placeholders = ids.map(() => '?').join(', ');
-  db.run(
+  execRun(
     `UPDATE transactions SET bill_id = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id IN (${placeholders}) AND bill_id IS NULL`,
     [billId, ...ids]
@@ -232,18 +212,15 @@ function markAsBilled(ids, billId) {
     `SELECT COUNT(*) AS n FROM transactions WHERE id IN (${placeholders}) AND bill_id = ?`,
     [...ids, billId]
   );
-  saveDb();
   return Number(claimed[0]?.n || 0);
 }
 
 /** Releases transactions back to unbilled, used when a bill is deleted. */
 function clearBillLink(billId) {
-  const db = getDb();
-  db.run(
+  execRun(
     `UPDATE transactions SET bill_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE bill_id = ?`,
     [billId]
   );
-  saveDb();
   return true;
 }
 
@@ -254,9 +231,7 @@ function clearBillLink(billId) {
  * transactionService.deleteTransaction, which does both inside one transaction.
  */
 function deleteById(id) {
-  const db = getDb();
-  db.run(`DELETE FROM transactions WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`DELETE FROM transactions WHERE id = ?`, [id]);
   return true;
 }
 

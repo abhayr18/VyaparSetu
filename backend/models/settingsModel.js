@@ -2,10 +2,9 @@
  * Settings Model
  * Placeholder for settings CRUD operations.
  * Will be expanded in the Settings module.
- * Uses sql.js API (exec / run with params array).
  */
 
-const { getDb, saveDb } = require('../database/db');
+const { execGet, execRun } = require('../database/db');
 
 /**
  * Get a setting value by key.
@@ -13,12 +12,8 @@ const { getDb, saveDb } = require('../database/db');
  * @returns {string|null}
  */
 function getSetting(key) {
-  const db = getDb();
-  const result = db.exec('SELECT value FROM settings WHERE key = ?', [key]);
-  if (result.length > 0 && result[0].values.length > 0) {
-    return result[0].values[0][0];
-  }
-  return null;
+  const row = execGet('SELECT value FROM settings WHERE key = ?', [key]);
+  return row ? row.value : null;
 }
 
 /**
@@ -27,13 +22,11 @@ function getSetting(key) {
  * @param {string} value
  */
 function setSetting(key, value) {
-  const db = getDb();
-  db.run(
+  execRun(
     `INSERT INTO settings (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`,
     [key, value]
   );
-  saveDb();
 }
 
 module.exports = { getSetting, setSetting };

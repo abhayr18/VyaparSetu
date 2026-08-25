@@ -8,8 +8,8 @@ dist/
 *.db
 database/vyapaarsetu.db
 
-# Drive credentials
-database/drive_tokens.json
+# Drive credentials (matched in any directory, wherever the tokens land)
+drive_tokens.json
 
 # Local backups
 backups/

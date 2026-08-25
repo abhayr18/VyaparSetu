@@ -28,8 +28,10 @@ describe('writes reach the disk', () => {
     const ctx = await freshDb();
     const customer = makeCustomer(ctx, { name: 'Abhay' });
 
-    // Simulate the shop PC restarting: re-read the file from disk.
-    const buffer = fs.readFileSync(ctx.dbPath);
+    // Simulate the shop PC restarting. Under WAL the newest commits live in the
+    // -wal sidecar, so a raw read of the main file alone would be a pre-insert
+    // snapshot; serialize() folds the WAL in to give the true on-disk state.
+    const buffer = ctx.db.serialize();
     ctx.db.reloadDb(buffer);
 
     const reread = require('../../models/customerModel.js');
@@ -40,10 +42,17 @@ describe('writes reach the disk', () => {
 
   it('grows the file as rows are added', async () => {
     const ctx = await freshDb();
+
+    // Under WAL a committed write lands in the -wal sidecar and does not enlarge
+    // the main file until a checkpoint folds it back in. Checkpoint on both sides
+    // so the comparison sees the main file actually growing with the rows, rather
+    // than both reads catching the same pre-checkpoint snapshot.
+    ctx.db.checkpoint();
     const before = fs.statSync(ctx.dbPath).size;
 
     for (let i = 0; i < 50; i += 1) makeCustomer(ctx);
 
+    ctx.db.checkpoint();
     expect(fs.statSync(ctx.dbPath).size).toBeGreaterThan(before);
     expect(ctx.customerModel.findAll()).toHaveLength(50);
   });
@@ -235,12 +244,13 @@ describe('referential integrity', () => {
   it('still enforces foreign keys after the first write is persisted', async () => {
     const ctx = await freshDb();
 
-    // database/db.js turns foreign keys on once, in initDb(). But sql.js's
-    // export() — which saveDb() calls after *every* write — closes and reopens
-    // the SQLite connection, and PRAGMA foreign_keys is per-connection. So the
-    // pragma survives exactly until the first save and is off forever after,
-    // which is why the two orphan-row tests below can insert at all.
-    makeCustomer(ctx); // triggers saveDb()
+    // foreign_keys is per-connection and defaults OFF. db.js turns it on in
+    // applyConnectionPragmas, and under better-sqlite3 the one connection stays
+    // open across every write, so the pragma simply holds. (sql.js used to reopen
+    // the handle on each save and silently lose it, which is how the orphan-row
+    // tests below could ever have inserted.) Write first, then check, to prove it
+    // survives normal operation.
+    makeCustomer(ctx);
 
     const res = ctx.raw.exec('PRAGMA foreign_keys');
     expect(res[0].values[0][0]).toBe(1);
@@ -413,9 +423,10 @@ describe('transaction read paths', () => {
         transaction_date: '2026-08-25',
       });
 
-    // transactionModel.create identifies its new row with
-    // SELECT MAX(id) WHERE customer_id = ?, which is only correct if nothing else
-    // inserted for that customer in between.
+    // transactionModel.create must identify its new row by this INSERT's own
+    // lastInsertRowid, not by SELECT MAX(id) WHERE customer_id = ? — the latter
+    // returned the wrong row as soon as another sale for that customer landed in
+    // between.
     const r1 = await mk(a.id, 1);
     const r2 = await mk(b.id, 2);
     const r3 = await mk(a.id, 3);

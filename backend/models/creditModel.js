@@ -1,43 +1,26 @@
 // backend/models/creditModel.js
-const { getDb, transaction } = require('../database/db');
-
-// Helper to map rows
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => rowToObj(columns, row));
-}
+const { execSelect, execRun, transaction } = require('../database/db');
 
 /** Get credit metrics summary */
 function getSummary() {
-  const db = getDb();
-  
   // Total outstanding balance across all customers
   const outstandingRes = execSelect(`SELECT SUM(credit_balance) AS total_outstanding FROM customers`);
   const totalOutstanding = outstandingRes[0]?.total_outstanding || 0.0;
 
   // Today's credit added
   const addedRes = execSelect(
-    `SELECT SUM(amount) AS today_added 
-     FROM credit_transactions 
-     WHERE transaction_type = 'CREDIT_ADDED' 
+    `SELECT SUM(amount) AS today_added
+     FROM credit_transactions
+     WHERE transaction_type = 'CREDIT_ADDED'
        AND date(created_at) = date('now', 'localtime')`
   );
   const todayAdded = addedRes[0]?.today_added || 0.0;
 
   // Today's recovery (payments received)
   const recoveredRes = execSelect(
-    `SELECT SUM(amount) AS today_recovered 
-     FROM credit_transactions 
-     WHERE transaction_type = 'PAYMENT_RECEIVED' 
+    `SELECT SUM(amount) AS today_recovered
+     FROM credit_transactions
+     WHERE transaction_type = 'PAYMENT_RECEIVED'
        AND date(created_at) = date('now', 'localtime')`
   );
   const todayRecovered = recoveredRes[0]?.today_recovered || 0.0;
@@ -52,9 +35,9 @@ function getSummary() {
 /** Get customers with active credit balance */
 function getCustomersWithBalance() {
   return execSelect(
-    `SELECT id, name, mobile, address, credit_balance, updated_at 
-     FROM customers 
-     WHERE credit_balance > 0 
+    `SELECT id, name, mobile, address, credit_balance, updated_at
+     FROM customers
+     WHERE credit_balance > 0
      ORDER BY credit_balance DESC, name ASC`
   );
 }
@@ -118,11 +101,9 @@ function findBalanceMismatches(tolerance = 0.005) {
 
 /** Transactional payment registration */
 function recordPayment({ customer_id, amount, payment_mode, note }) {
-  const db = getDb();
-
   return transaction(() => {
     // Deduct from customer credit balance
-    db.run(
+    execRun(
       `UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`,
       [amount, customer_id]
     );
@@ -132,7 +113,7 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
     const balanceAfter = balanceRow[0]?.credit_balance || 0;
 
     // Insert transaction
-    db.run(
+    execRun(
       `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
        VALUES (?, 'PAYMENT_RECEIVED', ?, ?, ?, ?)`,
       [customer_id, amount, payment_mode, note || 'Payment received', balanceAfter]
@@ -152,12 +133,11 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
  * to explain the difference to the customer.
  */
 function recordAdjustment({ customer_id, amount, note }) {
-  const db = getDb();
   const signedAmount = Number(amount);
 
   return transaction(() => {
     // Adjust customer credit balance (amount can be positive or negative)
-    db.run(
+    execRun(
       `UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`,
       [signedAmount, customer_id]
     );
@@ -167,7 +147,7 @@ function recordAdjustment({ customer_id, amount, note }) {
     const balanceAfter = balanceRow[0]?.credit_balance || 0;
 
     // Insert transaction
-    db.run(
+    execRun(
       `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
        VALUES (?, 'CREDIT_ADJUSTMENT', ?, 'Other', ?, ?)`,
       [customer_id, signedAmount, note || 'Balance adjustment', balanceAfter]

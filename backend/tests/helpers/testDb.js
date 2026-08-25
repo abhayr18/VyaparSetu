@@ -5,7 +5,9 @@
  *
  * 1. `database/db.js` resolves DB_PATH once, at module load time:
  *
- *        const DB_PATH = path.resolve(process.env.DB_PATH || './database/vyapaarsetu.db');
+ *        const DB_PATH = process.env.DB_PATH
+ *          ? path.resolve(process.env.DB_PATH)
+ *          : path.join(__dirname, 'vyapaarsetu.db');
  *
  *    So a test cannot just set process.env.DB_PATH and call into the app — by then
  *    the path is baked in and the test writes to the real shop database. That is
@@ -42,6 +44,39 @@ function purgeAppModules() {
 }
 
 /**
+ * Wraps a better-sqlite3 handle in the sql.js `exec`/`run` surface the test helpers
+ * were written against.
+ *
+ * The tests predate the engine swap and read results as `res[0].values[i][j]` with
+ * a parallel `res[0].columns` — sql.js's shape. Rather than rewrite ~20 assertion
+ * sites across four files, this reproduces that shape on top of better-sqlite3:
+ * `exec` runs one statement and, if it returns rows, reshapes them into the single
+ * `{ columns, values }` result set sql.js produced; `run` just executes. Every
+ * `ctx.raw` call in the suite is a single statement, which is all better-sqlite3's
+ * prepare() accepts.
+ */
+function sqlJsCompat(handle) {
+  return {
+    exec(sql, params = []) {
+      const stmt = handle.prepare(sql);
+      if (stmt.reader) {
+        const rows = stmt.all(params);
+        if (!rows.length) return [];
+        const columns = Object.keys(rows[0]);
+        return [{ columns, values: rows.map((r) => columns.map((c) => r[c])) }];
+      }
+      stmt.run(params);
+      return [];
+    },
+    run(sql, params = []) {
+      handle.prepare(sql).run(params);
+    },
+    prepare: (sql) => handle.prepare(sql),
+    pragma: (p, opts) => handle.pragma(p, opts),
+  };
+}
+
+/**
  * Points the app at `dbFile`, runs the real boot-time initialization against it,
  * and returns the app modules bound to that database.
  *
@@ -67,7 +102,12 @@ async function bindAppTo(dbFile) {
   return {
     dbPath: db.DB_PATH,
     db,
-    raw: db.getDb(),
+    // A getter, not a fixed handle: reloadDb() (restore, and the persistence
+    // tests) replaces the underlying connection, and the shim must wrap whichever
+    // handle is current rather than one captured at bind time.
+    get raw() {
+      return sqlJsCompat(db.getDb());
+    },
     // Exposed so tests can assert that re-running init is non-destructive.
     initializeDatabase,
     /**

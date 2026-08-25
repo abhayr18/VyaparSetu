@@ -10,22 +10,7 @@
  *   and any keyword containing "shev".
  */
 
-const { getDb, saveDb } = require('../database/db');
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
+const { execSelect, execRun } = require('../database/db');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -90,15 +75,13 @@ function search(query) {
  * Insert a new vegetable or reactivate a deleted one.
  */
 function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
-  const db = getDb();
-  
   // Check if a record already exists with this name (even if deleted)
   const rows = execSelect(`SELECT id FROM vegetables WHERE LOWER(name) = LOWER(?)`, [name.trim()]);
-  
+
   if (rows.length > 0) {
     // Reactivate and update existing soft-deleted record
     const existingId = rows[0].id;
-    db.run(
+    execRun(
       `UPDATE vegetables
        SET rate = ?, unit = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
@@ -106,15 +89,13 @@ function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
     );
   } else {
     // Insert fresh record
-    db.run(
+    execRun(
       `INSERT INTO vegetables (name, rate, unit, search_keywords, notes)
        VALUES (?, ?, ?, ?, ?)`,
       [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim()]
     );
   }
-  
-  saveDb();
-  
+
   const resultRows = execSelect(
     `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
      FROM vegetables WHERE LOWER(name) = LOWER(?)`,
@@ -127,15 +108,13 @@ function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
  * Update an existing vegetable.
  */
 function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
-  const db = getDb();
-  db.run(
+  execRun(
     `UPDATE vegetables
      SET name = ?, rate = ?, unit = ?, search_keywords = ?, notes = ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim(), id]
   );
-  saveDb();
   return findById(id);
 }
 
@@ -145,9 +124,7 @@ function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' 
 function remove(id) {
   const existing = findById(id);
   if (!existing) return false;
-  const db = getDb();
-  db.run(`UPDATE vegetables SET is_deleted = 1 WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`UPDATE vegetables SET is_deleted = 1 WHERE id = ?`, [id]);
   return true;
 }
 

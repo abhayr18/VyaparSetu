@@ -4,7 +4,7 @@
  * Runs a lightweight probe query to verify SQLite connectivity.
  */
 
-const { getDb } = require('../database/db');
+const { execSelect } = require('../database/db');
 
 /**
  * Returns the server and database health status.
@@ -14,10 +14,8 @@ function getHealthStatus() {
   let dbStatus = 'disconnected';
 
   try {
-    const db = getDb();
-    // Lightweight probe — sql.js uses exec() for statements that return nothing
-    // and exec() for SELECT queries returns an array of result sets
-    const result = db.exec('SELECT 1 AS probe');
+    // Lightweight probe — a successful SELECT means the connection is live.
+    const result = execSelect('SELECT 1 AS probe');
     if (result && result.length > 0) {
       dbStatus = 'connected';
     }

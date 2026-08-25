@@ -4,25 +4,7 @@
  * Services call these functions — never call db directly from controllers.
  */
 
-const { getDb, saveDb } = require('../database/db');
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Map a sql.js result row array + column names → plain object */
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-/** Execute a SELECT and return array of plain objects */
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
+const { execSelect, execRun } = require('../database/db');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -90,15 +72,13 @@ function search(query) {
  * @returns {Object} The newly created/updated customer
  */
 function create({ name, mobile, address = '', notes = '' }) {
-  const db = getDb();
-  
   // Check if a record already exists with this mobile (even if deleted)
   const rows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [mobile.trim()]);
-  
+
   if (rows.length > 0) {
     // Reactivate and update the existing soft-deleted record
     const existingId = rows[0].id;
-    db.run(
+    execRun(
       `UPDATE customers
        SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
@@ -106,14 +86,12 @@ function create({ name, mobile, address = '', notes = '' }) {
     );
   } else {
     // Insert fresh record
-    db.run(
+    execRun(
       `INSERT INTO customers (name, mobile, address, notes, credit_balance)
        VALUES (?, ?, ?, ?, 0.0)`,
       [name.trim(), mobile.trim(), address.trim(), notes.trim()]
     );
   }
-  
-  saveDb();
 
   // Retrieve the inserted/updated row
   const resultRows = execSelect(
@@ -131,14 +109,12 @@ function create({ name, mobile, address = '', notes = '' }) {
  * @returns {Object|null} Updated customer or null if not found
  */
 function update(id, { name, mobile, address = '', notes = '' }) {
-  const db = getDb();
-  db.run(
+  execRun(
     `UPDATE customers
      SET name = ?, mobile = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [name.trim(), mobile.trim(), address.trim(), notes.trim(), id]
   );
-  saveDb();
   return findById(id);
 }
 
@@ -150,9 +126,7 @@ function update(id, { name, mobile, address = '', notes = '' }) {
 function remove(id) {
   const existing = findById(id);
   if (!existing) return false;
-  const db = getDb();
-  db.run(`UPDATE customers SET is_deleted = 1 WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`UPDATE customers SET is_deleted = 1 WHERE id = ?`, [id]);
   return true;
 }
 

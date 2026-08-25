@@ -1,23 +1,8 @@
 // backend/models/billModel.js
 
-const { getDb, transaction } = require('../database/db');
+const { execSelect, execRun, transaction } = require('../database/db');
 const { normalizeCommissionPercent } = require('../utils/calculation');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
-
-// Helper to map rows
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => rowToObj(columns, row));
-}
 
 /** Get all bills with customer names, and attach items */
 function findAll() {
@@ -120,8 +105,8 @@ function selfBookedCredit(billId) {
 }
 
 /** Removes the ledger rows this bill originated, leaving transaction-owned rows. */
-function deleteSelfBookedLedgerRows(db, billId) {
-  db.run(
+function deleteSelfBookedLedgerRows(billId) {
+  execRun(
     `DELETE FROM credit_transactions
      WHERE bill_id = ? AND transaction_type = 'CREDIT_ADDED' AND transaction_id IS NULL`,
     [billId]
@@ -129,15 +114,15 @@ function deleteSelfBookedLedgerRows(db, billId) {
 }
 
 /** Adds `amount` to a customer's balance and writes the matching ledger row. */
-function bookCreditRow(db, { customerId, billId, amount, note }) {
-  db.run(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+function bookCreditRow({ customerId, billId, amount, note }) {
+  execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
     amount,
     customerId,
   ]);
   const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customerId]);
   const balanceAfter = Number(balanceRow[0]?.credit_balance || 0);
 
-  db.run(
+  execRun(
     `INSERT INTO credit_transactions
        (customer_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
      VALUES (?, ?, 'CREDIT_ADDED', ?, 'Other', ?, ?)`,
@@ -161,12 +146,11 @@ function bookCreditRow(db, { customerId, billId, amount, note }) {
  *   day's debt.
  */
 function create(data, { bookCredit = true } = {}) {
-  const db = getDb();
   const actualNumber = data.bill_number || `BILL-${Date.now()}`;
   const dateVal = data.date || new Date().toISOString().split('T')[0];
 
   return transaction(() => {
-    db.run(
+    const info = execRun(
       `INSERT INTO bills (
         bill_number, customer_id, date, subtotal, discount_type, discount_value,
         discount_amount, commission_rate, commission_amount, hamali_amount, transport_amount, final_amount,
@@ -192,8 +176,7 @@ function create(data, { bookCredit = true } = {}) {
       ]
     );
 
-    const idRow = execSelect('SELECT last_insert_rowid() AS id');
-    const billId = idRow[0]?.id;
+    const billId = Number(info.lastInsertRowid);
     if (!billId) throw new Error('Failed to retrieve inserted bill ID');
 
     if (data.items && data.items.length) {
@@ -202,7 +185,7 @@ function create(data, { bookCredit = true } = {}) {
 
     const rem = Number(data.remaining_amount) || 0;
     if (bookCredit && rem > 0) {
-      bookCreditRow(db, {
+      bookCreditRow({
         customerId: data.customer_id,
         billId,
         amount: rem,
@@ -216,7 +199,6 @@ function create(data, { bookCredit = true } = {}) {
 
 /** Update an existing bill and replace its items if provided */
 function update(id, data) {
-  const db = getDb();
   const oldBill = findById(id);
   if (!oldBill) throw new Error('Bill not found');
 
@@ -226,11 +208,11 @@ function update(id, data) {
 
   return transaction(() => {
     if (originatedOwnCredit) {
-      db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+      execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
         selfBookedCredit(id),
         oldBill.customer_id,
       ]);
-      deleteSelfBookedLedgerRows(db, id);
+      deleteSelfBookedLedgerRows(id);
     }
 
     const fields = [];
@@ -253,7 +235,7 @@ function update(id, data) {
     if (data.payment_status) { fields.push('payment_status = ?'); values.push(data.payment_status); }
 
     if (fields.length) {
-      db.run(
+      execRun(
         `UPDATE bills SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [...values, id]
       );
@@ -272,7 +254,7 @@ function update(id, data) {
     const billNum = data.bill_number || oldBill.bill_number;
 
     if (originatedOwnCredit && newRem > 0) {
-      bookCreditRow(db, {
+      bookCreditRow({
         customerId: newCustId,
         billId: id,
         amount: newRem,
@@ -291,7 +273,6 @@ function update(id, data) {
  * still has bill_items violates the constraint and the whole delete rolls back.
  */
 function remove(id) {
-  const db = getDb();
   const oldBill = findById(id);
   if (!oldBill) return false;
 
@@ -299,7 +280,7 @@ function remove(id) {
 
   return transaction(() => {
     if (ownCredit > 0) {
-      db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+      execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
         ownCredit,
         oldBill.customer_id,
       ]);
@@ -308,14 +289,14 @@ function remove(id) {
     // Rows this bill originated are gone with it. Rows a transaction originated
     // stay — that debt is still owed, because the transaction still exists — and
     // are simply unlinked.
-    deleteSelfBookedLedgerRows(db, id);
-    db.run(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+    deleteSelfBookedLedgerRows(id);
+    execRun(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
 
     // Return the source transactions to unbilled so the day can be re-billed.
-    db.run(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+    execRun(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
 
-    db.run(`DELETE FROM bill_items WHERE bill_id = ?`, [id]);
-    db.run(`DELETE FROM bills WHERE id = ?`, [id]);
+    execRun(`DELETE FROM bill_items WHERE bill_id = ?`, [id]);
+    execRun(`DELETE FROM bills WHERE id = ?`, [id]);
 
     return true;
   });

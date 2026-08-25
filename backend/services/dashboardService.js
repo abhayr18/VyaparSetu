@@ -1,24 +1,7 @@
-const { getDb } = require('../database/db');
+const { execSelect } = require('../database/db');
 const backupService = require('./backupService');
 const creditModel = require('../models/creditModel');
 const logger = require('../utils/logger');
-
-// Helper to map SQLite rows to objects
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => {
-    obj[col] = row[i];
-  });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
 
 async function getDashboardSummary() {
   const now = new Date();
