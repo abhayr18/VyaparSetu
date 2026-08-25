@@ -35,6 +35,13 @@ const NavIcons = {
       <line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="14" y2="16"/>
     </svg>
   ),
+  Transactions: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+      <line x1="7" y1="15" x2="12" y2="15" />
+    </svg>
+  ),
   Udhar: () => (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23"/>
@@ -64,15 +71,17 @@ const NavIcons = {
 };
 
 const NAV_ITEMS = [
-  { key: 'dashboard',  to: '/',           icon: NavIcons.Dashboard,  label: 'nav.dashboard'  },
-  { key: 'customers',  to: '/customers',  icon: NavIcons.Customers,  label: 'nav.customers'  },
-  { key: 'vegetables', to: '/vegetables', icon: NavIcons.Vegetables, label: 'nav.vegetables' },
-  { key: 'billing',    to: '/billing',    icon: NavIcons.Billing,    label: 'nav.billing'    },
-  { key: 'udhar',      to: '/udhar',      icon: NavIcons.Udhar,      label: 'nav.udhar'      },
-  { key: 'reports',    to: '/reports',    icon: NavIcons.Reports,    label: 'nav.reports'    },
-  { key: 'backup',     to: '/backup',     icon: NavIcons.Backup,     label: 'nav.backup'     },
-  { key: 'settings',   to: '/settings',   icon: NavIcons.Settings,   label: 'nav.settings'   },
+  { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard'    },
+  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
+  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
+  { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions' },
+  { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing'      },
+  { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar'        },
+  { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports'      },
+  { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup'       },
+  { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings'     },
 ];
+
 
 export default function Sidebar() {
   const { t } = useTranslation();

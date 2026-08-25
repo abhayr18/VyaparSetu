@@ -15,20 +15,23 @@ const backupRoutes    = require('./backupRoutes');
 const settingsRoutes  = require('./settingsRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
 const googleDriveRoutes = require('./googleDriveRoutes');
+const transactionRoutes = require('./transactionRoutes');
 
 const router = express.Router();
 
 // ─── Feature Routes ───────────────────────────────────────────────────────────
-router.use('/health',     healthRoutes);
-router.use('/customers',  customerRoutes);
-router.use('/vegetables', vegetableRoutes);
-router.use('/bills',      billRoutes);
-router.use('/credit',     creditRoutes);
-router.use('/reports',    reportRoutes);
-router.use('/backup',     backupRoutes);
-router.use('/settings',   settingsRoutes);
-router.use('/dashboard',  dashboardRoutes);
-router.use('/drive',      googleDriveRoutes);
+router.use('/health',       healthRoutes);
+router.use('/customers',    customerRoutes);
+router.use('/vegetables',   vegetableRoutes);
+router.use('/bills',        billRoutes);
+router.use('/credit',       creditRoutes);
+router.use('/reports',      reportRoutes);
+router.use('/backup',       backupRoutes);
+router.use('/settings',     settingsRoutes);
+router.use('/dashboard',    dashboardRoutes);
+router.use('/drive',        googleDriveRoutes);
+router.use('/transactions', transactionRoutes);
 
 module.exports = router;
+
 

@@ -156,5 +156,19 @@ export const driveApi = {
   disconnect: () => apiClient.post('/api/drive/disconnect'),
 };
 
+// ─── Transaction API ────────────────────────────────────────────────────────
+export const transactionApi = {
+  create: (data) => apiClient.post('/api/transactions', data),
+  generateBill: (data) => apiClient.post('/api/transactions/generate-bill', data),
+  getAll: (params) => apiClient.get('/api/transactions', { params }),
+
+  getById: (id) => apiClient.get(`/api/transactions/${id}`),
+  getByCustomer: (customerId, params) => apiClient.get(`/api/transactions/customer/${customerId}`, { params }),
+  getCustomerDaily: (customerId, date) => apiClient.get(`/api/transactions/customer/${customerId}/daily`, { params: { date } }),
+  getCustomerRange: (customerId, startDate, endDate) => apiClient.get(`/api/transactions/customer/${customerId}/range`, { params: { startDate, endDate } }),
+  remove: (id) => apiClient.delete(`/api/transactions/${id}`),
+};
+
 export default apiClient;
+
 

@@ -1,5 +1,7 @@
 const { getDb } = require('../database/db');
 const backupService = require('./backupService');
+const creditModel = require('../models/creditModel');
+const logger = require('../utils/logger');
 
 // Helper to map SQLite rows to objects
 function rowToObj(columns, row) {
@@ -113,6 +115,33 @@ async function getDashboardSummary() {
     /* ignore connectivity status errors */
   }
 
+  // ─── Ledger Reconciliation ──────────────────────────────────────────────────
+  // Every customer's stored balance must equal the sum of their passbook. If it
+  // does not, the vendor is holding two different answers to "how much is owed"
+  // and needs to know before quoting either one — silence here is how a rounding
+  // bug turns into a disputed settlement weeks later.
+  const ledgerCheck = { ok: true, mismatchCount: 0, mismatches: [] };
+  try {
+    const mismatches = creditModel.findBalanceMismatches();
+    ledgerCheck.ok = mismatches.length === 0;
+    ledgerCheck.mismatchCount = mismatches.length;
+    ledgerCheck.mismatches = mismatches.slice(0, 5); // report the full count, show a few
+    if (mismatches.length > 0) {
+      logger.error(
+        `Ledger reconciliation failed for ${mismatches.length} customer(s): ` +
+          mismatches
+            .slice(0, 5)
+            .map((m) => `#${m.id} ${m.name} stored ${m.stored_balance} vs ledger ${m.ledger_balance}`)
+            .join('; ')
+      );
+    }
+  } catch (err) {
+    // A check that cannot run must not read as a clean bill of health.
+    ledgerCheck.ok = false;
+    ledgerCheck.error = 'Reconciliation check could not run';
+    logger.error(`Ledger reconciliation check failed to run: ${err.message}`);
+  }
+
   return {
     todaySummary,
     overallSummary,
@@ -120,6 +149,7 @@ async function getDashboardSummary() {
     pendingCustomers,
     lastBackup,
     internetOnline,
+    ledgerCheck,
   };
 }
 

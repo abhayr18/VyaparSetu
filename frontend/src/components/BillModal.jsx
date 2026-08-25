@@ -8,8 +8,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { useCustomers } from '../hooks/useCustomers';
 import { useVegetables } from '../hooks/useVegetables';
+import useSettings from '../hooks/useSettings';
 import MarathiInput from './MarathiInput';
 import { ReceiptIcon, AlertIcon, TrashIcon } from './Icons';
+import { normalizeCommissionPercent, round2, formatCommissionPercent } from '../utils/money';
 
 // ─── Customer Searchable Select Component ─────────────────────────────────────
 function CustomerSearchSelect({ customers, selectedId, onChange, placeholder, t, error }) {
@@ -138,6 +140,9 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   const { t } = useTranslation();
   const { customers } = useCustomers();
   const { vegetables } = useVegetables();
+  // The commission rate is a shop-wide setting, read here so the live totals match
+  // what the server will store.
+  const { settings } = useSettings();
 
   const isEdit = Boolean(bill);
 
@@ -278,8 +283,10 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   }
 
   const amountAfterDiscount = Number((subtotal - discountAmount).toFixed(2));
-  const commissionRate = 8.0;
-  const commissionAmount = Number((amountAfterDiscount * 0.08).toFixed(2));
+  // The shop's configured rate, not a hardcoded 8%. The server recalculates from
+  // the same setting, so this preview matches the saved bill.
+  const commissionRate = normalizeCommissionPercent(settings.commission_rate);
+  const commissionAmount = round2((amountAfterDiscount * commissionRate) / 100);
 
   const hamali = Number(hamaliAmount) || 0;
   const transport = Number(transportAmount) || 0;
@@ -623,10 +630,10 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
                 <span>₹{amountAfterDiscount.toFixed(2)}</span>
               </div>
 
-              {/* Compulsory 8% Commission display */}
+              {/* Commission at the shop's configured rate */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="text-muted">{t('billing.commissionAmount')}:</span>
-                <span style={{ color: 'var(--color-text-primary)' }}>₹{commissionAmount.toFixed(2)} (8%)</span>
+                <span style={{ color: 'var(--color-text-primary)' }}>₹{commissionAmount.toFixed(2)} ({formatCommissionPercent(commissionRate)})</span>
               </div>
 
               {/* Hamali & Transport Inputs */}

@@ -4,6 +4,7 @@
     "customers": "Customers",
     "vegetables": "Vegetables",
     "billing": "Invoices",
+    "transactions": "Transactions",
     "udhar": "Udhar / Credit",
     "reports": "Reports",
     "backup": "Backup & Restore",
@@ -47,7 +48,12 @@
     "status": "Status",
     "balance": "Balance",
     "mobile": "Mobile Number",
-    "actions": "Actions"
+    "actions": "Actions",
+    "ledgerMismatchTitle": "Udhar balances do not match the passbook",
+    "ledgerMismatchBody": "Check these customers before quoting a balance. Reopen the customer's ledger and re-enter the entry that looks wrong.",
+    "ledgerMismatchRow": "stored ₹{{stored}}, passbook ₹{{ledger}}",
+    "ledgerMismatchMore": "and {{count}} more",
+    "ledgerCheckFailed": "The udhar balance check could not run. Treat balances as unverified."
   },
   "common": {
     "loading": "Loading...",
@@ -230,7 +236,7 @@
     "discountValue": "Discount Value",
     "discountAmount": "Discount Amount",
     "commissionRate": "Commission Rate",
-    "commissionAmount": "Commission (8%)",
+    "commissionAmount": "Commission",
     "remainingAmount": "Remaining Amount",
     "paymentType": "Payment Type",
     "paymentStatus": "Payment Status",
@@ -347,5 +353,48 @@
     "saveSuccess": "Settings saved successfully.",
     "saveError": "Failed to save settings.",
     "saving": "Saving settings..."
+  },
+  "transactions": {
+    "title": "Transactions",
+    "subtitle": "Customer-wise vegetable sale entry & daily purchase history",
+    "entryTitle": "New Transaction Entry",
+    "historyTitle": "Customer Daily Purchase & History",
+    "selectCustomer": "Select Customer",
+    "selectVegetable": "Select Vegetable",
+    "weight": "Weight (kg)",
+    "rate": "Rate (₹/kg)",
+    "baseAmount": "Base Amount",
+    "commission": "Commission",
+    "finalAmount": "Final Amount",
+    "saveTransaction": "Save Transaction",
+    "saving": "Saving...",
+    "saveSuccess": "Transaction saved",
+    "todayPurchase": "Today's Purchase",
+    "totalTransactions": "Total Transactions",
+    "totalWeight": "Total Weight",
+    "totalBaseAmount": "Total Base Amount",
+    "totalCommission": "Total Commission",
+    "totalFinalAmount": "Total Final Amount",
+    "dateFilter": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "specificDate": "Select Date",
+      "dateRange": "Date Range"
+    },
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "customerRequired": "Customer selection is required",
+    "vegetableRequired": "Vegetable selection is required",
+    "weightRequired": "Enter valid weight (> 0)",
+    "rateRequired": "Enter valid rate (≥ 0)",
+    "noTransactions": "No transactions found for the selected date.",
+    "noCustomerSelected": "Please select a customer to view daily purchase history.",
+    "deleteConfirmTitle": "Delete Transaction",
+    "deleteConfirmMsg": "Are you sure you want to delete this transaction?",
+    "deleteSuccess": "Transaction deleted successfully.",
+    "generateBill": "Generate Today's Bill",
+    "billGeneratedSuccess": "Bill generated successfully"
   }
 }
+
+
