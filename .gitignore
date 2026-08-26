@@ -29,3 +29,12 @@ backups/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Licensing — MUST NOT be committed.
+# The private key can forge licenses for every install; licenses.json is the
+# customer register; license.json is a machine's local activation record.
+tools/keys/
+tools/licenses.json
+*.pem
+backend/database/license.json
+license.json

@@ -41,6 +41,21 @@ export const healthApi = {
   getStatus: () => apiClient.get('/api/health'),
 };
 
+// ─── License API ──────────────────────────────────────────────────────────────
+export const licenseApi = {
+  /**
+   * GET /api/license/status
+   * @returns {Promise<{ success: boolean, data: { activated: boolean, machineId: string, customerName?: string, expiry?: string|null } }>}
+   */
+  getStatus: () => apiClient.get('/api/license/status'),
+
+  /**
+   * POST /api/license/activate
+   * @param {string} licenseKey
+   */
+  activate: (licenseKey) => apiClient.post('/api/license/activate', { licenseKey }),
+};
+
 // ─── Customers API ────────────────────────────────────────────────────────────
 export const customersApi = {
   /** GET /api/customers */

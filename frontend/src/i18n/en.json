@@ -79,6 +79,21 @@
     "close": "Close",
     "all": "All"
   },
+  "activation": {
+    "title": "Activate VyapaarSetu",
+    "subtitle": "Enter your license key to start using the app on this computer.",
+    "machineIdLabel": "Your Machine ID",
+    "machineIdHelp": "Share this ID with your seller to get a license key. A key works on this computer only.",
+    "keyLabel": "License Key",
+    "keyPlaceholder": "Paste the license key you received",
+    "activate": "Activate",
+    "activating": "Activating...",
+    "invalidKey": "This license key is not valid.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "retry": "Retry",
+    "contactSeller": "Don't have a key? Contact your seller and share the Machine ID above."
+  },
   "customers": {
     "title": "Customer Management",
     "subtitle": "Manage your customer records",

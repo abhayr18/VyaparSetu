@@ -17,6 +17,7 @@ const { initializeDatabase } = require('./database/init');
 const { requestLogger } = require('./middleware/requestLogger');
 const { errorHandler } = require('./middleware/errorHandler');
 const router = require('./routes/index');
+const licenseService = require('./services/licenseService');
 const logger = require('./utils/logger');
 
 const app = express();
@@ -32,6 +33,22 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
+
+// ─── Licensing ──────────────────────────────────────────────────────────────
+// Activation endpoints must stay reachable while the app is locked, so they mount
+// AHEAD of the guard. Everything else under /api requires an activated license.
+// Scoped to /api, so the SPA, its static assets, and the history fallback below
+// are never blocked — a locked app still loads and can render the activation gate.
+app.use('/api/license', require('./routes/licenseRoutes'));
+app.use('/api', function licenseGuard(req, res, next) {
+  if (req.path === '/health') return next(); // liveness probe stays open
+  if (licenseService.isActivated()) return next();
+  return res.status(403).json({
+    success: false,
+    message: 'App not activated',
+    code: 'LICENSE_REQUIRED',
+  });
+});
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api', router);

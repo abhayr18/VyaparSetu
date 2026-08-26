@@ -77,6 +77,7 @@ if (!app.requestSingleInstanceLock()) {
     process.env.DB_PATH = path.join(userData, 'data', 'vyapaarsetu.db');
     process.env.BACKUP_DIR = path.join(userData, 'backups');
     process.env.DRIVE_TOKENS_PATH = path.join(userData, 'drive_tokens.json');
+    process.env.LICENSE_PATH = path.join(userData, 'license.json');
     process.env.FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
 
     // better-sqlite3 creates the file but not its parent directory.

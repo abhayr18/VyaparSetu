@@ -3,8 +3,8 @@
   "productName": "VyapaarSetu",
   "version": "1.0.0",
   "description": "Offline-first, bilingual (Marathi/English) APMC vegetable-market vendor management — Windows desktop app",
-  "author": "VyapaarSetu",
-  "license": "MIT",
+  "author": "Neuromind Solutions",
+  "license": "UNLICENSED",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -29,7 +29,10 @@
   "build": {
     "appId": "com.vyapaarsetu.app",
     "productName": "VyapaarSetu",
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "npmRebuild": false,
     "directories": {
       "output": "release"
@@ -38,6 +41,7 @@
       "**/*",
       "!**/*.md",
       "!PRODUCTION_READINESS_AUDIT.md",
+      "!tools",
       "!frontend/node_modules",
       "!frontend/src",
       "!frontend/public",
@@ -52,6 +56,7 @@
       "!backend/vyapaarsetu.db*",
       "!backend/database/vyapaarsetu.db*",
       "!backend/database/drive_tokens.json",
+      "!backend/database/license.json",
       "!backups",
       "!release"
     ],
@@ -65,7 +70,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "VyapaarSetu"
+      "shortcutName": "VyapaarSetu",
+      "license": "EULA.txt"
     }
   }
 }

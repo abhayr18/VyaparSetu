@@ -6,6 +6,7 @@
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { LanguageProvider } from './context/LanguageContext';
+import ActivationGate from './components/ActivationGate';
 import MainLayout from './layouts/MainLayout';
 
 // Pages
@@ -25,21 +26,23 @@ import './styles/globals.css';
 export default function App() {
   return (
     <LanguageProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<MainLayout />}>
-            <Route index         element={<DashboardPage    />} />
-            <Route path="customers"    element={<CustomersPage    />} />
-            <Route path="vegetables"   element={<VegetablesPage   />} />
-            <Route path="billing"      element={<BillingPage      />} />
-            <Route path="transactions" element={<TransactionsPage />} />
-            <Route path="udhar"        element={<UdharPage        />} />
-            <Route path="reports"      element={<ReportsPage      />} />
-            <Route path="backup"       element={<BackupPage       />} />
-            <Route path="settings"     element={<SettingsPage     />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <ActivationGate>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<MainLayout />}>
+              <Route index         element={<DashboardPage    />} />
+              <Route path="customers"    element={<CustomersPage    />} />
+              <Route path="vegetables"   element={<VegetablesPage   />} />
+              <Route path="billing"      element={<BillingPage      />} />
+              <Route path="transactions" element={<TransactionsPage />} />
+              <Route path="udhar"        element={<UdharPage        />} />
+              <Route path="reports"      element={<ReportsPage      />} />
+              <Route path="backup"       element={<BackupPage       />} />
+              <Route path="settings"     element={<SettingsPage     />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ActivationGate>
     </LanguageProvider>
   );
 }
