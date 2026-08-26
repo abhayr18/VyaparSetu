@@ -14,16 +14,54 @@ const { app, BrowserWindow, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Single-instance: a second launch focuses the running window rather than starting
-// a second server against the same database file.
+// --- File logging -----------------------------------------------------------
+// A packaged GUI app has no console, so console output is lost — including on a
+// client's machine where we can't attach a terminal. Everything important is
+// mirrored to <userData>/logs/main.log so failures are diagnosable after the
+// fact. Written defensively: logging must never crash the app.
+let logStream = null;
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try {
+    if (!logStream) {
+      const dir = path.join(app.getPath('userData'), 'logs');
+      fs.mkdirSync(dir, { recursive: true });
+      logStream = fs.createWriteStream(path.join(dir, 'main.log'), { flags: 'a' });
+    }
+    logStream.write(line);
+  } catch {
+    /* ignore logging failures */
+  }
+  try {
+    process.stdout.write(line);
+  } catch {
+    /* no console attached */
+  }
+}
+
+process.on('uncaughtException', (err) => {
+  log(`uncaughtException: ${err && err.stack ? err.stack : String(err)}`);
+});
+
+// Disable GPU hardware acceleration. On some Windows GPUs/drivers the compositor
+// never presents a first frame, so 'ready-to-show' never fires and the window
+// stays hidden even though the app is running (4 live processes, no window).
+// Software compositing is more than enough for this CRUD UI and is far more
+// robust across the varied client machines this now ships to.
+app.disableHardwareAcceleration();
+
+// Single-instance: a second launch reveals the running window rather than
+// starting a second server against the same database file.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   let mainWindow = null;
 
   app.on('second-instance', () => {
+    log('second-instance: revealing existing window');
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
   });
@@ -45,12 +83,15 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(path.dirname(process.env.DB_PATH), { recursive: true });
     fs.mkdirSync(process.env.BACKUP_DIR, { recursive: true });
 
+    log(`starting backend; userData=${userData}`);
     const { startServer } = require('../backend/server.js');
     const { port } = await startServer({ port: 0 }); // 0 → OS picks a free port
+    log(`backend started on http://localhost:${port}`);
     return port;
   }
 
   function createWindow(port) {
+    log('creating window');
     mainWindow = new BrowserWindow({
       width: 1280,
       height: 800,
@@ -67,6 +108,29 @@ if (!app.requestSingleInstanceLock()) {
 
     mainWindow.removeMenu(); // no default menu bar in the shipped app
 
+    // Reveal the window exactly once. Normally this happens on 'ready-to-show'
+    // (first frame painted); the fallback timer guarantees the window still
+    // appears if that frame never comes, so the app is never running-but-invisible.
+    let shown = false;
+    const reveal = (why) => {
+      if (shown || !mainWindow) return;
+      shown = true;
+      log(`showing window (${why})`);
+      mainWindow.show();
+      mainWindow.focus();
+    };
+
+    mainWindow.once('ready-to-show', () => reveal('ready-to-show'));
+    const fallbackTimer = setTimeout(() => reveal('fallback-timeout'), 4000);
+
+    mainWindow.webContents.on('did-finish-load', () => log('renderer: did-finish-load'));
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) =>
+      log(`renderer: did-fail-load code=${code} desc="${desc}" url=${url}`)
+    );
+    mainWindow.webContents.on('render-process-gone', (_e, details) =>
+      log(`renderer: render-process-gone ${JSON.stringify(details)}`)
+    );
+
     // WhatsApp share links, Google OAuth, etc. open in the system browser rather
     // than hijacking or spawning windows inside the app.
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -75,23 +139,26 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     mainWindow.on('closed', () => {
+      clearTimeout(fallbackTimer);
       mainWindow = null;
     });
 
-    mainWindow.loadURL(`http://localhost:${port}/`);
-    mainWindow.once('ready-to-show', () => mainWindow.show());
+    const url = `http://localhost:${port}/`;
+    log(`loading ${url}`);
+    mainWindow.loadURL(url);
   }
 
   app.whenReady().then(async () => {
+    log(`app ready; electron=${process.versions.electron} node=${process.versions.node}`);
     try {
       const port = await startBackend();
       createWindow(port);
     } catch (err) {
+      const msg = err && err.stack ? err.stack : String(err);
+      log(`FATAL: ${msg}`);
       dialog.showErrorBox(
         'VyapaarSetu failed to start',
-        `The application could not start its local server.\n\n${
-          err && err.stack ? err.stack : String(err)
-        }`
+        `The application could not start its local server.\n\n${msg}`
       );
       app.quit();
     }
@@ -99,6 +166,7 @@ if (!app.requestSingleInstanceLock()) {
 
   // Single-window desktop app: closing the window exits (Windows-centric target).
   app.on('window-all-closed', () => {
+    log('window-all-closed; quitting');
     app.quit();
   });
 }
