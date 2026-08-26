@@ -11,10 +11,13 @@ const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
 const backupService = require('./backupService');
 const logger = require('../utils/logger');
 
-// Kept beside the database file in backend/database/, not in a separate top-level
-// database/ folder — one home for every app-owned persistent artifact, so there is
-// no second location to keep in sync or accidentally launch against.
-const TOKENS_PATH = path.resolve(__dirname, '../database/drive_tokens.json');
+// Kept beside the database file in backend/database/ by default — one home for
+// every app-owned persistent artifact, so there is no second location to keep in
+// sync or accidentally launch against. The packaged app overrides this to the same
+// writable per-user dir as the database, which is likewise read-only once installed.
+const TOKENS_PATH = process.env.DRIVE_TOKENS_PATH
+  ? path.resolve(process.env.DRIVE_TOKENS_PATH)
+  : path.resolve(__dirname, '../database/drive_tokens.json');
 
 // Initialize the Google OAuth2 client
 const oauth2Client = new google.auth.OAuth2(

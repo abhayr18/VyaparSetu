@@ -4,6 +4,9 @@ node_modules/
 # Production builds
 dist/
 
+# Electron installer output (electron-builder)
+release/
+
 # SQLite databases
 *.db
 database/vyapaarsetu.db

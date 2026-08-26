@@ -4,7 +4,12 @@ const dns = require('dns').promises;
 const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
 const logger = require('../utils/logger');
 
-const BACKUP_DIR = path.resolve(__dirname, '../../backups');
+// Repo-root backups/ by default; the packaged app overrides this to a writable
+// per-user dir, since a program installed under Program Files cannot write beside
+// its own files.
+const BACKUP_DIR = process.env.BACKUP_DIR
+  ? path.resolve(process.env.BACKUP_DIR)
+  : path.resolve(__dirname, '../../backups');
 
 // Ensure backups directory exists
 if (!fs.existsSync(BACKUP_DIR)) {

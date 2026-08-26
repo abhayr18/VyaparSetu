@@ -1,0 +1,71 @@
+{
+  "name": "vyapaarsetu",
+  "productName": "VyapaarSetu",
+  "version": "1.0.0",
+  "description": "Offline-first, bilingual (Marathi/English) APMC vegetable-market vendor management — Windows desktop app",
+  "author": "VyapaarSetu",
+  "license": "MIT",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:frontend": "npm --prefix frontend run build",
+    "make-icon": "node build/make-icon.mjs",
+    "pack": "npm run build:frontend && electron-builder --dir",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "googleapis": "^173.0.0"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.4"
+  },
+  "build": {
+    "appId": "com.vyapaarsetu.app",
+    "productName": "VyapaarSetu",
+    "asar": false,
+    "npmRebuild": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!PRODUCTION_READINESS_AUDIT.md",
+      "!frontend/node_modules",
+      "!frontend/src",
+      "!frontend/public",
+      "!frontend/.env*",
+      "!frontend/index.html",
+      "!frontend/vite.config.js",
+      "!frontend/eslint.config.js",
+      "!backend/node_modules",
+      "!backend/tests",
+      "!backend/**/*.test.js",
+      "!backend/.env",
+      "!backend/vyapaarsetu.db*",
+      "!backend/database/vyapaarsetu.db*",
+      "!backend/database/drive_tokens.json",
+      "!backups",
+      "!release"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VyapaarSetu"
+    }
+  }
+}

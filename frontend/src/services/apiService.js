@@ -6,7 +6,10 @@
 
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+// ?? (not ||) so the packaged build's explicit empty value is honored as "" — a
+// relative base, i.e. /api on the window's own origin, whatever port Express got —
+// instead of falling back to :5000. Dev's .env still sets the full localhost URL.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
 
 // Axios instance with defaults
 const apiClient = axios.create({
