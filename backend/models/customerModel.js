@@ -5,6 +5,7 @@
  */
 
 const { execSelect, execRun } = require('../database/db');
+const { rowToRupees } = require('../utils/money');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ function findAll() {
      FROM customers
      WHERE is_deleted = 0
      ORDER BY name ASC`
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /**
@@ -32,7 +33,7 @@ function findById(id) {
      FROM customers WHERE id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'customers');
 }
 
 /**
@@ -63,7 +64,7 @@ function search(query) {
      WHERE (name LIKE ? OR mobile LIKE ?) AND is_deleted = 0
      ORDER BY name ASC`,
     [like, like]
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /**
@@ -99,7 +100,7 @@ function create({ name, mobile, address = '', notes = '' }) {
      FROM customers WHERE mobile = ?`,
     [mobile.trim()]
   );
-  return resultRows[0];
+  return rowToRupees(resultRows[0], 'customers');
 }
 
 /**
@@ -149,7 +150,7 @@ function getLedger(customerId) {
      WHERE b.customer_id = ?
      ORDER BY b.date DESC, b.id DESC`,
     [customerId]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
 
   // All credit transactions for this customer
   const transactions = execSelect(
@@ -161,7 +162,7 @@ function getLedger(customerId) {
      WHERE ct.customer_id = ?
      ORDER BY ct.created_at DESC, ct.id DESC`,
     [customerId]
-  );
+  ).map((t) => rowToRupees(t, 'credit_transactions'));
 
   // Summary totals
   //

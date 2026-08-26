@@ -1,4 +1,5 @@
 const { execSelect } = require('../database/db');
+const { toRupees, rowToRupees } = require('../utils/money');
 const backupService = require('./backupService');
 const creditModel = require('../models/creditModel');
 const logger = require('../utils/logger');
@@ -43,12 +44,12 @@ async function getDashboardSummary() {
   const totalRecovery = todayRecoveryRes[0]?.total_recovery || 0.0;
 
   const todaySummary = {
-    totalSales: Number(todayBills.total_sales.toFixed(2)),
+    totalSales: Number(toRupees(todayBills.total_sales).toFixed(2)),
     totalBills: Number(todayBills.total_bills),
-    paidAmount: Number(todayBills.total_paid.toFixed(2)),
-    creditSales: Number(todayBills.total_credit.toFixed(2)),
-    recoveryAmount: Number(totalRecovery.toFixed(2)),
-    commission: Number(todayBills.total_commission.toFixed(2)),
+    paidAmount: Number(toRupees(todayBills.total_paid).toFixed(2)),
+    creditSales: Number(toRupees(todayBills.total_credit).toFixed(2)),
+    recoveryAmount: Number(toRupees(totalRecovery).toFixed(2)),
+    commission: Number(toRupees(todayBills.total_commission).toFixed(2)),
     date: todayStr,
   };
 
@@ -61,7 +62,7 @@ async function getDashboardSummary() {
   const overallSummary = {
     totalCustomers: Number(totalCustomersRes[0]?.count || 0),
     totalVegetables: Number(totalVegetablesRes[0]?.count || 0),
-    totalUdhar: Number((totalUdharRes[0]?.total_udhar || 0.0).toFixed(2)),
+    totalUdhar: Number(toRupees(totalUdharRes[0]?.total_udhar || 0).toFixed(2)),
     totalBills: Number(totalBillsRes[0]?.count || 0),
   };
 
@@ -72,7 +73,7 @@ async function getDashboardSummary() {
      JOIN customers c ON b.customer_id = c.id
      ORDER BY b.date DESC, b.id DESC
      LIMIT 5`
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
 
   // ─── Pending Credit Customers (limit 5, sorted descending by balance) ─────────
   const pendingCustomers = execSelect(
@@ -81,7 +82,7 @@ async function getDashboardSummary() {
      WHERE credit_balance > 0
      ORDER BY credit_balance DESC, name ASC
      LIMIT 5`
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 
   // ─── Backup and Connection Status ───────────────────────────────────────────
   let lastBackup = null;

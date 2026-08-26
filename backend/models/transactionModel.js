@@ -5,6 +5,7 @@
 
 const { execSelect, execRun } = require('../database/db');
 const { DEFAULT_COMMISSION_PERCENT } = require('../utils/calculation');
+const { toPaise, toRupees, rowToRupees } = require('../utils/money');
 
 /**
  * Creates a new transaction record.
@@ -41,15 +42,15 @@ function create({
       vegetable_name_snapshot,
       weight,
       unit,
-      rate,
-      base_amount,
+      toPaise(rate),
+      toPaise(base_amount),
       commission_rate,
-      commission_amount,
-      final_amount,
+      toPaise(commission_amount),
+      toPaise(final_amount),
       payment_type,
       payment_mode,
-      paid_amount,
-      remaining_amount,
+      toPaise(paid_amount),
+      toPaise(remaining_amount),
       transaction_date
     ]
   );
@@ -74,7 +75,7 @@ function findById(id) {
      WHERE t.id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'transactions');
 }
 
 /**
@@ -88,7 +89,7 @@ function findByCustomerAndDate(customerId, date) {
      WHERE t.customer_id = ? AND t.transaction_date = ?
      ORDER BY t.created_at DESC, t.id DESC`,
     [customerId, date]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
@@ -104,7 +105,7 @@ function findByCustomerAndDateRange(customerId, startDate, endDate) {
        AND t.transaction_date <= ?
      ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC`,
     [customerId, startDate, endDate]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
@@ -138,7 +139,7 @@ function findAll({ customerId, date, startDate, endDate }) {
 
   sql += ` ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC`;
 
-  return execSelect(sql, params);
+  return execSelect(sql, params).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
@@ -163,11 +164,11 @@ function getDailyCustomerSummary(customerId, date) {
   return {
     total_transactions: Number(row.total_transactions || 0),
     total_weight: Number((Number(row.total_weight || 0)).toFixed(2)),
-    total_base_amount: Number((Number(row.total_base_amount || 0)).toFixed(2)),
-    total_commission: Number((Number(row.total_commission || 0)).toFixed(2)),
-    total_final_amount: Number((Number(row.total_final_amount || 0)).toFixed(2)),
-    total_paid_amount: Number((Number(row.total_paid_amount || 0)).toFixed(2)),
-    total_remaining_amount: Number((Number(row.total_remaining_amount || 0)).toFixed(2))
+    total_base_amount: Number(toRupees(row.total_base_amount).toFixed(2)),
+    total_commission: Number(toRupees(row.total_commission).toFixed(2)),
+    total_final_amount: Number(toRupees(row.total_final_amount).toFixed(2)),
+    total_paid_amount: Number(toRupees(row.total_paid_amount).toFixed(2)),
+    total_remaining_amount: Number(toRupees(row.total_remaining_amount).toFixed(2))
   };
 }
 
@@ -186,7 +187,7 @@ function findUnbilledByCustomerAndDate(customerId, date) {
      WHERE t.customer_id = ? AND t.transaction_date = ? AND t.bill_id IS NULL
      ORDER BY t.created_at DESC, t.id DESC`,
     [customerId, date]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**

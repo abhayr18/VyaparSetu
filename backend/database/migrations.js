@@ -250,6 +250,271 @@ const MIGRATIONS = [
       `);
     },
   },
+
+  {
+    version: 8,
+    name: 'money-columns-as-integer-paise',
+    /**
+     * Money moves from REAL rupees to INTEGER paise. A floating-point rupee cannot
+     * represent most decimal fractions exactly, so a balance updated across many
+     * sales drifts fractions of a paisa away from what its ledger sums to; whole
+     * paise in an INTEGER column cannot drift. Every money column in every table is
+     * rebuilt as INTEGER with its value multiplied by 100 and rounded to the
+     * nearest paisa. Non-money numerics stay REAL: commission_rate is a percentage,
+     * discount_value is dual-unit (rupees or a percentage), weight and quantity are
+     * kilograms.
+     *
+     * SQLite cannot alter a column's type, so each table is rebuilt with its rows
+     * copied across — the same pattern as migration 5. The runner has already
+     * turned foreign keys off and opened a transaction, which is what lets the six
+     * tables be dropped and recreated despite the references between them; the
+     * tables are rebuilt parents-first so each one's foreign keys resolve.
+     *
+     * On a fresh database the baseline already declares these columns INTEGER, so
+     * there is nothing to convert: the guard below returns early rather than dropping
+     * and recreating six tables to reach the shape already present. That keeps a new
+     * install's file small and still lands on exactly the fresh shape — which is what
+     * the schema-convergence test in migration.test.js checks.
+     */
+    up(db) {
+      // Any database predating v8 has every money column as REAL together, so one
+      // column settles whether the conversion is still needed. A fresh install is
+      // already INTEGER and skips the rebuild entirely — otherwise it would drop and
+      // recreate six tables on first boot, inflating the file with freed pages.
+      const balanceCol = columnInfo(db, 'customers').credit_balance;
+      if (balanceCol && String(balanceCol.type).toUpperCase() === 'INTEGER') {
+        logger.info('  ~ money columns already integer paise, nothing to convert');
+        return;
+      }
+
+      // ── customers ──
+      db.exec(`
+        CREATE TABLE customers_migration_8 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          name           TEXT    NOT NULL,
+          mobile         TEXT    NOT NULL UNIQUE,
+          address        TEXT    DEFAULT '',
+          notes          TEXT    DEFAULT '',
+          credit_balance INTEGER DEFAULT 0,
+          is_deleted     INTEGER DEFAULT 0,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      db.exec(`
+        INSERT INTO customers_migration_8
+          (id, name, mobile, address, notes, credit_balance, is_deleted, created_at, updated_at)
+        SELECT
+          id, name, mobile, address, notes,
+          CAST(ROUND(credit_balance * 100) AS INTEGER),
+          is_deleted, created_at, updated_at
+        FROM customers
+      `);
+      db.exec('DROP TABLE customers');
+      db.exec('ALTER TABLE customers_migration_8 RENAME TO customers');
+
+      // ── vegetables ──
+      db.exec(`
+        CREATE TABLE vegetables_migration_8 (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          name            TEXT    NOT NULL UNIQUE,
+          rate            INTEGER NOT NULL DEFAULT 0,
+          unit            TEXT    NOT NULL DEFAULT 'kg',
+          search_keywords TEXT    DEFAULT '',
+          notes           TEXT    DEFAULT '',
+          is_deleted      INTEGER DEFAULT 0,
+          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      db.exec(`
+        INSERT INTO vegetables_migration_8
+          (id, name, rate, unit, search_keywords, notes, is_deleted, created_at, updated_at)
+        SELECT
+          id, name,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          unit, search_keywords, notes, is_deleted, created_at, updated_at
+        FROM vegetables
+      `);
+      db.exec('DROP TABLE vegetables');
+      db.exec('ALTER TABLE vegetables_migration_8 RENAME TO vegetables');
+
+      // ── bills ──
+      db.exec(`
+        CREATE TABLE bills_migration_8 (
+          id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_number        TEXT    NOT NULL UNIQUE,
+          customer_id        INTEGER NOT NULL,
+          date               TEXT    NOT NULL,
+          subtotal           INTEGER NOT NULL,
+          discount_type      TEXT    DEFAULT 'fixed',
+          discount_value     REAL    DEFAULT 0.0,
+          discount_amount    INTEGER DEFAULT 0,
+          commission_rate    REAL    DEFAULT 8.0,
+          commission_amount  INTEGER NOT NULL,
+          hamali_amount      INTEGER DEFAULT 0,
+          transport_amount   INTEGER DEFAULT 0,
+          final_amount       INTEGER NOT NULL,
+          paid_amount        INTEGER DEFAULT 0,
+          remaining_amount   INTEGER DEFAULT 0,
+          payment_type       TEXT    NOT NULL,
+          payment_status     TEXT    NOT NULL,
+          created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id) REFERENCES customers(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO bills_migration_8
+          (id, bill_number, customer_id, date, subtotal, discount_type, discount_value,
+           discount_amount, commission_rate, commission_amount, hamali_amount,
+           transport_amount, final_amount, paid_amount, remaining_amount,
+           payment_type, payment_status, created_at, updated_at)
+        SELECT
+          id, bill_number, customer_id, date,
+          CAST(ROUND(subtotal * 100) AS INTEGER),
+          discount_type, discount_value,
+          CAST(ROUND(discount_amount * 100) AS INTEGER),
+          commission_rate,
+          CAST(ROUND(commission_amount * 100) AS INTEGER),
+          CAST(ROUND(hamali_amount * 100) AS INTEGER),
+          CAST(ROUND(transport_amount * 100) AS INTEGER),
+          CAST(ROUND(final_amount * 100) AS INTEGER),
+          CAST(ROUND(paid_amount * 100) AS INTEGER),
+          CAST(ROUND(remaining_amount * 100) AS INTEGER),
+          payment_type, payment_status, created_at, updated_at
+        FROM bills
+      `);
+      db.exec('DROP TABLE bills');
+      db.exec('ALTER TABLE bills_migration_8 RENAME TO bills');
+
+      // ── bill_items ──
+      db.exec(`
+        CREATE TABLE bill_items_migration_8 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_id        INTEGER NOT NULL,
+          vegetable_id   INTEGER NOT NULL,
+          vegetable_name TEXT    NOT NULL,
+          quantity       REAL    NOT NULL,
+          rate           INTEGER NOT NULL,
+          total          INTEGER NOT NULL,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(bill_id) REFERENCES bills(id),
+          FOREIGN KEY(vegetable_id) REFERENCES vegetables(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO bill_items_migration_8
+          (id, bill_id, vegetable_id, vegetable_name, quantity, rate, total, created_at)
+        SELECT
+          id, bill_id, vegetable_id, vegetable_name, quantity,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          CAST(ROUND(total * 100) AS INTEGER),
+          created_at
+        FROM bill_items
+      `);
+      db.exec('DROP TABLE bill_items');
+      db.exec('ALTER TABLE bill_items_migration_8 RENAME TO bill_items');
+
+      // ── transactions ──
+      db.exec(`
+        CREATE TABLE transactions_migration_8 (
+          id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id             INTEGER NOT NULL,
+          vegetable_id            INTEGER NOT NULL,
+          vegetable_name_snapshot TEXT    NOT NULL,
+          weight                  REAL    NOT NULL,
+          unit                    TEXT    NOT NULL DEFAULT 'kg',
+          rate                    INTEGER NOT NULL,
+          base_amount             INTEGER NOT NULL,
+          commission_rate         REAL    NOT NULL DEFAULT 8.0,
+          commission_amount       INTEGER NOT NULL,
+          final_amount            INTEGER NOT NULL,
+          payment_type            TEXT    DEFAULT 'Credit',
+          payment_mode            TEXT    DEFAULT 'Credit',
+          paid_amount             INTEGER DEFAULT 0,
+          remaining_amount        INTEGER DEFAULT 0,
+          transaction_date        TEXT    NOT NULL,
+          bill_id                 INTEGER,
+          created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id)  REFERENCES customers(id),
+          FOREIGN KEY(vegetable_id) REFERENCES vegetables(id),
+          FOREIGN KEY(bill_id)      REFERENCES bills(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO transactions_migration_8
+          (id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
+           base_amount, commission_rate, commission_amount, final_amount,
+           payment_type, payment_mode, paid_amount, remaining_amount,
+           transaction_date, bill_id, created_at, updated_at)
+        SELECT
+          id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          CAST(ROUND(base_amount * 100) AS INTEGER),
+          commission_rate,
+          CAST(ROUND(commission_amount * 100) AS INTEGER),
+          CAST(ROUND(final_amount * 100) AS INTEGER),
+          payment_type, payment_mode,
+          CAST(ROUND(paid_amount * 100) AS INTEGER),
+          CAST(ROUND(remaining_amount * 100) AS INTEGER),
+          transaction_date, bill_id, created_at, updated_at
+        FROM transactions
+      `);
+      db.exec('DROP TABLE transactions');
+      db.exec('ALTER TABLE transactions_migration_8 RENAME TO transactions');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
+        ON transactions(customer_id, transaction_date)
+      `);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_bill ON transactions(bill_id)`);
+
+      // ── credit_transactions ──
+      db.exec(`
+        CREATE TABLE credit_transactions_migration_8 (
+          id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id                INTEGER NOT NULL,
+          bill_id                    INTEGER,
+          transaction_id             INTEGER,
+          transaction_type           TEXT    NOT NULL,
+          amount                     INTEGER NOT NULL,
+          payment_mode               TEXT    NOT NULL,
+          note                       TEXT,
+          balance_after_transaction  INTEGER NOT NULL,
+          created_at                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id)    REFERENCES customers(id),
+          FOREIGN KEY(bill_id)        REFERENCES bills(id),
+          FOREIGN KEY(transaction_id) REFERENCES transactions(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO credit_transactions_migration_8
+          (id, customer_id, bill_id, transaction_id, transaction_type, amount,
+           payment_mode, note, balance_after_transaction, created_at)
+        SELECT
+          id, customer_id, bill_id, transaction_id, transaction_type,
+          CAST(ROUND(amount * 100) AS INTEGER),
+          payment_mode, note,
+          CAST(ROUND(balance_after_transaction * 100) AS INTEGER),
+          created_at
+        FROM credit_transactions
+      `);
+      db.exec('DROP TABLE credit_transactions');
+      db.exec('ALTER TABLE credit_transactions_migration_8 RENAME TO credit_transactions');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_credit_transactions_customer
+        ON credit_transactions(customer_id)
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_credit_transactions_transaction
+        ON credit_transactions(transaction_id)
+      `);
+
+      logger.info('  ~ money columns converted to integer paise');
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

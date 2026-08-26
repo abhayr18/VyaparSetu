@@ -59,7 +59,7 @@ describe('creditModel.findBalanceMismatches', () => {
 
   it('reports a balance that drifted above its passbook', async () => {
     const { ctx, owing } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 400 WHERE id = ?', [owing.id]);
+    ctx.raw.run('UPDATE customers SET credit_balance = 40000 WHERE id = ?', [owing.id]);
 
     const mismatches = ctx.creditModel.findBalanceMismatches();
     expect(mismatches).toHaveLength(1);
@@ -75,7 +75,7 @@ describe('creditModel.findBalanceMismatches', () => {
     ctx.raw.run(
       `INSERT INTO credit_transactions
          (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
-       VALUES (?, 'PAYMENT_RECEIVED', 100, 'Cash', 'lost payment', 224)`,
+       VALUES (?, 'PAYMENT_RECEIVED', 10000, 'Cash', 'lost payment', 22400)`,
       [owing.id]
     );
 
@@ -93,24 +93,20 @@ describe('creditModel.findBalanceMismatches', () => {
     expect(ctx.creditModel.findBalanceMismatches()).toEqual([]);
   });
 
-  it('catches a one-paise drift', async () => {
+  it('catches a one-paise drift — the smallest unit that can exist', async () => {
     const { ctx, owing } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 324.01 WHERE id = ?', [owing.id]);
+    // 32401 paise is ₹324.01; the ledger sums to 32400. One paise apart is now a
+    // real, exact difference — there is no sub-paise float noise left to tolerate.
+    ctx.raw.run('UPDATE customers SET credit_balance = 32401 WHERE id = ?', [owing.id]);
 
     const mismatches = ctx.creditModel.findBalanceMismatches();
     expect(mismatches).toHaveLength(1);
     expect(mismatches[0].difference).toBe(0.01);
   });
 
-  it('does not flag float noise below a paise', async () => {
-    const { ctx, owing } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 324.0000001 WHERE id = ?', [owing.id]);
-    expect(ctx.creditModel.findBalanceMismatches()).toEqual([]);
-  });
-
   it('ignores soft-deleted customers', async () => {
     const { ctx, owing } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 999 WHERE id = ?', [owing.id]);
+    ctx.raw.run('UPDATE customers SET credit_balance = 99900 WHERE id = ?', [owing.id]);
     expect(ctx.creditModel.findBalanceMismatches()).toHaveLength(1);
 
     ctx.customerModel.remove(owing.id);
@@ -119,8 +115,8 @@ describe('creditModel.findBalanceMismatches', () => {
 
   it('orders the worst drift first', async () => {
     const { ctx, owing, settled } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 330 WHERE id = ?', [owing.id]);   // off by 6
-    ctx.raw.run('UPDATE customers SET credit_balance = 50 WHERE id = ?', [settled.id]);  // off by 50
+    ctx.raw.run('UPDATE customers SET credit_balance = 33000 WHERE id = ?', [owing.id]);   // off by ₹6
+    ctx.raw.run('UPDATE customers SET credit_balance = 5000 WHERE id = ?', [settled.id]);  // off by ₹50
 
     const mismatches = ctx.creditModel.findBalanceMismatches();
     expect(mismatches.map((m) => m.id)).toEqual([settled.id, owing.id]);
@@ -153,7 +149,7 @@ describe('the dashboard surfaces the check', () => {
 
   it('reports the drift, with the customer named', async () => {
     const { ctx, owing } = await shopWithSales();
-    ctx.raw.run('UPDATE customers SET credit_balance = 400 WHERE id = ?', [owing.id]);
+    ctx.raw.run('UPDATE customers SET credit_balance = 40000 WHERE id = ?', [owing.id]);
     const dashboardService = dashboardWithoutNetwork(ctx);
 
     const summary = await dashboardService.getDashboardSummary();

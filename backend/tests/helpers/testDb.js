@@ -222,7 +222,8 @@ export function makeVegetable(ctx, overrides = {}) {
 /** Reads customers.credit_balance directly, bypassing all service-layer math. */
 export function creditBalance(ctx, customerId) {
   const res = ctx.raw.exec('SELECT credit_balance FROM customers WHERE id = ?', [customerId]);
-  return res.length ? Number(res[0].values[0][0]) : 0;
+  // Money is paise on disk; the suite reads rupees, exactly as every model return does.
+  return res.length ? Number(res[0].values[0][0]) / 100 : 0;
 }
 
 /** All credit_transactions rows for a customer, oldest first. */
@@ -234,7 +235,13 @@ export function ledgerRows(ctx, customerId) {
   );
   if (!res.length) return [];
   const { columns, values } = res[0];
-  return values.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  return values.map((row) => {
+    const entry = Object.fromEntries(columns.map((c, i) => [c, row[i]]));
+    // amount and balance_after_transaction are paise on disk — read them as rupees.
+    entry.amount = Number(entry.amount) / 100;
+    entry.balance_after_transaction = Number(entry.balance_after_transaction) / 100;
+    return entry;
+  });
 }
 
 /**

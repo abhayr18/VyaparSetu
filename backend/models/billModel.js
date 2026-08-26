@@ -2,6 +2,7 @@
 
 const { execSelect, execRun, transaction } = require('../database/db');
 const { normalizeCommissionPercent } = require('../utils/calculation');
+const { toPaise, rowToRupees } = require('../utils/money');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
 
 /** Get all bills with customer names, and attach items */
@@ -11,7 +12,7 @@ function findAll() {
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      ORDER BY b.date DESC, b.id DESC`
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -27,7 +28,7 @@ function findById(id) {
      WHERE b.id = ?`,
     [id]
   );
-  const bill = rows[0] || null;
+  const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
     bill.items = getByBillId(bill.id);
   }
@@ -43,7 +44,7 @@ function findByNumber(number) {
      WHERE b.bill_number = ?`,
     [number]
   );
-  const bill = rows[0] || null;
+  const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
     bill.items = getByBillId(bill.id);
   }
@@ -60,7 +61,7 @@ function search(query) {
      WHERE b.bill_number LIKE ? OR c.name LIKE ?
      ORDER BY b.date DESC, b.id DESC`,
     [like, like]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -76,7 +77,7 @@ function findByCustomerId(customerId) {
      WHERE b.customer_id = ?
      ORDER BY b.date DESC, b.id DESC`,
     [customerId]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -115,8 +116,9 @@ function deleteSelfBookedLedgerRows(billId) {
 
 /** Adds `amount` to a customer's balance and writes the matching ledger row. */
 function bookCreditRow({ customerId, billId, amount, note }) {
+  const amountPaise = toPaise(amount);
   execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
-    amount,
+    amountPaise,
     customerId,
   ]);
   const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customerId]);
@@ -126,7 +128,7 @@ function bookCreditRow({ customerId, billId, amount, note }) {
     `INSERT INTO credit_transactions
        (customer_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
      VALUES (?, ?, 'CREDIT_ADDED', ?, 'Other', ?, ?)`,
-    [customerId, billId, amount, note, balanceAfter]
+    [customerId, billId, amountPaise, note, balanceAfter]
   );
 }
 
@@ -160,17 +162,17 @@ function create(data, { bookCredit = true } = {}) {
         actualNumber,
         data.customer_id,
         dateVal,
-        data.subtotal,
+        toPaise(data.subtotal),
         data.discount_type || 'fixed',
         data.discount_value || 0,
-        data.discount_amount || 0,
+        toPaise(data.discount_amount || 0),
         normalizeCommissionPercent(data.commission_rate),
-        data.commission_amount,
-        data.hamali_amount || 0,
-        data.transport_amount || 0,
-        data.final_amount,
-        data.paid_amount || 0,
-        data.remaining_amount || 0,
+        toPaise(data.commission_amount),
+        toPaise(data.hamali_amount || 0),
+        toPaise(data.transport_amount || 0),
+        toPaise(data.final_amount),
+        toPaise(data.paid_amount || 0),
+        toPaise(data.remaining_amount || 0),
         data.payment_type,
         data.payment_status,
       ]
@@ -220,17 +222,17 @@ function update(id, data) {
     if (data.bill_number) { fields.push('bill_number = ?'); values.push(data.bill_number); }
     if (data.customer_id) { fields.push('customer_id = ?'); values.push(data.customer_id); }
     if (data.date) { fields.push('date = ?'); values.push(data.date); }
-    if (data.subtotal !== undefined) { fields.push('subtotal = ?'); values.push(data.subtotal); }
+    if (data.subtotal !== undefined) { fields.push('subtotal = ?'); values.push(toPaise(data.subtotal)); }
     if (data.discount_type) { fields.push('discount_type = ?'); values.push(data.discount_type); }
     if (data.discount_value !== undefined) { fields.push('discount_value = ?'); values.push(data.discount_value); }
-    if (data.discount_amount !== undefined) { fields.push('discount_amount = ?'); values.push(data.discount_amount); }
+    if (data.discount_amount !== undefined) { fields.push('discount_amount = ?'); values.push(toPaise(data.discount_amount)); }
     if (data.commission_rate !== undefined) { fields.push('commission_rate = ?'); values.push(normalizeCommissionPercent(data.commission_rate)); }
-    if (data.commission_amount !== undefined) { fields.push('commission_amount = ?'); values.push(data.commission_amount); }
-    if (data.hamali_amount !== undefined) { fields.push('hamali_amount = ?'); values.push(data.hamali_amount); }
-    if (data.transport_amount !== undefined) { fields.push('transport_amount = ?'); values.push(data.transport_amount); }
-    if (data.final_amount !== undefined) { fields.push('final_amount = ?'); values.push(data.final_amount); }
-    if (data.paid_amount !== undefined) { fields.push('paid_amount = ?'); values.push(data.paid_amount); }
-    if (data.remaining_amount !== undefined) { fields.push('remaining_amount = ?'); values.push(data.remaining_amount); }
+    if (data.commission_amount !== undefined) { fields.push('commission_amount = ?'); values.push(toPaise(data.commission_amount)); }
+    if (data.hamali_amount !== undefined) { fields.push('hamali_amount = ?'); values.push(toPaise(data.hamali_amount)); }
+    if (data.transport_amount !== undefined) { fields.push('transport_amount = ?'); values.push(toPaise(data.transport_amount)); }
+    if (data.final_amount !== undefined) { fields.push('final_amount = ?'); values.push(toPaise(data.final_amount)); }
+    if (data.paid_amount !== undefined) { fields.push('paid_amount = ?'); values.push(toPaise(data.paid_amount)); }
+    if (data.remaining_amount !== undefined) { fields.push('remaining_amount = ?'); values.push(toPaise(data.remaining_amount)); }
     if (data.payment_type) { fields.push('payment_type = ?'); values.push(data.payment_type); }
     if (data.payment_status) { fields.push('payment_status = ?'); values.push(data.payment_status); }
 

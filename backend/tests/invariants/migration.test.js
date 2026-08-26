@@ -334,7 +334,7 @@ function scalar(ctx, sql) {
 describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
   it('boots at all', async () => {
     const ctx = await legacyDb(sql);
-    expect(scalar(ctx, 'SELECT COALESCE(MAX(version), 0) FROM schema_version')).toBe(7);
+    expect(scalar(ctx, 'SELECT COALESCE(MAX(version), 0) FROM schema_version')).toBe(8);
   });
 
   it('arrives at the same schema as a database created fresh', async () => {
@@ -366,8 +366,10 @@ describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
     expect(scalar(ctx, 'SELECT COUNT(*) FROM transactions')).toBe(1);
     expect(scalar(ctx, 'SELECT COUNT(*) FROM credit_transactions')).toBe(1);
 
-    // No migration touches a balance.
-    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(324);
+    // Migration 8 rescales to paise, but the amount owed is unchanged: ₹324 → 32400,
+    // now a whole integer rather than a float.
+    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(32400);
+    expect(scalar(ctx, 'SELECT typeof(credit_balance) FROM customers WHERE id = 1')).toBe('integer');
     // Row identity survives the table rebuild in migration 5.
     expect(scalar(ctx, 'SELECT bill_number FROM bills WHERE id = 1')).toBe('BILL-20260101-0001');
     expect(scalar(ctx, 'SELECT customer_id FROM bills WHERE id = 1')).toBe(2);
@@ -378,8 +380,9 @@ describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
 
     expect(scalar(ctx, 'SELECT commission_rate FROM transactions WHERE id = 1')).toBe(8);
     // ₹24 on ₹300 of goods is 8% either way — the unit was wrong, the money was not.
-    expect(scalar(ctx, 'SELECT commission_amount FROM transactions WHERE id = 1')).toBe(24);
-    expect(scalar(ctx, 'SELECT final_amount FROM transactions WHERE id = 1')).toBe(324);
+    // The amounts are paise now: ₹24 → 2400, ₹324 → 32400.
+    expect(scalar(ctx, 'SELECT commission_amount FROM transactions WHERE id = 1')).toBe(2400);
+    expect(scalar(ctx, 'SELECT final_amount FROM transactions WHERE id = 1')).toBe(32400);
   });
 
   it('leaves the passbook reconciled with the balance', async () => {
@@ -401,8 +404,8 @@ describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
     });
     expect(res.success).toBe(true);
 
-    // ₹324 already owed, plus ₹324 from this sale at the percentage rate.
-    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(648);
+    // ₹324 already owed, plus ₹324 from this sale at the percentage rate → ₹648, in paise.
+    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(64800);
     expect(ctx.creditModel.findBalanceMismatches()).toEqual([]);
   });
 
@@ -414,8 +417,9 @@ describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
 
     expect(scalar(ctx, 'SELECT COUNT(*) FROM schema_version')).toBe(versionRows);
     expect(scalar(ctx, 'SELECT COUNT(*) FROM transactions')).toBe(1);
-    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(324);
-    // Rates are already percentages now; a second pass must not multiply again.
+    expect(scalar(ctx, 'SELECT credit_balance FROM customers WHERE id = 1')).toBe(32400);
+    // Rates are already percentages and amounts already paise; a second pass must not
+    // multiply either one again.
     expect(scalar(ctx, 'SELECT commission_rate FROM transactions WHERE id = 1')).toBe(8);
   });
 

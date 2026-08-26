@@ -11,6 +11,7 @@
  */
 
 const { execSelect, execRun } = require('../database/db');
+const { toPaise, rowToRupees } = require('../utils/money');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ function findAll() {
      FROM vegetables
      WHERE is_deleted = 0
      ORDER BY name ASC`
-  );
+  ).map((v) => rowToRupees(v, 'vegetables'));
 }
 
 /**
@@ -35,7 +36,7 @@ function findById(id) {
      FROM vegetables WHERE id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'vegetables');
 }
 
 /**
@@ -68,7 +69,7 @@ function search(query) {
        CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
        name ASC`,
     [like, like, like]
-  );
+  ).map((v) => rowToRupees(v, 'vegetables'));
 }
 
 /**
@@ -85,14 +86,14 @@ function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
       `UPDATE vegetables
        SET rate = ?, unit = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [rate, unit.trim(), search_keywords.trim(), notes.trim(), existingId]
+      [toPaise(rate), unit.trim(), search_keywords.trim(), notes.trim(), existingId]
     );
   } else {
     // Insert fresh record
     execRun(
       `INSERT INTO vegetables (name, rate, unit, search_keywords, notes)
        VALUES (?, ?, ?, ?, ?)`,
-      [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim()]
+      [name.trim(), toPaise(rate), unit.trim(), search_keywords.trim(), notes.trim()]
     );
   }
 
@@ -101,7 +102,7 @@ function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
      FROM vegetables WHERE LOWER(name) = LOWER(?)`,
     [name.trim()]
   );
-  return resultRows[0];
+  return rowToRupees(resultRows[0], 'vegetables');
 }
 
 /**
@@ -113,7 +114,7 @@ function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' 
      SET name = ?, rate = ?, unit = ?, search_keywords = ?, notes = ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim(), id]
+    [name.trim(), toPaise(rate), unit.trim(), search_keywords.trim(), notes.trim(), id]
   );
   return findById(id);
 }

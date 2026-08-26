@@ -1,5 +1,6 @@
 // backend/models/creditModel.js
 const { execSelect, execRun, transaction } = require('../database/db');
+const { toPaise, toRupees, rowToRupees } = require('../utils/money');
 
 /** Get credit metrics summary */
 function getSummary() {
@@ -26,9 +27,9 @@ function getSummary() {
   const todayRecovered = recoveredRes[0]?.today_recovered || 0.0;
 
   return {
-    total_outstanding: Number(totalOutstanding.toFixed(2)),
-    today_added: Number(todayAdded.toFixed(2)),
-    today_recovered: Number(todayRecovered.toFixed(2))
+    total_outstanding: Number(toRupees(totalOutstanding).toFixed(2)),
+    today_added: Number(toRupees(todayAdded).toFixed(2)),
+    today_recovered: Number(toRupees(todayRecovered).toFixed(2))
   };
 }
 
@@ -39,7 +40,7 @@ function getCustomersWithBalance() {
      FROM customers
      WHERE credit_balance > 0
      ORDER BY credit_balance DESC, name ASC`
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /** Get transaction logs for a single customer */
@@ -51,7 +52,7 @@ function getCustomerTransactions(customerId) {
      WHERE ct.customer_id = ?
      ORDER BY ct.created_at DESC, ct.id DESC`,
     [customerId]
-  );
+  ).map((t) => rowToRupees(t, 'credit_transactions'));
 }
 
 /**
@@ -65,10 +66,12 @@ function getCustomerTransactions(customerId) {
  * loud. Every money test ends on this invariant; this is the same check run
  * against live data so drift surfaces on the dashboard instead of at settlement.
  *
- * @param {number} tolerance Rupees of slack. Above float noise, below one paise.
+ * @param {number} tolerance Paise of slack, default 0. Money is stored as whole
+ *   paise now, so a healthy balance equals its ledger *exactly* — any non-zero
+ *   difference is real drift, not the float noise the old REAL columns produced.
  * @returns {Array<{id, name, mobile, stored_balance, ledger_balance, difference}>}
  */
-function findBalanceMismatches(tolerance = 0.005) {
+function findBalanceMismatches(tolerance = 0) {
   const signedSum = `COALESCE(SUM(CASE
             WHEN ct.transaction_type = 'CREDIT_ADDED'      THEN ct.amount
             WHEN ct.transaction_type = 'PAYMENT_RECEIVED'  THEN -ct.amount
@@ -91,10 +94,10 @@ function findBalanceMismatches(tolerance = 0.005) {
 
   return rows.map((row) => ({
     ...row,
-    stored_balance: Number(Number(row.stored_balance || 0).toFixed(2)),
-    ledger_balance: Number(Number(row.ledger_balance || 0).toFixed(2)),
+    stored_balance: Number(toRupees(row.stored_balance).toFixed(2)),
+    ledger_balance: Number(toRupees(row.ledger_balance).toFixed(2)),
     difference: Number(
-      (Number(row.stored_balance || 0) - Number(row.ledger_balance || 0)).toFixed(2)
+      (toRupees(row.stored_balance) - toRupees(row.ledger_balance)).toFixed(2)
     ),
   }));
 }
@@ -102,13 +105,15 @@ function findBalanceMismatches(tolerance = 0.005) {
 /** Transactional payment registration */
 function recordPayment({ customer_id, amount, payment_mode, note }) {
   return transaction(() => {
+    const amountPaise = toPaise(amount);
+
     // Deduct from customer credit balance
     execRun(
       `UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`,
-      [amount, customer_id]
+      [amountPaise, customer_id]
     );
 
-    // Retrieve balance after
+    // Retrieve balance after (stored as paise)
     const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
     const balanceAfter = balanceRow[0]?.credit_balance || 0;
 
@@ -116,10 +121,10 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
     execRun(
       `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
        VALUES (?, 'PAYMENT_RECEIVED', ?, ?, ?, ?)`,
-      [customer_id, amount, payment_mode, note || 'Payment received', balanceAfter]
+      [customer_id, amountPaise, payment_mode, note || 'Payment received', balanceAfter]
     );
 
-    return { customer_id, balance_after_transaction: balanceAfter };
+    return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
   });
 }
 
@@ -133,16 +138,16 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
  * to explain the difference to the customer.
  */
 function recordAdjustment({ customer_id, amount, note }) {
-  const signedAmount = Number(amount);
+  const signedPaise = toPaise(amount);
 
   return transaction(() => {
     // Adjust customer credit balance (amount can be positive or negative)
     execRun(
       `UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`,
-      [signedAmount, customer_id]
+      [signedPaise, customer_id]
     );
 
-    // Retrieve balance after
+    // Retrieve balance after (stored as paise)
     const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
     const balanceAfter = balanceRow[0]?.credit_balance || 0;
 
@@ -150,10 +155,10 @@ function recordAdjustment({ customer_id, amount, note }) {
     execRun(
       `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
        VALUES (?, 'CREDIT_ADJUSTMENT', ?, 'Other', ?, ?)`,
-      [customer_id, signedAmount, note || 'Balance adjustment', balanceAfter]
+      [customer_id, signedPaise, note || 'Balance adjustment', balanceAfter]
     );
 
-    return { customer_id, balance_after_transaction: balanceAfter };
+    return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
   });
 }
 

@@ -15,6 +15,7 @@ const {
   DEFAULT_COMMISSION_PERCENT,
 } = require('../utils/calculation');
 const { execRun, execGet, transaction } = require('../database/db');
+const { toPaise } = require('../utils/money');
 
 /**
  * Returns local YYYY-MM-DD date string.
@@ -145,8 +146,10 @@ async function createTransaction(payload) {
       });
 
       if (finalRemaining > 0) {
+        const remainingPaise = toPaise(finalRemaining);
+
         execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
-          finalRemaining,
+          remainingPaise,
           customer_id,
         ]);
 
@@ -164,7 +167,7 @@ async function createTransaction(payload) {
           [
             customer_id,
             newTransaction.id,
-            finalRemaining,
+            remainingPaise,
             payment_mode || 'Credit',
             `Udhar added: ${vegName} (${numWeight}kg)`,
             balanceAfter,

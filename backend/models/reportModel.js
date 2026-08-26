@@ -1,5 +1,6 @@
 // backend/models/reportModel.js
 const { execSelect } = require('../database/db');
+const { toRupees, rowToRupees } = require('../utils/money');
 
 /** Get sales summary + bills list for date range */
 function getSalesSummary(startDate, endDate) {
@@ -31,9 +32,22 @@ function getSalesSummary(startDate, endDate) {
     [startDate, endDate]
   );
 
+  const summary = summaryRes[0] || {};
+
   return {
-    summary: summaryRes[0] || {},
-    bills
+    summary: {
+      ...summary,
+      total_subtotal: toRupees(summary.total_subtotal),
+      total_discount: toRupees(summary.total_discount),
+      total_commission: toRupees(summary.total_commission),
+      total_sales: toRupees(summary.total_sales),
+      total_paid: toRupees(summary.total_paid),
+      total_remaining: toRupees(summary.total_remaining),
+      cash_collection: toRupees(summary.cash_collection),
+      upi_collection: toRupees(summary.upi_collection),
+      credit_sales: toRupees(summary.credit_sales),
+    },
+    bills: bills.map((b) => rowToRupees(b, 'bills')),
   };
 }
 
@@ -54,7 +68,12 @@ function getCustomerPurchaseSummary(startDate, endDate) {
      GROUP BY c.id
      ORDER BY total_purchase DESC, c.name ASC`,
     [startDate, endDate]
-  );
+  ).map((r) => ({
+    ...r,
+    total_purchase: toRupees(r.total_purchase),
+    total_paid: toRupees(r.total_paid),
+    total_pending_credit: toRupees(r.total_pending_credit),
+  }));
 }
 
 /** Get vegetable sales summary */
@@ -74,7 +93,10 @@ function getVegetableSalesSummary(startDate, endDate) {
      GROUP BY bi.vegetable_id, bi.vegetable_name
      ORDER BY total_sales DESC`,
     [startDate, endDate]
-  );
+  ).map((r) => ({
+    ...r,
+    total_sales: toRupees(r.total_sales),
+  }));
 }
 
 /** Get credit balances, additions, and collections on a specific date */
@@ -113,11 +135,11 @@ function getCreditSummary(dateVal) {
 
   return {
     summary: {
-      total_outstanding: totalOutstanding,
-      credit_added: creditAdded,
-      credit_recovered: creditRecovered
+      total_outstanding: toRupees(totalOutstanding),
+      credit_added: toRupees(creditAdded),
+      credit_recovered: toRupees(creditRecovered)
     },
-    customers
+    customers: customers.map((c) => rowToRupees(c, 'customers'))
   };
 }
 
@@ -162,9 +184,9 @@ function getCommissionSummary(startDate, endDate) {
   );
 
   return {
-    total_commission: totalCommission,
-    dateWise,
-    billWise
+    total_commission: toRupees(totalCommission),
+    dateWise: dateWise.map((d) => ({ ...d, total_commission: toRupees(d.total_commission) })),
+    billWise: billWise.map((b) => rowToRupees(b, 'bills'))
   };
 }
 
