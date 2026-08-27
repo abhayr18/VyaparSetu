@@ -28,8 +28,34 @@ const FRONTEND_DIST = process.env.FRONTEND_DIST
   ? path.resolve(process.env.FRONTEND_DIST)
   : path.join(__dirname, '../frontend/dist');
 
+// ─── Network binding ──────────────────────────────────────────────────────────
+// Loopback only. VyapaarSetu is a single-PC app: the API and the SPA exist for the
+// person sitting at that machine. Express's default (all interfaces) puts the
+// shop's entire customer ledger — names, mobile numbers, outstanding balances —
+// on the market's wifi for any phone or laptop to read *and write*, with no
+// password anywhere in the stack. HOST exists for deliberate local testing; a
+// client build must never set it.
+const DEFAULT_HOST = '127.0.0.1';
+
+// Only loopback origins may call the API cross-origin. In the packaged app the SPA
+// is served by this same server, so every request is same-origin and CORS never
+// comes into play; this rule exists for `npm run dev`, where Vite owns :5173 and
+// the API :5000. The previous `origin: '*'` meant any web page the vendor happened
+// to have open could read every API response — no credentials are involved, so the
+// browser would hand over the body without a second thought.
+const LOOPBACK_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(cors({ origin: '*' }));
+app.use(cors({
+  origin(origin, callback) {
+    // No Origin header: a same-origin request, curl, or the Electron renderer
+    // talking to its own server. Nothing for CORS to police.
+    if (!origin) return callback(null, true);
+    // Deny by omitting the headers rather than raising — an Error here would
+    // surface to the vendor as a 500 instead of the browser's own CORS block.
+    return callback(null, LOOPBACK_ORIGIN.test(origin));
+  },
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
@@ -42,6 +68,9 @@ app.use(requestLogger);
 app.use('/api/license', require('./routes/licenseRoutes'));
 app.use('/api', function licenseGuard(req, res, next) {
   if (req.path === '/health') return next(); // liveness probe stays open
+  // Crash reports must get through while the app is locked, or the one screen a
+  // brand-new client sees is exactly the one we would be blind to.
+  if (req.path === '/client-log') return next();
   if (licenseService.isActivated()) return next();
   return res.status(403).json({
     success: false,
@@ -81,26 +110,74 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ─── Start: Initialize DB then listen ─────────────────────────────────────────
+
 /**
- * Initialize the database, then start listening.
+ * Turn the `port` option into an ordered list of candidates to try.
+ * A number or 0 becomes a single-entry list; an array passes through.
+ */
+function normalizePorts(port) {
+  if (Array.isArray(port)) return port.filter((p) => p != null);
+  if (port != null) return [port];
+  if (process.env.PORT) return [Number(process.env.PORT)];
+  return [5000];
+}
+
+/** Bind one port, resolving with the server once it is actually listening. */
+function listenOnce(port, host) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, host, () => {
+      // Hand the socket off: from here a network error is a runtime event to log,
+      // not a startup failure, and rejecting a settled promise would swallow it.
+      server.removeListener('error', reject);
+      server.on('error', (err) => logger.error(`HTTP server error: ${err.message}`));
+      resolve({ server, port: server.address().port });
+    });
+    server.once('error', reject);
+  });
+}
+
+/**
+ * Bind the first free port from `candidates`, falling back to an OS-assigned one.
+ *
+ * A client PC is not a controlled environment — another program may already hold
+ * the port we prefer. Walking the list and ending on 0 means a conflict costs us a
+ * stable origin (and with it the browser's per-origin localStorage) instead of
+ * leaving the vendor with an app that refuses to start at all.
+ */
+async function listenOnFirstFreePort(candidates, host) {
+  const queue = [...candidates, 0]; // 0 = let the OS pick; the guaranteed tail
+  let lastErr;
+  for (const port of queue) {
+    try {
+      return await listenOnce(port, host);
+    } catch (err) {
+      if (err.code !== 'EADDRINUSE') throw err;
+      lastErr = err;
+      logger.warn(`Port ${port} is already in use; trying the next candidate.`);
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Initialize the database, then start listening on loopback.
  * @param {object} [opts]
- * @param {number} [opts.port] Port to bind. 0 lets the OS assign a free port —
- *   the packaged app uses this and reads the chosen port back from the result.
+ * @param {number|number[]} [opts.port] Port to bind, or an ordered list of
+ *   candidates to try in turn. 0 lets the OS assign a free port. If every
+ *   candidate is taken, an OS-assigned port is used rather than failing to boot.
+ * @param {string} [opts.host] Bind address. Defaults to loopback; override only
+ *   for deliberate local testing.
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-async function startServer({ port } = {}) {
-  const requestedPort = port != null ? port : process.env.PORT || 5000;
+async function startServer({ port, host } = {}) {
+  const candidates = normalizePorts(port);
+  const bindHost = host || process.env.HOST || DEFAULT_HOST;
   await initializeDatabase();
 
-  return new Promise((resolve, reject) => {
-    const server = app.listen(requestedPort, () => {
-      const actualPort = server.address().port;
-      logger.info(`VyapaarSetu backend running on http://localhost:${actualPort}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      resolve({ server, port: actualPort });
-    });
-    server.on('error', reject);
-  });
+  const result = await listenOnFirstFreePort(candidates, bindHost);
+  logger.info(`VyapaarSetu backend running on http://${bindHost}:${result.port}`);
+  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  return result;
 }
 
 // Boot immediately only when run directly (node server.js / npm start). When the

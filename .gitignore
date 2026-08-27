@@ -10,6 +10,10 @@ release/
 # SQLite databases
 *.db
 database/vyapaarsetu.db
+# WAL mode keeps recent writes in these two sidecars, so `*.db` does not cover
+# them and a `git add -A` would commit a fragment of real client data.
+*.db-wal
+*.db-shm
 
 # Drive credentials (matched in any directory, wherever the tokens land)
 drive_tokens.json

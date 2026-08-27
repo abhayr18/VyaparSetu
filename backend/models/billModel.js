@@ -1,6 +1,6 @@
 // backend/models/billModel.js
 
-const { execSelect, execRun, transaction } = require('../database/db');
+const { execSelect, execGet, execRun, transaction } = require('../database/db');
 const { normalizeCommissionPercent } = require('../utils/calculation');
 const { toPaise, rowToRupees } = require('../utils/money');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
@@ -133,6 +133,36 @@ function bookCreditRow({ customerId, billId, amount, note }) {
 }
 
 /**
+ * The next bill number: a plain running serial — `B-1`, `B-2`, `B-437`.
+ *
+ * The vendor reads this number out loud, writes it on a paper slip and searches for
+ * it later, so shortness is the whole requirement. The old format spelled out the
+ * period, the customer id and four digits of the epoch clock —
+ * `BILL-20260801-20260828-008-3640`, 31 characters that no code ever parsed.
+ * Everything it encoded is already its own column (`date`, `period_start`,
+ * `period_end`, `customer_id`) and already shown next to the number in the UI.
+ *
+ * Only `B-<digits>` counts toward the maximum, so bills issued under the old format
+ * keep their numbers untouched and can never collide with a new one. A deleted bill
+ * leaves a gap in the sequence — the same thing a paper bill book does, and what
+ * makes a removed settlement visible to anyone auditing the run.
+ *
+ * MUST be called inside the transaction that does the INSERT: this reads the table it
+ * is about to be written to, and read-then-write is only atomic if nothing can slip
+ * between the two.
+ */
+function nextBillNumber() {
+  // GLOB, not LIKE: `LIKE 'B-%'` also matches `B-` followed by anything, and CAST
+  // would silently turn a non-numeric tail into 0.
+  const row = execGet(
+    `SELECT MAX(CAST(SUBSTR(bill_number, 3) AS INTEGER)) AS maxSerial
+       FROM bills
+      WHERE bill_number GLOB 'B-[0-9]*'`
+  );
+  return `B-${Number(row?.maxSerial || 0) + 1}`;
+}
+
+/**
  * Create a new bill and its items.
  *
  * @param {object} data
@@ -148,20 +178,26 @@ function bookCreditRow({ customerId, billId, amount, note }) {
  *   day's debt.
  */
 function create(data, { bookCredit = true } = {}) {
-  const actualNumber = data.bill_number || `BILL-${Date.now()}`;
   const dateVal = data.date || new Date().toISOString().split('T')[0];
 
   return transaction(() => {
+    // Drawn inside the transaction — see nextBillNumber.
+    const actualNumber = data.bill_number || nextBillNumber();
+
     const info = execRun(
       `INSERT INTO bills (
-        bill_number, customer_id, date, subtotal, discount_type, discount_value,
+        bill_number, customer_id, date, period_start, period_end, subtotal, discount_type, discount_value,
         discount_amount, commission_rate, commission_amount, hamali_amount, transport_amount, final_amount,
         paid_amount, remaining_amount, payment_type, payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         actualNumber,
         data.customer_id,
         dateVal,
+        // NULL unless this bill covers a span of days. A single-day bill's period is
+        // its own `date`, so writing it here twice would only invite the two to drift.
+        data.period_start || null,
+        data.period_end || null,
         toPaise(data.subtotal),
         data.discount_type || 'fixed',
         data.discount_value || 0,
@@ -311,6 +347,7 @@ module.exports = {
   findByCustomerId,
   search,
   create,
+  nextBillNumber,
   update,
   remove,
   selfBookedCredit,

@@ -6,6 +6,7 @@
 
 const { execSelect, execRun } = require('../database/db');
 const { rowToRupees } = require('../utils/money');
+const { splitSigned } = require('../utils/creditLedger');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -152,7 +153,13 @@ function getLedger(customerId) {
     [customerId]
   ).map((b) => rowToRupees(b, 'bills'));
 
-  // All credit transactions for this customer
+  // All credit transactions for this customer.
+  //
+  // Newest first, except an opening balance, which is pinned to the bottom however
+  // late it was entered: it represents what the customer owed before any of this,
+  // so a passbook that showed it above later rows would read as though the debt
+  // appeared today. Shops migrating off a notebook often enter a sale first and
+  // remember the old balance afterwards, which is exactly when this matters.
   const transactions = execSelect(
     `SELECT ct.id, ct.transaction_type, ct.amount, ct.payment_mode,
             ct.note, ct.balance_after_transaction, ct.created_at,
@@ -160,7 +167,8 @@ function getLedger(customerId) {
      FROM credit_transactions ct
      LEFT JOIN bills b ON ct.bill_id = b.id
      WHERE ct.customer_id = ?
-     ORDER BY ct.created_at DESC, ct.id DESC`,
+     ORDER BY CASE WHEN ct.transaction_type = 'OPENING_BALANCE' THEN 1 ELSE 0 END ASC,
+              ct.created_at DESC, ct.id DESC`,
     [customerId]
   ).map((t) => rowToRupees(t, 'credit_transactions'));
 
@@ -171,20 +179,14 @@ function getLedger(customerId) {
   // subtraction. Adjustments were previously left out of both, so any written-off
   // or corrected balance made the summary contradict the outstanding beside it.
   //
-  // A signed adjustment belongs on whichever side its sign puts it: a positive one
-  // is debt added, a negative one is debt forgiven and reads as recovery.
-  const adjustments = transactions.filter((t) => t.transaction_type === 'CREDIT_ADJUSTMENT');
-
-  const totalBilled  = bills.reduce((s, b) => s + Number(b.final_amount  || 0), 0);
-  const totalPaid    = bills.reduce((s, b) => s + Number(b.paid_amount   || 0), 0);
-  const totalCredit  = transactions
-    .filter(t => t.transaction_type === 'CREDIT_ADDED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0)
-    + adjustments.reduce((s, t) => s + Math.max(0, Number(t.amount) || 0), 0);
-  const totalRecovered = transactions
-    .filter(t => t.transaction_type === 'PAYMENT_RECEIVED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0)
-    + adjustments.reduce((s, t) => s + Math.max(0, -(Number(t.amount) || 0)), 0);
+  // splitSigned derives both sides from the same signs that move credit_balance
+  // (utils/creditLedger), so the identity holds by construction rather than by two
+  // hand-maintained filter lists happening to agree. A row lands on whichever side
+  // its sign puts it: a positive adjustment is debt added, a negative one is debt
+  // forgiven and reads as recovery.
+  const totalBilled = bills.reduce((s, b) => s + Number(b.final_amount || 0), 0);
+  const totalPaid   = bills.reduce((s, b) => s + Number(b.paid_amount  || 0), 0);
+  const { totalCredit, totalRecovered } = splitSigned(transactions);
 
   return {
     customer,

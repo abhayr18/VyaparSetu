@@ -17,7 +17,7 @@ import MarathiInput from './MarathiInput';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertIcon } from './Icons';
 
-const EMPTY_FORM = { name: '', mobile: '', address: '', notes: '' };
+const EMPTY_FORM = { name: '', mobile: '', address: '', notes: '', opening_balance: '' };
 
 export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
   const { t } = useTranslation();
@@ -32,7 +32,15 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
   useEffect(() => {
     if (isOpen) {
       setForm(customer
-        ? { name: customer.name, mobile: customer.mobile, address: customer.address || '', notes: customer.notes || '' }
+        ? {
+            name: customer.name,
+            mobile: customer.mobile,
+            address: customer.address || '',
+            notes: customer.notes || '',
+            // Never prefilled on an edit: this field opens a ledger, it does not
+            // display one. What the customer owes now lives in their passbook.
+            opening_balance: '',
+          }
         : EMPTY_FORM
       );
       setErrors({});
@@ -48,6 +56,16 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     if (!form.name.trim())   errs.name   = t('customers.nameRequired');
     if (!form.mobile.trim()) errs.mobile = t('customers.mobileRequired');
     else if (!/^\d{10}$/.test(form.mobile.trim())) errs.mobile = t('customers.mobileInvalid');
+
+    // Blank is the normal case — most customers start at zero. Anything typed has to
+    // be a real amount, because it becomes debt the moment it is saved.
+    const opening = form.opening_balance.trim();
+    if (opening !== '') {
+      const amount = Number(opening);
+      if (!Number.isFinite(amount) || amount < 0) {
+        errs.opening_balance = t('customers.openingBalanceInvalid');
+      }
+    }
     return errs;
   }
 
@@ -66,12 +84,22 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     setSaving(true);
     setApiError('');
 
-    const result = await onSubmit({
+    const payload = {
       name:    form.name.trim(),
       mobile:  form.mobile.trim(),
       address: form.address.trim(),
       notes:   form.notes.trim(),
-    });
+    };
+
+    // Only sent in Add mode, and only when filled in. An opening balance can be set
+    // once and is then corrected through the ledger, so there is nothing here to
+    // resend on an edit — and resending it would look like a second opening.
+    const opening = form.opening_balance.trim();
+    if (!isEdit && opening !== '') {
+      payload.opening_balance = opening;
+    }
+
+    const result = await onSubmit(payload);
 
     setSaving(false);
 
@@ -174,6 +202,33 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
               onChange={handleChange}
             />
           </div>
+
+          {/* ── Opening Balance (Add only) ────────────────────────────────── */}
+          {/* For customers arriving from a paper notebook already owing money. It
+              goes straight onto their ledger as an opening entry — no bill is
+              fabricated, so sales and commission reports stay truthful. */}
+          {!isEdit && (
+            <div className="form-group">
+              <label className="form-label" htmlFor="customer-opening-balance">
+                {t('customers.openingBalance')}
+              </label>
+              <input
+                id="customer-opening-balance"
+                name="opening_balance"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                className={`form-input${errors.opening_balance ? ' input-error' : ''}`}
+                placeholder="0.00"
+                value={form.opening_balance}
+                onChange={handleChange}
+              />
+              {errors.opening_balance
+                ? <span className="field-error">{errors.opening_balance}</span>
+                : <span className="field-hint">{t('customers.openingBalanceHint')}</span>}
+            </div>
+          )}
 
           {/* ── Actions ──────────────────────────────────────────────────── */}
           <div className="modal-actions">

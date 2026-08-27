@@ -6,12 +6,19 @@
  * 3. 📄 Download PDF
  */
 
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { useTranslation } from '../hooks/useTranslation';
 import { generateBillWhatsAppMessage, createWhatsAppShareUrl } from '../utils/whatsappShare';
-import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
+import {
+  grossItems,
+  grossSubtotal,
+  groupItemsByDate,
+  isPeriodBill,
+  formatBillDate,
+  formatBillPeriod,
+} from '../utils/billDisplay';
 
 export default function TodayBillModal({ isOpen, onClose, bill }) {
   const { t, language } = useTranslation();
@@ -20,11 +27,20 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
 
   if (!isOpen || !bill) return null;
 
-  const items = bill.items || [];
+  const isMarathi = language === 'mr';
   const customerName = bill.customer_name || bill.customer?.name || '';
   const customerMobile = bill.customer_mobile || bill.customer?.mobile || '';
-  // null when this bill predates the commission_rate column — see parseStoredPercent.
-  const billRate = parseStoredPercent(bill.commission_rate);
+
+  // Commission is folded into the item rates rather than listed, so this sheet shows
+  // the customer an all-in price with nothing to haggle over. The stored figures are
+  // untouched and the vendor's commission report still has them in full.
+  const items = grossItems(bill.items, bill);
+  const displaySubtotal = grossSubtotal(bill);
+
+  // A bill covering a period is read datewise — one section per day, each with its
+  // own total, then the grand total.
+  const dayGroups = isPeriodBill(bill) ? groupItemsByDate(items) : null;
+  const periodLabel = formatBillPeriod(bill, isMarathi);
 
   // Generate WhatsApp Share URL
   const waMessage = generateBillWhatsAppMessage(bill, language, t);
@@ -98,7 +114,7 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
               📄 {t('billing.receiptTitle')} ({bill.bill_number})
             </h2>
             <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
-              {t('dashboard.date')}: {bill.date}
+              {dayGroups ? t('billing.period') : t('dashboard.date')}: {periodLabel}
             </span>
           </div>
           <button
@@ -127,7 +143,9 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
             </div>
             <div style={{ textAlign: 'right' }}>
               <strong style={{ color: '#0f172a' }}>{t('billing.billNumber')}:</strong> {bill.bill_number}<br />
-              <strong style={{ color: '#0f172a' }}>{t('dashboard.date')}:</strong> {bill.date}
+              <strong style={{ color: '#0f172a' }}>
+                {dayGroups ? t('billing.period') : t('dashboard.date')}:
+              </strong> {periodLabel}
             </div>
           </div>
 
@@ -143,35 +161,64 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '6px 10px' }}>{idx + 1}</td>
-                  <td style={{ padding: '6px 10px', fontWeight: 600 }}>{item.vegetable_name}</td>
-                  <td style={{ padding: '6px 10px' }}>{item.quantity} {item.vegetable_unit || 'kg'}</td>
-                  <td style={{ padding: '6px 10px' }}>₹{item.rate}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(item.total).toFixed(2)}</td>
-                </tr>
-              ))}
+              {dayGroups
+                ? (() => {
+                    // Numbered across the whole bill rather than restarting each day, so
+                    // "line 7" means one thing when the customer rings up about it.
+                    let lineNo = 0;
+                    return dayGroups.map((group, gIdx) => (
+                      <Fragment key={group.date || `undated-${gIdx}`}>
+                        <tr style={{ background: '#f1f5f9' }}>
+                          <td colSpan={5} style={{ padding: '6px 10px', fontWeight: 700, color: '#334155' }}>
+                            {t('dashboard.date')}:{' '}
+                            {group.date
+                              ? formatBillDate(group.date, isMarathi)
+                              : (isMarathi ? 'नोंद नाही' : 'Not recorded')}
+                          </td>
+                        </tr>
+
+                        {group.items.map((item, idx) => {
+                          lineNo += 1;
+                          return (
+                            <tr key={`${gIdx}-${idx}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                              <td style={{ padding: '6px 10px' }}>{lineNo}</td>
+                              <td style={{ padding: '6px 10px', fontWeight: 600 }}>{item.vegetable_name}</td>
+                              <td style={{ padding: '6px 10px' }}>{item.quantity} {item.vegetable_unit || 'kg'}</td>
+                              <td style={{ padding: '6px 10px' }}>₹{Number(item.rate).toFixed(2)}</td>
+                              <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(item.total).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+
+                        <tr style={{ borderBottom: '2px solid #cbd5e1' }}>
+                          <td colSpan={4} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: '#475569' }}>
+                            {t('billing.dayTotal')}
+                          </td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700 }}>
+                            ₹{group.subtotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      </Fragment>
+                    ));
+                  })()
+                : items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '6px 10px' }}>{idx + 1}</td>
+                      <td style={{ padding: '6px 10px', fontWeight: 600 }}>{item.vegetable_name}</td>
+                      <td style={{ padding: '6px 10px' }}>{item.quantity} {item.vegetable_unit || 'kg'}</td>
+                      <td style={{ padding: '6px 10px' }}>₹{Number(item.rate).toFixed(2)}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(item.total).toFixed(2)}</td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
 
-          {/* Bill Totals Summary */}
+          {/* Bill Totals Summary. No commission line: it is folded into the rates
+              above, so this column adds up to the grand total on its own. */}
           <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '0.75rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span>{t('billing.grandTotal')}:</span>
-              <strong>₹{Number(bill.subtotal).toFixed(2)}</strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0284c7' }}>
-              {/* The rate comes off the bill, not from Settings: a bill issued before
-                  the vendor changed the rate was charged at the old one, and showing
-                  today's figure against last month's amount would not add up. It is
-                  omitted rather than defaulted when the bill predates the column. */}
-              <span>
-                {t('billing.commissionAmount')}
-                {billRate === null ? '' : ` (${formatCommissionPercent(billRate)})`}
-                :
-              </span>
-              <strong>+₹{Number(bill.commission_amount).toFixed(2)}</strong>
+              <strong>₹{displaySubtotal.toFixed(2)}</strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: '#16a34a', fontWeight: 800, marginTop: '4px' }}>
               <span>{t('transactions.finalAmount')}:</span>

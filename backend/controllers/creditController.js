@@ -41,11 +41,19 @@ async function adjustCredit(req, res) {
   res.status(400).json({ success: false, error: result.error });
 }
 
+async function recordOpeningBalance(req, res) {
+  const payload = req.body;
+  const result = await creditService.recordOpeningBalance(payload);
+  if (result.success) return res.status(201).json({ success: true, data: result.data });
+  res.status(400).json({ success: false, error: result.error });
+}
+
 module.exports = {
   getSummary,
   getCustomers,
   getCustomerById,
   getTransactions,
   collectPayment,
-  adjustCredit
+  adjustCredit,
+  recordOpeningBalance
 };

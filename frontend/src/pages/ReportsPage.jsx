@@ -8,7 +8,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { PhoneIcon, PrintIcon, AlertIcon, ChartIcon, ReceiptIcon, UsersIcon, LeafIcon, CheckIcon, SaveIcon, FolderIcon } from '../components/Icons';
+import { PhoneIcon, AlertIcon, ChartIcon, ReceiptIcon, UsersIcon, LeafIcon, CheckIcon, SaveIcon, FolderIcon, PrintIcon } from '../components/Icons';
 
 export default function ReportsPage() {
   const { t } = useTranslation();
@@ -21,8 +21,6 @@ export default function ReportsPage() {
   } = useReports();
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-
-  const handlePrint = () => window.print();
 
   const handleDownloadPDF = async () => {
     const reportElement = document.getElementById('report-content-area');
@@ -70,6 +68,32 @@ export default function ReportsPage() {
       document.body.classList.remove('pdf-mode');
       setIsGeneratingPdf(false);
     }
+  };
+
+  /**
+   * Print the report through the browser's own print dialog.
+   *
+   * The body class is what tells globals.css to step aside — its @media print rules
+   * hide everything but a bill's #receipt-print-area, which on this page would
+   * produce a blank sheet. Cleared on 'afterprint', with a timer as a backstop
+   * because that event does not fire reliably on every platform when the dialog is
+   * cancelled, and a class left behind would break the on-screen layout.
+   */
+  const handlePrint = () => {
+    document.body.classList.add('printing-report');
+
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove('printing-report');
+      window.removeEventListener('afterprint', cleanup);
+      clearTimeout(backstop);
+    };
+    const backstop = setTimeout(cleanup, 60000);
+    window.addEventListener('afterprint', cleanup);
+
+    window.print();
   };
 
   const REPORT_TABS = [
@@ -457,7 +481,22 @@ export default function ReportsPage() {
       <style dangerouslySetInnerHTML={{ __html: `
         .print-header { display: none; }
         @media print {
-          .sidebar, #main-sidebar, .topbar, .reports-selectors, .reports-filters, .no-print { display: none !important; visibility: hidden !important; }
+          /* globals.css hides the whole document so a bill can print alone. When we
+             are printing a report we opt out of that (body.printing-report) and
+             reveal the report area instead — otherwise this page prints blank. */
+          body.printing-report #report-content-area,
+          body.printing-report #report-content-area * { visibility: visible !important; }
+          body.printing-report #report-content-area {
+            width: 100% !important; padding: 0 !important; margin: 0 !important;
+          }
+          /* The shell indents the page for the fixed sidebar and topbar. Both are
+             display:none when printing, so their offsets have to go as well or every
+             sheet is pushed right by a sidebar width and down by a topbar. Deliberately
+             NOT position:absolute — an absolutely positioned block does not paginate,
+             so a multi-page report (a full customer list) would be clipped to page 1. */
+          body.printing-report .main-content { margin-left: 0 !important; }
+          .sidebar, #main-sidebar, .topbar, .reports-selectors, .reports-filters, .no-print,
+          .toast, .modal-backdrop { display: none !important; visibility: hidden !important; }
           main, .content, .reports-page { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 100% !important; }
           .card { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
           body { color: #000 !important; background: #fff !important; }
@@ -478,6 +517,10 @@ export default function ReportsPage() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-outline" onClick={fetchReport} disabled={loading}>↻ Refresh</button>
+          <button className="btn btn-outline" onClick={handlePrint} disabled={!hasData() || isGeneratingPdf} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <PrintIcon style={{ width: '15px', height: '15px' }} />
+            {t('common.print') || 'Print'}
+          </button>
           <button className="btn btn-primary" onClick={handleDownloadPDF} disabled={!hasData() || isGeneratingPdf} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {isGeneratingPdf ? <span className="spinner" style={{ width: 15, height: 15 }} /> : <FolderIcon style={{ width: '15px', height: '15px' }} />} 
             {isGeneratingPdf ? 'Generating...' : 'Download PDF'}

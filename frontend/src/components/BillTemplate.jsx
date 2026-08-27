@@ -1,6 +1,14 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import useSettings from '../hooks/useSettings';
 import { useTranslation } from '../hooks/useTranslation';
+import {
+  grossItems,
+  grossSubtotal,
+  groupItemsByDate,
+  isPeriodBill,
+  formatBillDate,
+  formatBillPeriod,
+} from '../utils/billDisplay';
 
 // Reusable Marathi combined numbers lookup (20-99)
 const marathiCombined = {
@@ -89,19 +97,59 @@ export default function BillTemplate({ bill }) {
 
   if (!bill) return null;
 
-  const subtotal = bill.subtotal || 0;
   const discountAmount = bill.discount_amount || 0;
-  const commissionAmount = bill.commission_amount || 0;
   const finalAmount = bill.final_amount || 0;
   const paidAmount = bill.paid_amount || 0;
   const remainingAmount = bill.remaining_amount || 0;
 
   const isMarathi = language === 'mr';
+
+  // Commission is folded into the item rates and never shown as a line. The subtotal
+  // shown is therefore the grossed one, so the column above it adds up to it and
+  // subtotal − discount + hamali + transport still lands on Total Payable.
+  const displayItems = grossItems(bill.items, bill);
+  const displaySubtotal = grossSubtotal(bill);
+
+  // A bill covering a period prints its lines under each day; a single-day bill
+  // prints one flat table, exactly as it always has.
+  const dayGroups = isPeriodBill(bill) ? groupItemsByDate(displayItems) : null;
+  const periodLabel = formatBillPeriod(bill, isMarathi);
+
   const themeColor = isMarathi ? '#b71c1c' : '#1a6b3c'; // Traditional Red Ink for Marathi APMC, Slate Green for English
 
+  const cellBorder = `1.5px solid ${themeColor}`;
+
+  /** One vegetable line. Shared by the flat and the datewise renderings. */
+  function renderItemRow(item, key) {
+    const isKg = item.vegetable_unit === 'kg';
+    return (
+      <tr key={key} style={{ borderBottom: `1px solid ${themeColor}` }}>
+        <td style={{ padding: '8px', borderRight: cellBorder, fontWeight: '600' }}>
+          {item.vegetable_name}
+        </td>
+        {/* unit quantity column */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'center' }}>
+          {!isKg ? `${item.quantity} ${item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : ''}` : '—'}
+        </td>
+        {/* weight column */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
+          {isKg ? `${item.quantity} kg` : '—'}
+        </td>
+        {/* rate */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
+          ₹{Number(item.rate).toFixed(2)}
+        </td>
+        {/* amount */}
+        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
+          ₹{Number(item.total).toFixed(2)}
+        </td>
+      </tr>
+    );
+  }
+
   // Extract market location / city
-  const city = settings.address 
-    ? settings.address.split(',').pop().trim() 
+  const city = settings.address
+    ? settings.address.split(',').pop().trim()
     : (isMarathi ? 'फलटण' : 'Phaltan');
 
   return (
@@ -244,10 +292,12 @@ export default function BillTemplate({ bill }) {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>
-              {isMarathi ? 'दिनांक :' : 'Date :'}
+              {dayGroups
+                ? (isMarathi ? 'कालावधी :' : 'Period :')
+                : (isMarathi ? 'दिनांक :' : 'Date :')}
             </span>
-            <span style={{ borderBottom: '1px dotted #555', paddingBottom: '2px' }}>
-              {new Date(bill.date).toLocaleDateString(isMarathi ? 'mr-IN' : 'en-IN')}
+            <span style={{ borderBottom: '1px dotted #555', paddingBottom: '2px', whiteSpace: 'nowrap' }}>
+              {periodLabel}
             </span>
           </div>
         </div>
@@ -283,40 +333,65 @@ export default function BillTemplate({ bill }) {
           </tr>
         </thead>
         <tbody>
-          {bill.items?.map((item, idx) => {
-            const isKg = item.vegetable_unit === 'kg';
-            return (
-              <tr key={idx} style={{ borderBottom: `1px solid ${themeColor}` }}>
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, fontWeight: '600' }}>
-                  {item.vegetable_name}
-                </td>
-                {/* unit quantity column */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'center' }}>
-                  {!isKg ? `${item.quantity} ${item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : ''}` : '—'}
-                </td>
-                {/* weight column */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right' }}>
-                  {isKg ? `${item.quantity} kg` : '—'}
-                </td>
-                {/* rate */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right' }}>
-                  ₹{Number(item.rate).toFixed(2)}
-                </td>
-                {/* amount */}
-                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
-                  ₹{Number(item.total).toFixed(2)}
-                </td>
-              </tr>
-            );
-          })}
-          {/* Pad empty rows if list is short, to keep APMC visual look */}
-          {bill.items && bill.items.length < 4 && 
-            Array.from({ length: 4 - bill.items.length }).map((_, idx) => (
+          {dayGroups
+            ? dayGroups.map((group, gIdx) => (
+                <Fragment key={group.date || `undated-${gIdx}`}>
+                  {/* Day header: the vendor's notebook had one of these per page. */}
+                  <tr style={{ background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: '6px 8px',
+                        borderBottom: `1px solid ${themeColor}`,
+                        borderTop: cellBorder,
+                        fontWeight: 'bold',
+                        color: themeColor,
+                        fontSize: '0.86rem',
+                      }}
+                    >
+                      {isMarathi ? 'दिनांक' : 'Date'}:{' '}
+                      {group.date
+                        ? formatBillDate(group.date, isMarathi)
+                        : (isMarathi ? 'नोंद नाही' : 'Not recorded')}
+                    </td>
+                  </tr>
+
+                  {group.items.map((item, idx) => renderItemRow(item, `${gIdx}-${idx}`))}
+
+                  {/* Per-day subtotal, so a customer can check one day without
+                      re-adding the whole period. */}
+                  <tr style={{ borderBottom: cellBorder }}>
+                    <td
+                      colSpan={4}
+                      style={{
+                        padding: '6px 8px',
+                        borderRight: cellBorder,
+                        textAlign: 'right',
+                        fontWeight: 'bold',
+                        color: themeColor,
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {isMarathi ? 'दिवसाची बेरीज' : "Day's Total"}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>
+                      ₹{group.subtotal.toFixed(2)}
+                    </td>
+                  </tr>
+                </Fragment>
+              ))
+            : displayItems.map((item, idx) => renderItemRow(item, idx))}
+
+          {/* Pad empty rows if list is short, to keep APMC visual look. Only on a
+              single-day bill — a period bill is already tall and its day sections
+              would be pushed apart by filler. */}
+          {!dayGroups && displayItems.length < 4 &&
+            Array.from({ length: 4 - displayItems.length }).map((_, idx) => (
               <tr key={`pad-${idx}`} style={{ borderBottom: `1px solid ${themeColor}`, height: '32px' }}>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
                 <td>&nbsp;</td>
               </tr>
             ))
@@ -371,7 +446,10 @@ export default function BillTemplate({ bill }) {
           </tbody>
         </table>
 
-        {/* Right Side: Calculation Totals Box */}
+        {/* Right Side: Calculation Totals Box.
+            There is deliberately no commission line here — it is folded into the item
+            rates above (see utils/billDisplay.js). Commission is still stored and
+            still appears in full in the vendor's own commission report. */}
         <table style={{ width: '100%', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
           <tbody>
             <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
@@ -379,15 +457,7 @@ export default function BillTemplate({ bill }) {
                 {isMarathi ? 'एकूण रू. (Subtotal)' : 'Total Rs (Subtotal)'}
               </td>
               <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '100px' }}>
-                ₹{subtotal.toFixed(2)}
-              </td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'एकूण खर्च रू. (कमिशन)' : 'Total Expense (Commission)'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                ₹{commissionAmount.toFixed(2)}
+                ₹{displaySubtotal.toFixed(2)}
               </td>
             </tr>
             <tr style={{ borderBottom: `1px solid ${themeColor}`, background: isMarathi ? '#fff5f5' : '#f0faf4' }}>

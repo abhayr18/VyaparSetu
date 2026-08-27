@@ -29,6 +29,14 @@ async function getAllTransactions(req, res) {
   return res.status(500).json({ success: false, error: result.error });
 }
 
+async function getPendingSettlements(req, res) {
+  const result = await transactionService.getPendingSettlements();
+  if (result.success) {
+    return res.json({ success: true, data: result.data });
+  }
+  return res.status(500).json({ success: false, error: result.error });
+}
+
 async function getTransactionById(req, res) {
   const { id } = req.params;
   const result = await transactionService.getTransactionById(id);
@@ -80,6 +88,7 @@ module.exports = {
   createTransaction,
   generateBill,
   getAllTransactions,
+  getPendingSettlements,
   getTransactionById,
   getCustomerTransactions,
   getCustomerDailyPurchase,

@@ -16,6 +16,7 @@ const settingsRoutes  = require('./settingsRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
 const googleDriveRoutes = require('./googleDriveRoutes');
 const transactionRoutes = require('./transactionRoutes');
+const clientLogRoutes = require('./clientLogRoutes');
 
 const router = express.Router();
 
@@ -31,6 +32,7 @@ router.use('/settings',     settingsRoutes);
 router.use('/dashboard',    dashboardRoutes);
 router.use('/drive',        googleDriveRoutes);
 router.use('/transactions', transactionRoutes);
+router.use('/client-log',   clientLogRoutes);
 
 module.exports = router;
 

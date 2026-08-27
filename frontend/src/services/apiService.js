@@ -130,6 +130,8 @@ export const creditApi = {
   getTransactions: (customerId) => apiClient.get(`/api/credit/customer/${customerId}/transactions`),
   collectPayment: (data) => apiClient.post('/api/credit/payment', data),
   adjustCredit: (data) => apiClient.post('/api/credit/adjustment', data),
+  /** POST /api/credit/opening-balance — for a notebook customer who already existed. */
+  recordOpeningBalance: (data) => apiClient.post('/api/credit/opening-balance', data),
 };
 
 // ─── Reports API ─────────────────────────────────────────────────────────────
@@ -179,6 +181,10 @@ export const transactionApi = {
   create: (data) => apiClient.post('/api/transactions', data),
   generateBill: (data) => apiClient.post('/api/transactions/generate-bill', data),
   getAll: (params) => apiClient.get('/api/transactions', { params }),
+
+  // Every customer with entries not yet consolidated into a bill, oldest pending day
+  // first. Read-only aggregate, no params — it is the whole shop's outstanding work.
+  getPendingSettlements: () => apiClient.get('/api/transactions/pending-settlements'),
 
   getById: (id) => apiClient.get(`/api/transactions/${id}`),
   getByCustomer: (customerId, params) => apiClient.get(`/api/transactions/customer/${customerId}`, { params }),

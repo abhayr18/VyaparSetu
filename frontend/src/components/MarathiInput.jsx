@@ -60,7 +60,9 @@ export default function MarathiInput({
     try {
       const saved = localStorage.getItem(storageKey);
       return saved !== null ? JSON.parse(saved) : defaultVal;
-    } catch (e) {
+    } catch {
+      // localStorage can be unavailable (private mode, disabled storage). The toggle
+      // still works for this session; only the preference fails to persist.
       return defaultVal;
     }
   });
@@ -80,8 +82,8 @@ export default function MarathiInput({
       const next = !prev;
       try {
         localStorage.setItem(storageKey, JSON.stringify(next));
-      } catch (err) {
-        // Safe fallback
+      } catch {
+        // Safe fallback: the toggle still applies, it just won't be remembered.
       }
       return next;
     });

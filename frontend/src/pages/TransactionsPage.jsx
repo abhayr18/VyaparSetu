@@ -8,6 +8,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useTransactions } from '../hooks/useTransactions';
 import useSettings from '../hooks/useSettings';
 import TransactionEntry from '../components/TransactionEntry';
+import PendingSettlements from '../components/PendingSettlements';
 import CustomerDailyPurchase from '../components/CustomerDailyPurchase';
 
 function ToastNotification({ toast, onClose, t }) {
@@ -70,8 +71,11 @@ export default function TransactionsPage() {
     setStartDate,
     endDate,
     setEndDate,
+    billPeriod,
     dailyData,
     historyLoading,
+    pendingSettlements,
+    openSettlement,
     createTransaction,
     generateBill,
     deleteTransaction
@@ -118,6 +122,16 @@ export default function TransactionsPage() {
         commissionRate={settings.commission_rate}
       />
 
+      {/* Where the unbilled work is. Sits directly above the history view because
+          clicking a row fills that view — cause and effect stay adjacent, and the
+          entry form above keeps its place at the top for the far more frequent job
+          of logging the day's sales. */}
+      <PendingSettlements
+        settlements={pendingSettlements}
+        activeCustomerId={activeCustomerId}
+        onOpenSettlement={openSettlement}
+      />
+
       {/* MODULE B: Customer Daily Purchase & Transaction History */}
       <CustomerDailyPurchase
         customers={customers}
@@ -131,6 +145,7 @@ export default function TransactionsPage() {
         onChangeStartDate={setStartDate}
         endDate={endDate}
         onChangeEndDate={setEndDate}
+        billPeriod={billPeriod}
         dailyData={dailyData}
         historyLoading={historyLoading}
         onDeleteTransaction={deleteTransaction}

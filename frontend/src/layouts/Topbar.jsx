@@ -7,7 +7,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { GlobeIcon } from '../components/Icons';
 
 export default function Topbar({ pageTitle, pageSubtitle }) {
-  const { t, language, toggleLanguage } = useTranslation();
+  const { language, toggleLanguage } = useTranslation();
 
   return (
     <header className="topbar">

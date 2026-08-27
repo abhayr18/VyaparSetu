@@ -334,7 +334,13 @@ function scalar(ctx, sql) {
 describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
   it('boots at all', async () => {
     const ctx = await legacyDb(sql);
-    expect(scalar(ctx, 'SELECT COALESCE(MAX(version), 0) FROM schema_version')).toBe(8);
+    // Derived from the migration list rather than pinned to a literal: the claim is
+    // "the runner ran every migration it knows about and stamped the result", which
+    // stays true as releases add more. A literal would have to be bumped by hand
+    // each time, and a forgotten bump reads as a migration failure.
+    const { MIGRATIONS } = ctx.requireApp('database/migrations.js');
+    const latest = Math.max(...MIGRATIONS.map((m) => m.version));
+    expect(scalar(ctx, 'SELECT COALESCE(MAX(version), 0) FROM schema_version')).toBe(latest);
   });
 
   it('arrives at the same schema as a database created fresh', async () => {
@@ -354,6 +360,25 @@ describe.each(FIXTURES)('upgrading from $label', ({ sql }) => {
     for (const table of tableNames(fresh)) {
       expect(migratedColumns[table], `columns of ${table}`).toEqual(columns(fresh, table));
     }
+  });
+
+  it('adds the columns a range bill needs, without touching the bills already there', async () => {
+    const ctx = await legacyDb(sql);
+
+    // The convergence test above proves migrated == fresh, but not *what* converged.
+    // These three are the ones a range bill reads, and an old install has none of them.
+    expect(columns(ctx, 'bills')).toHaveProperty('period_start');
+    expect(columns(ctx, 'bills')).toHaveProperty('period_end');
+    expect(columns(ctx, 'bill_items')).toHaveProperty('item_date');
+    expect(indexNames(ctx)).toContain('idx_bills_period');
+
+    // NULL on every existing row, which is what marks a bill as covering one day.
+    // A backfill guessing at periods would rewrite history the vendor already printed.
+    expect(scalar(ctx, 'SELECT period_start FROM bills WHERE id = 1')).toBe(null);
+    expect(scalar(ctx, 'SELECT period_end FROM bills WHERE id = 1')).toBe(null);
+    expect(scalar(ctx, 'SELECT item_date FROM bill_items WHERE bill_id = 1')).toBe(null);
+    // And the money on that bill is untouched by the new columns: ₹108 → 10800 paise.
+    expect(scalar(ctx, 'SELECT final_amount FROM bills WHERE id = 1')).toBe(10800);
   });
 
   it('keeps every row — no migration drops the vendor’s history', async () => {

@@ -249,17 +249,14 @@ export function ledgerRows(ctx, customerId) {
  * what is owed, payments subtract. The total must equal credit_balance. When the
  * two disagree, one of them is lying to the vendor and neither can be trusted —
  * which is why this is the invariant every money test ends on.
+ *
+ * The signs come from the app's own utils/creditLedger rather than a copy kept here.
+ * A copy is worse than no check: it would keep passing after the app learned a new
+ * row type this file did not, which is precisely the drift the test exists to catch.
  */
 export function ledgerSum(ctx, customerId) {
-  return paise(
-    ledgerRows(ctx, customerId).reduce((acc, row) => {
-      const amt = Number(row.amount) || 0;
-      if (row.transaction_type === 'CREDIT_ADDED') return acc + amt;
-      if (row.transaction_type === 'PAYMENT_RECEIVED') return acc - amt;
-      if (row.transaction_type === 'CREDIT_ADJUSTMENT') return acc + amt;
-      return acc;
-    }, 0)
-  );
+  const { replay } = require(path.join(APP_ROOT, 'utils/creditLedger.js'));
+  return paise(replay(ledgerRows(ctx, customerId)));
 }
 
 /** Rounds to paise so REAL-column float noise can't fail an otherwise-correct test. */

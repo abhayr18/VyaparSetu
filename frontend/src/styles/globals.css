@@ -1483,14 +1483,20 @@ img { max-width: 100%; display: block; }
 }
 
 /* ─── Print Media Styles ───────────────────────────────────────── */
+/* These rules print a bill and nothing else: hide the whole document, then reveal
+   #receipt-print-area. They are scoped to :not(.printing-report) because a page
+   that wants to print something *other* than a receipt would otherwise come out
+   blank — everything hidden, and the one element allowed back not present. The
+   report page sets body.printing-report and supplies its own reveal rules. */
 @media print {
-  body * {
+  body:not(.printing-report) * {
     visibility: hidden !important;
   }
-  #receipt-print-area, #receipt-print-area * {
+  body:not(.printing-report) #receipt-print-area,
+  body:not(.printing-report) #receipt-print-area * {
     visibility: visible !important;
   }
-  #receipt-print-area {
+  body:not(.printing-report) #receipt-print-area {
     position: absolute;
     left: 0;
     top: 0;
@@ -1501,7 +1507,15 @@ img { max-width: 100%; display: block; }
     padding: 0 !important;
     margin: 0 !important;
   }
-  .modal-backdrop, .modal-actions, .modal-close-btn, .sidebar, .page-header-bar, .stats-row, .search-bar-container, .card, .toast {
+  body:not(.printing-report) .modal-backdrop,
+  body:not(.printing-report) .modal-actions,
+  body:not(.printing-report) .modal-close-btn,
+  body:not(.printing-report) .sidebar,
+  body:not(.printing-report) .page-header-bar,
+  body:not(.printing-report) .stats-row,
+  body:not(.printing-report) .search-bar-container,
+  body:not(.printing-report) .card,
+  body:not(.printing-report) .toast {
     display: none !important;
     opacity: 0 !important;
   }

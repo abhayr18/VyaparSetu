@@ -138,6 +138,7 @@ export default function CustomersPage() {
   const {
     customers, loading, error,
     searchQuery, setSearchQuery,
+    fetchAll,
     createCustomer, updateCustomer, deleteCustomer,
   } = useCustomers();
 
@@ -353,6 +354,9 @@ export default function CustomersPage() {
           customerId={ledgerCustomer.id}
           customerName={ledgerCustomer.name}
           onClose={() => setLedgerCustomer(null)}
+          // An opening balance entered inside the ledger changes credit_balance, which
+          // this page shows in its own column. Refetch so the two do not disagree.
+          onLedgerChange={fetchAll}
         />
       )}
 

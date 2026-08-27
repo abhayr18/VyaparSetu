@@ -6,6 +6,8 @@
  */
 
 const customerModel = require('../models/customerModel');
+const creditModel = require('../models/creditModel');
+const { transaction } = require('../database/db');
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -78,13 +80,67 @@ function searchCustomers(query) {
 }
 
 /**
- * Create a new customer.
- * @param {{ name, mobile, address, notes }} data
+ * Create a new customer, optionally carrying forward what they already owe.
+ *
+ * `opening_balance` is for the notebook migration: a vendor entering a customer who
+ * is already in debt. It writes an OPENING_BALANCE ledger row rather than a bill, so
+ * the debt shows in the passbook and the outstanding total without inventing sales
+ * revenue or commission that never happened.
+ *
+ * Customer and opening balance are written in one transaction. Separately, a failure
+ * between them would leave a customer whose balance the vendor believes was entered
+ * and was not — and the vendor's only record of the real figure is the notebook they
+ * are working from.
+ *
+ * @param {{ name, mobile, address, notes, opening_balance? }} data
  * @returns {Object} Created customer
  */
 function createCustomer(data) {
   validate(data);
-  return customerModel.create(data);
+
+  const raw = data.opening_balance;
+  const hasOpening = raw !== undefined && raw !== null && String(raw).trim() !== '';
+  let opening = 0;
+
+  if (hasOpening) {
+    opening = Number(raw);
+    if (!Number.isFinite(opening) || opening < 0) {
+      const err = new Error('Opening balance must be a number of 0 or more.');
+      err.statusCode = 400;
+      throw err;
+    }
+    opening = Number(opening.toFixed(2));
+  }
+
+  if (opening <= 0) {
+    return customerModel.create(data);
+  }
+
+  return transaction(() => {
+    const created = customerModel.create(data);
+
+    // customerModel.create reactivates a soft-deleted record rather than inserting a
+    // duplicate, so "add customer" can land on a customer who was opened once
+    // already. A second OPENING_BALANCE row would double the migrated debt with no
+    // way to tell which figure was real, so refuse and roll the whole thing back —
+    // nothing is half-applied, and the vendor is told to use an adjustment instead.
+    if (creditModel.hasOpeningBalance(created.id)) {
+      const err = new Error(
+        'This customer already has an opening balance on record. Use a credit adjustment to change what they owe.'
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
+    creditModel.recordOpeningBalance({
+      customer_id: created.id,
+      amount: opening,
+      note: 'Opening balance (brought forward)',
+    });
+    // Re-read so the caller sees the balance the ledger just set, not the zero the
+    // insert returned.
+    return customerModel.findById(created.id);
+  });
 }
 
 /**

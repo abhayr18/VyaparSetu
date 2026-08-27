@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useCredit } from '../hooks/useCredit';
 import { useTranslation } from '../hooks/useTranslation';
+import { splitSigned, displayAmount } from '../utils/creditLedger';
 import MarathiInput from '../components/MarathiInput';
 import {
   ReceiptIcon, AlertIcon, ChartIcon, HistoryIcon, CheckIcon,
@@ -392,19 +393,27 @@ export default function UdharPage() {
                 )}
 
                 {/* Mini summary bar */}
-                {transactions.length > 0 && (
-                  <div style={{
-                    display: 'flex', gap: 12, marginBottom: 10, fontSize: '0.75rem',
-                    background: 'var(--color-bg-light)', borderRadius: 8, padding: '6px 10px', flexWrap: 'wrap'
-                  }}>
-                    <span style={{ color: 'var(--color-error)', fontWeight: 700 }}>
-                      Credit: ₹{transactions.filter(t => t.transaction_type === 'CREDIT_ADDED').reduce((s, t) => s + Number(t.amount), 0).toFixed(2)}
-                    </span>
-                    <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>
-                      Received: ₹{transactions.filter(t => t.transaction_type === 'PAYMENT_RECEIVED').reduce((s, t) => s + Number(t.amount), 0).toFixed(2)}
-                    </span>
-                  </div>
-                )}
+                {/* Both figures come from the ledger's own signs rather than from a
+                    filter on two row types, so they still account for every row when a
+                    new type is introduced — and Credit − Received lands on the
+                    outstanding figure shown above, which is the subtraction a customer
+                    at the counter will actually do. */}
+                {transactions.length > 0 && (() => {
+                  const { totalCredit, totalRecovered } = splitSigned(transactions);
+                  return (
+                    <div style={{
+                      display: 'flex', gap: 12, marginBottom: 10, fontSize: '0.75rem',
+                      background: 'var(--color-bg-light)', borderRadius: 8, padding: '6px 10px', flexWrap: 'wrap'
+                    }}>
+                      <span style={{ color: 'var(--color-error)', fontWeight: 700 }}>
+                        Credit: ₹{totalCredit.toFixed(2)}
+                      </span>
+                      <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>
+                        Received: ₹{totalRecovered.toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {transactionsLoading ? (
@@ -441,8 +450,18 @@ export default function UdharPage() {
                         {filtered.map(tx => {
                           const isPayment = tx.transaction_type === 'PAYMENT_RECEIVED';
                           const isCredit  = tx.transaction_type === 'CREDIT_ADDED';
-                          const typeColor = isPayment ? 'var(--color-success)' : isCredit ? 'var(--color-error)' : 'var(--color-text-secondary)';
-                          const typeLabel = isCredit ? t('credit.typeCreditAdded') : isPayment ? t('credit.typePaymentReceived') : t('credit.typeCreditAdjustment');
+                          const isOpening = tx.transaction_type === 'OPENING_BALANCE';
+                          const typeColor = isPayment ? 'var(--color-success)' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
+                          // Debt carried over from the notebook is named as such rather
+                          // than lumped in with adjustments — a vendor defending a
+                          // balance needs to see which of the two a row is.
+                          const typeLabel = isCredit
+                            ? t('credit.typeCreditAdded')
+                            : isPayment
+                              ? t('credit.typePaymentReceived')
+                              : isOpening
+                                ? t('credit.typeOpeningBalance')
+                                : t('credit.typeCreditAdjustment');
                           return (
                             <tr key={tx.id} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
                               <td style={{ padding: '9px 20px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
@@ -473,7 +492,13 @@ export default function UdharPage() {
                                 </div>
                               </td>
                               <td style={{ padding: '9px 20px', textAlign: 'right', fontWeight: 700, color: isPayment ? 'var(--color-success)' : 'var(--color-text-primary)' }}>
-                                {isPayment ? '−' : '+'}₹{Number(tx.amount).toFixed(2)}
+                                {(() => {
+                                  // Sign and magnitude from the same signed amount, so a
+                                  // written-off adjustment reads −₹500.00 instead of the
+                                  // +₹-500.00 a type-based sign produced.
+                                  const { sign, magnitude } = displayAmount(tx.transaction_type, tx.amount);
+                                  return `${sign}₹${magnitude.toFixed(2)}`;
+                                })()}
                               </td>
                               <td style={{ padding: '9px 20px', textAlign: 'right', fontWeight: 600 }}>
                                 ₹{Number(tx.balance_after_transaction).toFixed(2)}

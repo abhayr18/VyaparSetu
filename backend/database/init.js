@@ -95,12 +95,19 @@ function createBaselineSchema(db) {
 
   // ─── Module 3: Billing ─────────────────────────────────────────────────────
   // commission_rate is a percentage (8.0 means 8%), matching what Settings shows.
+  //
+  // period_start / period_end are NULL for a single-day bill, which is every bill
+  // written before ranges existed — the day is then `date`. When they are set, the
+  // bill consolidates every unbilled sale in that window and `date` is the day it
+  // closes, so date-keyed reports still place it in one period.
   db.exec(`
     CREATE TABLE IF NOT EXISTS bills (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_number        TEXT    NOT NULL UNIQUE,
       customer_id        INTEGER NOT NULL,
       date               TEXT    NOT NULL,
+      period_start       TEXT,
+      period_end         TEXT,
       subtotal           INTEGER NOT NULL,
       discount_type      TEXT    DEFAULT 'fixed',
       discount_value     REAL    DEFAULT 0.0,
@@ -120,6 +127,8 @@ function createBaselineSchema(db) {
     )
   `);
 
+  // item_date is the day this line was actually sold, so a range bill can group its
+  // lines datewise. NULL means the line belongs to whatever single day its bill does.
   db.exec(`
     CREATE TABLE IF NOT EXISTS bill_items (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,6 +138,7 @@ function createBaselineSchema(db) {
       quantity       REAL    NOT NULL,
       rate           INTEGER NOT NULL,
       total          INTEGER NOT NULL,
+      item_date      TEXT,
       created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(bill_id) REFERENCES bills(id),
       FOREIGN KEY(vegetable_id) REFERENCES vegetables(id)

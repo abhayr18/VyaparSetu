@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { transactionApi, customersApi, vegetablesApi } from '../services/apiService';
 
 function getLocalDateString(dateObj = new Date()) {
@@ -15,6 +15,31 @@ function getYesterdayDateString() {
   return getLocalDateString(d);
 }
 
+function getDaysAgoDateString(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return getLocalDateString(d);
+}
+
+/**
+ * How far back the date-range filter reaches when the vendor first opens it.
+ *
+ * It used to open on today→today, which made the range filter useless for the one job
+ * it exists for. A customer who last bought a fortnight ago showed an empty table and a
+ * disabled Generate Bill button, and nothing on screen said unbilled entries existed at
+ * all — the only way through was to guess that the start date needed dragging backwards.
+ *
+ * A month covers how long an adatya's customer actually runs a tab before settling, so
+ * the default range already contains the entries in the overwhelming majority of cases.
+ * The end stays today: the vendor is billing up to now, not up to some past date.
+ *
+ * This only picks the *starting position* of two inputs the vendor can still move
+ * anywhere. It does not widen what gets billed — generateBillFromTransactions bills the
+ * span shown in the inputs, and the Pending Settlements panel sets that span to a
+ * customer's exact oldest→newest so nothing outside their own entries is ever included.
+ */
+const RANGE_LOOKBACK_DAYS = 30;
+
 export function useTransactions() {
   const [customers, setCustomers] = useState([]);
   const [vegetables, setVegetables] = useState([]);
@@ -26,8 +51,12 @@ export function useTransactions() {
   const [activeCustomerId, setActiveCustomerId] = useState(null);
   const [dateFilterType, setDateFilterType] = useState('today'); // 'today', 'yesterday', 'specific', 'range'
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
-  const [startDate, setStartDate] = useState(getLocalDateString());
+  const [startDate, setStartDate] = useState(getDaysAgoDateString(RANGE_LOOKBACK_DAYS));
   const [endDate, setEndDate] = useState(getLocalDateString());
+
+  // Customers with entries waiting to be billed. Read-only; it only tells the vendor
+  // where the unbilled work is.
+  const [pendingSettlements, setPendingSettlements] = useState([]);
 
   // Purchase History state
   const [dailyData, setDailyData] = useState({
@@ -53,6 +82,29 @@ export function useTransactions() {
   useEffect(() => {
     loadMasterData();
   }, [loadMasterData]);
+
+  /**
+   * Refresh the pending-settlements list.
+   *
+   * Called after anything that can change what is unbilled — a new entry, a generated
+   * bill, a deleted entry — because a stale list here points the vendor at a settlement
+   * they have already closed.
+   *
+   * Failure is deliberately silent: this panel is a shortcut, and losing it must never
+   * take down the entry form beside it.
+   */
+  const loadPendingSettlements = useCallback(async () => {
+    try {
+      const res = await transactionApi.getPendingSettlements();
+      if (res?.success) setPendingSettlements(res.data || []);
+    } catch (err) {
+      console.error('Failed to load pending settlements:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPendingSettlements();
+  }, [loadPendingSettlements]);
 
   // Fetch daily/range customer transactions
   const fetchCustomerHistory = useCallback(async (customerId, filterType, sDate, eDate, specDate) => {
@@ -113,6 +165,22 @@ export function useTransactions() {
     fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
   }, [activeCustomerId, dateFilterType, startDate, endDate, selectedDate, fetchCustomerHistory]);
 
+  /**
+   * The period the Generate Bill button should bill.
+   *
+   * Derived from the same filter that drives the history table, so a bill covers
+   * exactly what the vendor is looking at. The button used to send `selectedDate`
+   * unconditionally — and `selectedDate` is today unless the "specific date" input was
+   * touched, so a vendor reviewing yesterday's purchases and pressing Generate Bill
+   * billed today's instead.
+   */
+  const billPeriod = useMemo(() => {
+    if (dateFilterType === 'range') return { startDate, endDate };
+    if (dateFilterType === 'today') return { date: getLocalDateString() };
+    if (dateFilterType === 'yesterday') return { date: getYesterdayDateString() };
+    return { date: selectedDate };
+  }, [dateFilterType, selectedDate, startDate, endDate]);
+
   // Create a new transaction
   async function createTransaction(payload) {
     setLoading(true);
@@ -125,6 +193,8 @@ export function useTransactions() {
         if (activeCustomerId === Number(payload.customer_id)) {
           fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
         }
+        // A new entry is unbilled by definition, so it belongs in the pending list.
+        loadPendingSettlements();
         return { success: true, data: res.data };
       }
       setError(res?.error || 'Transaction save failed');
@@ -138,14 +208,30 @@ export function useTransactions() {
     }
   }
 
-  // Generate consolidated bill from transactions
-  async function generateBill(customerId, date) {
+  /**
+   * Generate a consolidated bill.
+   *
+   * `period` is either `{ date }` for a single day or `{ startDate, endDate }` for a
+   * range. A bare date string is still accepted, because that is what every existing
+   * caller passes.
+   */
+  async function generateBill(customerId, period) {
     setLoading(true);
     setError(null);
     try {
-      const res = await transactionApi.generateBill({ customerId, date });
+      const payload =
+        typeof period === 'string' || period == null
+          ? { customerId, date: period }
+          : { customerId, ...period };
+
+      const res = await transactionApi.generateBill(payload);
       if (res?.success) {
         setToastMessage({ text: 'billGeneratedSuccess', type: 'success' });
+        // Those entries now carry a bill_id, so this customer's settlement is closed and
+        // must leave the pending list — otherwise the panel keeps offering a bill that
+        // would find nothing left to consolidate.
+        loadPendingSettlements();
+        fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
         return { success: true, data: res.data };
       }
       setError(res?.error || 'Failed to generate bill');
@@ -170,6 +256,9 @@ export function useTransactions() {
         if (activeCustomerId) {
           fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
         }
+        // One fewer unbilled entry — and possibly the customer's last one, which drops
+        // them off the panel entirely.
+        loadPendingSettlements();
         return { success: true };
       }
       return { success: false, error: res?.error };
@@ -179,6 +268,26 @@ export function useTransactions() {
       setLoading(false);
     }
   }
+
+  /**
+   * Point the history view at one pending settlement.
+   *
+   * Sets the customer and the exact span their unbilled entries occupy, so the table
+   * below fills with precisely what a bill would consolidate and the Generate Bill
+   * button — which is disabled while the table is empty — comes alive.
+   *
+   * Deliberately does not generate the bill. Billing is a real write that books a
+   * settlement document against a customer, and the vendor should see the entries before
+   * committing to it. Keeping generation in one place also keeps one code path: this
+   * panel is a way to *reach* the bill, not a second way to make one.
+   */
+  const openSettlement = useCallback((settlement) => {
+    if (!settlement) return;
+    setActiveCustomerId(Number(settlement.customer_id));
+    setDateFilterType('range');
+    setStartDate(settlement.oldest_date);
+    setEndDate(settlement.newest_date);
+  }, []);
 
   return {
     customers,
@@ -197,8 +306,12 @@ export function useTransactions() {
     setStartDate,
     endDate,
     setEndDate,
+    billPeriod,
     dailyData,
     historyLoading,
+    pendingSettlements,
+    openSettlement,
+    refreshPendingSettlements: loadPendingSettlements,
     createTransaction,
     generateBill,
     deleteTransaction,

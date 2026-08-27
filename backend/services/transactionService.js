@@ -185,40 +185,152 @@ async function createTransaction(payload) {
 }
 
 /**
- * Consolidates a customer's daily transactions into a formal Bill.
+ * The commission rate to record on a consolidated bill, as a percentage.
  *
- * Only unbilled transactions are consolidated, and they are claimed by the bill as
- * part of the same database transaction that creates it. Running this twice for the
- * same day therefore finds nothing the second time instead of billing the customer
- * again.
+ * Every sale on one day carries the same shop rate, so a daily bill just reuses it.
+ * A range can straddle a rate change — the vendor edited Settings mid-week — and
+ * there is then no single rate that is true of every line. Rather than pick one and
+ * misreport the others, the effective rate is derived from the money actually
+ * charged, which is the figure that has to reconcile.
+ *
+ * The amounts are what the customer owes either way; this column is reference only.
+ */
+function billRateFor(transactions, subtotal, commissionAmount) {
+  // `?? shopRate` before normalizing, not after: normalizeCommissionPercent reads a
+  // SQL NULL as a deliberate 0%, which is right for a rate the vendor set and wrong
+  // for a rate that is simply absent.
+  const shopRate = getShopCommissionPercent();
+  const rates = new Set(
+    transactions.map((t) => normalizeCommissionPercent(t.commission_rate ?? shopRate))
+  );
+  if (rates.size === 1) {
+    return [...rates][0];
+  }
+  if (subtotal <= 0) {
+    return shopRate;
+  }
+  return Math.round((commissionAmount / subtotal) * 10000) / 100;
+}
+
+/**
+ * Parses a YYYY-MM-DD date string, returning null for anything that is not one.
+ *
+ * Stricter than a shape check on purpose: `2026-02-31` matches the pattern but is not
+ * a day, and a bill whose period ends on a date that does not exist is a support call
+ * nobody can reproduce. Round-tripping through Date.UTC rejects it.
+ */
+function parseDateOnly(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const utc = Date.UTC(year, month - 1, day);
+  const back = new Date(utc);
+  if (
+    back.getUTCFullYear() !== year ||
+    back.getUTCMonth() !== month - 1 ||
+    back.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { text, utc };
+}
+
+/**
+ * The widest period one bill may cover, in days, inclusive of both ends.
+ *
+ * A vendor consolidating a notebook can legitimately want a month or a season. A
+ * range of years is a mistyped year, and billing it would sweep a customer's entire
+ * history onto one sheet — recoverable only by deleting the bill.
+ */
+const MAX_BILL_PERIOD_DAYS = 366;
+
+/**
+ * Consolidates a customer's transactions into a formal Bill.
+ *
+ * Two modes. Given `startDate` and `endDate` it covers that whole period, printing a
+ * datewise breakdown; given neither it covers a single day, which is the original
+ * behaviour and stays the default. Either way only *unbilled* transactions are
+ * consolidated, and they are claimed by the bill as part of the same database
+ * transaction that creates it. Running this twice therefore finds nothing the second
+ * time instead of billing the customer again — and a range that overlaps days already
+ * billed simply skips them.
  *
  * The bill does not book credit: `createTransaction` already did, when each sale
  * was entered. The existing ledger rows are relabelled with the new bill's id so
  * the passbook still points at the bill, and the customer's balance is untouched.
  */
-async function generateBillFromTransactions({ customerId, date }) {
-  const targetDate = date ? date.trim() : getLocalDateString();
+async function generateBillFromTransactions({ customerId, date, startDate, endDate }) {
+  // Presence of either endpoint means the caller intended a range; a half-supplied
+  // one is a bug in the caller, not an invitation to silently bill a single day.
+  const wantsRange = Boolean(
+    (typeof startDate === 'string' && startDate.trim()) ||
+    (typeof endDate === 'string' && endDate.trim())
+  );
+
+  let periodStart = null;
+  let periodEnd = null;
+  let targetDate;
+
+  if (wantsRange) {
+    const from = parseDateOnly(startDate);
+    const to = parseDateOnly(endDate);
+    if (!from || !to) {
+      return { success: false, error: 'A date range needs a valid start and end date (YYYY-MM-DD)' };
+    }
+    if (from.utc > to.utc) {
+      return { success: false, error: 'The start date must not be after the end date' };
+    }
+    const span = Math.round((to.utc - from.utc) / 86400000) + 1;
+    if (span > MAX_BILL_PERIOD_DAYS) {
+      return {
+        success: false,
+        error: `A single bill can cover at most ${MAX_BILL_PERIOD_DAYS} days — this range covers ${span}`,
+      };
+    }
+
+    periodStart = from.text;
+    periodEnd = to.text;
+    // The bill is dated the day its period closes, so every existing date-keyed
+    // report and the bills list place it in exactly one period.
+    targetDate = to.text;
+  } else {
+    targetDate = date ? date.trim() : getLocalDateString();
+  }
 
   const customer = customerModel.findById(customerId);
   if (!customer) return { success: false, error: 'Customer not found' };
 
-  const transactions = transactionModel.findUnbilledByCustomerAndDate(customerId, targetDate);
+  const transactions = wantsRange
+    ? transactionModel.findUnbilledByCustomerAndDateRange(customerId, periodStart, periodEnd)
+    : transactionModel.findUnbilledByCustomerAndDate(customerId, targetDate);
 
   if (!transactions || transactions.length === 0) {
-    const alreadyBilled = transactionModel.findByCustomerAndDate(customerId, targetDate);
+    const alreadyBilled = wantsRange
+      ? transactionModel.findByCustomerAndDateRange(customerId, periodStart, periodEnd)
+      : transactionModel.findByCustomerAndDate(customerId, targetDate);
+
     if (alreadyBilled && alreadyBilled.length > 0) {
       return {
         success: false,
-        error: "This day's transactions have already been billed for this customer",
+        error: wantsRange
+          ? 'Every transaction in this period has already been billed for this customer'
+          : "This day's transactions have already been billed for this customer",
       };
     }
     return {
       success: false,
-      error: 'No transactions found for this customer on the selected date',
+      error: wantsRange
+        ? 'No transactions found for this customer in the selected period'
+        : 'No transactions found for this customer on the selected date',
     };
   }
 
-  // Calculate totals across today's transactions
+  // Calculate totals across the transactions being consolidated
   const subtotal = transactions.reduce((acc, t) => acc + Number(t.base_amount || 0), 0);
   const commissionAmount = transactions.reduce((acc, t) => acc + Number(t.commission_amount || 0), 0);
   const finalAmount = transactions.reduce((acc, t) => acc + Number(t.final_amount || 0), 0);
@@ -238,27 +350,28 @@ async function generateBillFromTransactions({ customerId, date }) {
     quantity: t.weight,
     rate: t.rate,
     total: t.base_amount,
-    vegetable_unit: t.unit || 'kg'
+    vegetable_unit: t.unit || 'kg',
+    // The day this line was sold, which is what the printed bill groups by.
+    item_date: t.transaction_date
   }));
 
-  // Every transaction on a day is charged the same shop rate, so the bill carries
-  // that rate rather than re-deriving one from summed amounts.
-  const billCommissionRate = normalizeCommissionPercent(
-    transactions[0].commission_rate ?? getShopCommissionPercent()
-  );
+  const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
 
-  const billNumber = `BILL-${targetDate.replace(/-/g, '')}-${String(customerId).padStart(3, '0')}-${Date.now().toString().slice(-4)}`;
+  // The bill number is billModel's to mint (a short running serial, drawn inside the
+  // insert transaction). It used to be built here out of the period, the customer id
+  // and the epoch clock, which made two sources of truth for one format.
   const transactionIds = transactions.map((t) => t.id);
 
   try {
     const createdBill = transaction(() => {
       const bill = billModel.create(
         {
-          bill_number: billNumber,
           customer_id: Number(customerId),
           customer_name: customer.name,
           customer_mobile: customer.mobile,
           date: targetDate,
+          period_start: periodStart,
+          period_end: periodEnd,
           subtotal: Math.round(subtotal * 100) / 100,
           discount_type: 'fixed',
           discount_value: 0,
@@ -284,7 +397,9 @@ async function generateBillFromTransactions({ customerId, date }) {
       }
 
       // Point the existing ledger rows at this bill so the passbook and the bill
-      // agree, without adding rows that would inflate the balance.
+      // agree, without adding rows that would inflate the balance. Keyed on the
+      // transaction ids rather than a date, so a range bill relabels every day it
+      // covers.
       const placeholders = transactionIds.map(() => '?').join(', ');
       execRun(
         `UPDATE credit_transactions SET bill_id = ?
@@ -433,6 +548,20 @@ async function deleteTransaction(id) {
   }
 }
 
+/**
+ * Customers with entries still waiting to be billed, oldest first.
+ *
+ * Read-only aggregate — nothing here decides anything, it only tells the vendor where
+ * the unbilled work is so the range bill is reachable without guessing dates.
+ */
+async function getPendingSettlements() {
+  try {
+    return { success: true, data: transactionModel.findPendingSettlements() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   createTransaction,
   generateBillFromTransactions,
@@ -440,6 +569,7 @@ module.exports = {
   getCustomerTransactions,
   getCustomerDailyPurchase,
   getAllTransactions,
+  getPendingSettlements,
   deleteTransaction,
   getLocalDateString
 };

@@ -515,6 +515,35 @@ const MIGRATIONS = [
       logger.info('  ~ money columns converted to integer paise');
     },
   },
+
+  {
+    version: 9,
+    name: 'bills-over-a-date-range',
+    /**
+     * A bill could only ever cover one day, so a customer who bought through the
+     * week was handed seven bills. These three columns let one bill cover a range
+     * and still show which day each line came from.
+     *
+     * All three are nullable, and NULL is the legacy shape: a bill with no
+     * period_start covers the single day in `bills.date`, and a bill_item with no
+     * item_date belongs to whatever day its bill does. Every existing bill therefore
+     * keeps rendering exactly as it did, with no backfill and nothing to get wrong.
+     *
+     * These are date strings, not money — they must stay out of MONEY_FIELDS in
+     * utils/money.js, or the paise conversion would multiply them by 100.
+     */
+    up(db) {
+      addColumnIfMissing(db, 'bills', 'period_start', 'TEXT');
+      addColumnIfMissing(db, 'bills', 'period_end', 'TEXT');
+      addColumnIfMissing(db, 'bill_items', 'item_date', 'TEXT');
+
+      // Range bills are looked up and grouped by the period they cover.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_bills_period
+        ON bills(period_start, period_end)
+      `);
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

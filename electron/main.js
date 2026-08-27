@@ -50,6 +50,17 @@ process.on('uncaughtException', (err) => {
 // robust across the varied client machines this now ships to.
 app.disableHardwareAcceleration();
 
+// Ports the backend tries, in order, before letting the OS pick one.
+//
+// This used to be `port: 0` — a different port every launch. The browser scopes
+// localStorage per *origin*, and the port is part of the origin, so every launch
+// looked like a brand-new site: the vendor's language choice (मराठी) and the
+// transliteration toggle silently reverted to their defaults every single time the
+// app was opened. A stable port keeps those preferences. The list is a short ladder
+// rather than one number so another program holding the port is a fallback, not a
+// failure; these are high and uncommon enough that in practice the first one wins.
+const PREFERRED_PORTS = [47821, 47822, 47823, 47824, 47825];
+
 // Single-instance: a second launch reveals the running window rather than
 // starting a second server against the same database file.
 if (!app.requestSingleInstanceLock()) {
@@ -79,6 +90,10 @@ if (!app.requestSingleInstanceLock()) {
     process.env.DRIVE_TOKENS_PATH = path.join(userData, 'drive_tokens.json');
     process.env.LICENSE_PATH = path.join(userData, 'license.json');
     process.env.FRONTEND_DIST = path.join(__dirname, '..', 'frontend', 'dist');
+    // The backend's logger writes here too, alongside this process's main.log.
+    // Without it every backend log line goes to a stdout that does not exist in a
+    // packaged GUI app, and a client's failure leaves no trace at all.
+    process.env.LOG_DIR = path.join(userData, 'logs');
 
     // better-sqlite3 creates the file but not its parent directory.
     fs.mkdirSync(path.dirname(process.env.DB_PATH), { recursive: true });
@@ -86,8 +101,9 @@ if (!app.requestSingleInstanceLock()) {
 
     log(`starting backend; userData=${userData}`);
     const { startServer } = require('../backend/server.js');
-    const { port } = await startServer({ port: 0 }); // 0 → OS picks a free port
-    log(`backend started on http://localhost:${port}`);
+    // Binds loopback only — see the DEFAULT_HOST note in backend/server.js.
+    const { port } = await startServer({ port: PREFERRED_PORTS });
+    log(`backend started on http://127.0.0.1:${port}`);
     return port;
   }
 
@@ -144,7 +160,11 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow = null;
     });
 
-    const url = `http://localhost:${port}/`;
+    // 127.0.0.1 rather than "localhost": the server binds IPv4 loopback, and on
+    // Windows "localhost" may resolve to ::1 first or be rewritten by a hosts-file
+    // or security-suite entry. A literal address makes the origin deterministic,
+    // which is also what keeps localStorage stable across launches.
+    const url = `http://127.0.0.1:${port}/`;
     log(`loading ${url}`);
     mainWindow.loadURL(url);
   }

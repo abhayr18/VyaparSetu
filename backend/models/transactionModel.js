@@ -191,6 +191,71 @@ function findUnbilledByCustomerAndDate(customerId, date) {
 }
 
 /**
+ * Finds a customer's unbilled transactions across a date range, oldest first.
+ *
+ * The range twin of findUnbilledByCustomerAndDate, and it carries the same
+ * `bill_id IS NULL` filter for the same reason: days already consolidated into a
+ * daily bill are already paid for in the ledger, so a range spanning them must skip
+ * them rather than bill them a second time.
+ *
+ * Ordered ascending, unlike the single-date query, because the range bill prints its
+ * lines grouped by day and a customer reads a week chronologically.
+ */
+function findUnbilledByCustomerAndDateRange(customerId, startDate, endDate) {
+  return execSelect(
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+     FROM transactions t
+     JOIN customers c ON t.customer_id = c.id
+     WHERE t.customer_id = ?
+       AND t.transaction_date >= ?
+       AND t.transaction_date <= ?
+       AND t.bill_id IS NULL
+     ORDER BY t.transaction_date ASC, t.created_at ASC, t.id ASC`,
+    [customerId, startDate, endDate]
+  ).map((t) => rowToRupees(t, 'transactions'));
+}
+
+/**
+ * Every customer who has entries not yet consolidated into a bill.
+ *
+ * This is the query that stops the Transactions page being a guessing game. The range
+ * filter used to default to today→today, so a vendor whose customer last bought a
+ * fortnight ago saw an empty table and a disabled Generate Bill button — with nothing
+ * anywhere on screen saying unbilled entries existed at all. The only way through was
+ * to guess that the start date needed dragging backwards.
+ *
+ * One row per customer, oldest pending day first, so the settlement that has been
+ * waiting longest sits at the top.
+ *
+ * `oldest_date` / `newest_date` bound exactly the span a bill should cover, so a caller
+ * can hand them straight to generateBillFromTransactions and the vendor never picks a
+ * date by hand.
+ */
+function findPendingSettlements() {
+  return execSelect(
+    `SELECT t.customer_id,
+            c.name                  AS customer_name,
+            c.mobile                AS customer_mobile,
+            COUNT(*)                AS entry_count,
+            MIN(t.transaction_date) AS oldest_date,
+            MAX(t.transaction_date) AS newest_date,
+            SUM(t.final_amount)     AS total_amount
+     FROM transactions t
+     JOIN customers c ON t.customer_id = c.id
+     WHERE t.bill_id IS NULL
+     GROUP BY t.customer_id
+     ORDER BY MIN(t.transaction_date) ASC, c.name ASC`
+  ).map((r) => ({
+    ...r,
+    // SUM over an INTEGER paise column comes back in paise. rowToRupees converts by
+    // looking the column name up in MONEY_FIELDS, and `total_amount` is an alias that
+    // appears in no table, so it has to be converted here or it reaches the vendor
+    // reading a hundred times too large.
+    total_amount: toRupees(r.total_amount),
+  }));
+}
+
+/**
  * Marks transactions as consolidated into a bill.
  *
  * Only claims rows that are still unbilled, and returns how many it claimed. A
@@ -242,6 +307,8 @@ module.exports = {
   findByCustomerAndDate,
   findUnbilledByCustomerAndDate,
   findByCustomerAndDateRange,
+  findUnbilledByCustomerAndDateRange,
+  findPendingSettlements,
   findAll,
   getDailyCustomerSummary,
   markAsBilled,

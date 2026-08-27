@@ -28,6 +28,7 @@ export default function CustomerDailyPurchase({
   onChangeStartDate,
   endDate,
   onChangeEndDate,
+  billPeriod,
   dailyData = { summary: {}, transactions: [] },
   historyLoading = false,
   onDeleteTransaction,
@@ -54,7 +55,9 @@ export default function CustomerDailyPurchase({
     if (!activeCustomerId) return;
     setBillGenerating(true);
     try {
-      const res = await onGenerateBill(activeCustomerId, selectedDate);
+      // The period comes from the same filter that produced the table above, so the
+      // bill covers what the vendor is looking at — a single day, or the whole range.
+      const res = await onGenerateBill(activeCustomerId, billPeriod || { date: selectedDate });
       if (res?.success && res.data) {
         setGeneratedBill(res.data);
         setIsBillModalOpen(true);
@@ -248,7 +251,9 @@ export default function CustomerDailyPurchase({
                   boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)'
                 }}
               >
-                {billGenerating ? t('common.loading') : `📄 ${t('transactions.generateBill')}`}
+                {billGenerating
+                  ? t('common.loading')
+                  : `📄 ${dateFilterType === 'range' ? t('transactions.generatePeriodBill') : t('transactions.generateBill')}`}
               </button>
             </div>
           </div>

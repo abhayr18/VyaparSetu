@@ -15,6 +15,22 @@ const STORAGE_KEY = 'vyapaarsetu_lang';
 const LanguageContext = createContext(null);
 
 /**
+ * Read the saved language, tolerating a localStorage that throws.
+ *
+ * This runs during the very first render of the provider that wraps the entire app.
+ * An unguarded throw here takes the whole UI down before anything is on screen, and
+ * a language preference is not worth that — falling back to English is.
+ */
+function readSavedLanguage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return TRANSLATIONS[saved] ? saved : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+/**
  * Resolves a dot-notated key from a nested translation object.
  * Example: t('nav.dashboard') → "Dashboard"
  */
@@ -25,13 +41,15 @@ function resolvePath(obj, path) {
 }
 
 export function LanguageProvider({ children }) {
-  const [language, setLanguageState] = useState(
-    () => localStorage.getItem(STORAGE_KEY) || 'en'
-  );
+  const [language, setLanguageState] = useState(readSavedLanguage);
 
   const setLanguage = useCallback((lang) => {
     if (TRANSLATIONS[lang]) {
-      localStorage.setItem(STORAGE_KEY, lang);
+      try {
+        localStorage.setItem(STORAGE_KEY, lang);
+      } catch {
+        // The switch still applies for this session; only persistence is lost.
+      }
       setLanguageState(lang);
     }
   }, []);

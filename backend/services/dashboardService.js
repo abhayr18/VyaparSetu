@@ -3,13 +3,10 @@ const { toRupees, rowToRupees } = require('../utils/money');
 const backupService = require('./backupService');
 const creditModel = require('../models/creditModel');
 const logger = require('../utils/logger');
+const { localDateSql, todayLocal } = require('../utils/businessDay');
 
 async function getDashboardSummary() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const todayStr = `${year}-${month}-${day}`;
+  const todayStr = todayLocal();
 
   // ─── Today's Summary (SQL aggregations) ──────────────────────────────────────
   // Today's total sales, bills, paid, credit, and commission
@@ -33,12 +30,14 @@ async function getDashboardSummary() {
     total_commission: 0.0,
   };
 
-  // Today's credit recovery (payments collected)
+  // Today's credit recovery (payments collected). PAYMENT_RECEIVED only, matching
+  // creditModel.getSummary's todayRecovered — this sits beside the day's cash and UPI
+  // figures, so it means money that came in, not any row that reduced a balance.
   const todayRecoveryRes = execSelect(
-    `SELECT COALESCE(SUM(amount), 0.0) AS total_recovery 
-     FROM credit_transactions 
-     WHERE transaction_type = 'PAYMENT_RECEIVED' 
-       AND date(created_at) = ?`,
+    `SELECT COALESCE(SUM(amount), 0.0) AS total_recovery
+     FROM credit_transactions
+     WHERE transaction_type = 'PAYMENT_RECEIVED'
+       AND ${localDateSql('created_at')} = ?`,
     [todayStr]
   );
   const totalRecovery = todayRecoveryRes[0]?.total_recovery || 0.0;

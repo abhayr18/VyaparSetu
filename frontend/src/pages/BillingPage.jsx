@@ -1,18 +1,38 @@
 /**
- * BillingPage — Vyapar-inspired
- * Filter tabs (All/Paid/Unpaid/Partial) + KPI cards + clean table
+ * BillingPage — the bill archive.
+ *
+ * Read-only by design. Bills are *generated* on the Transactions page from the
+ * entries actually logged during the day; nothing is authored here. This page
+ * exists to find a past bill, open it, re-print / download / WhatsApp it, and
+ * void one that was made in error.
+ *
+ * Why there is no "New Invoice" and no "Edit":
+ *   - A manual cart bill duplicates goods that are already logged as transactions,
+ *     and it books the credit a second time (billModel.create defaults to
+ *     bookCredit: true), so the customer's outstanding silently doubles.
+ *   - billModel.update replaces bill_items wholesale and the edit payload carries
+ *     no item_date, so editing a range bill destroys its datewise breakdown. Worse,
+ *     `originatedOwnCredit` is false for a transaction-derived bill, so editing
+ *     paid_amount moves the bill to "Paid" while the customer's credit_balance
+ *     stays exactly where it was — the bill and the Udhar ledger disagree.
+ *
+ * Mistakes are corrected at the source instead, which is already safe end to end:
+ * delete the bill (billModel.remove returns its transactions to unbilled and
+ * reverses only the credit the bill itself booked) → delete or re-enter the wrong
+ * transaction → generate the bill again. Payments are recorded on the Udhar page,
+ * which writes a real PAYMENT_RECEIVED ledger row.
  */
 
 import { useState, useCallback, useMemo } from 'react';
 import { useBills } from '../hooks/useBills';
 import { useTranslation } from '../hooks/useTranslation';
-import BillModal from '../components/BillModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import ReceiptPrint from '../components/ReceiptPrint';
 import MarathiInput from '../components/MarathiInput';
+import { formatBillPeriod, isPeriodBill } from '../utils/billDisplay';
 import {
   ReceiptIcon, SearchIcon, AlertIcon, HistoryIcon,
-  PrintIcon, EditIcon, TrashIcon, CheckIcon, ChartIcon
+  EyeIcon, TrashIcon, CheckIcon, ChartIcon
 } from '../components/Icons';
 
 function hasDevanagari(str) { return /[\u0900-\u097F]/.test(str); }
@@ -34,12 +54,11 @@ function Toast({ message, type, onClose }) {
 const STATUS_FILTERS = ['All', 'Paid', 'Credit', 'Partial'];
 
 export default function BillingPage() {
-  const { t } = useTranslation();
-  const { bills, loading, error, searchQuery, setSearchQuery, createBill, updateBill, deleteBill } = useBills();
+  const { t, language } = useTranslation();
+  const { bills, loading, error, searchQuery, setSearchQuery, deleteBill } = useBills();
+  const isMarathi = language === 'mr';
 
   const [activeFilter, setActiveFilter]     = useState('All');
-  const [modalOpen, setModalOpen]           = useState(false);
-  const [editingBill, setEditingBill]       = useState(null);
   const [deleteTarget, setDeleteTarget]     = useState(null);
   const [deleteLoading, setDeleteLoading]   = useState(false);
   const [printTarget, setPrintTarget]       = useState(null);
@@ -50,16 +69,8 @@ export default function BillingPage() {
     setTimeout(() => setToast({ message: '', type: 'success' }), 3500);
   }
 
-  const openAdd    = useCallback(() => { setEditingBill(null); setModalOpen(true); }, []);
-  const openEdit   = useCallback((b) => { setEditingBill(b); setModalOpen(true); }, []);
   const openDelete = useCallback((b) => setDeleteTarget(b), []);
-  const openPrint  = useCallback((b) => setPrintTarget(b), []);
-
-  async function handleModalSubmit(data) {
-    const res = editingBill ? await updateBill(editingBill.id, data) : await createBill(data);
-    if (res.success) showToast(t('billing.saveSuccess'));
-    return res;
-  }
+  const openView   = useCallback((b) => setPrintTarget(b), []);
 
   async function handleDeleteConfirm() {
     if (!deleteTarget) return;
@@ -92,15 +103,14 @@ export default function BillingPage() {
     <div className="billing-page" style={{ animation: 'pageIn 0.2s ease' }}>
       <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: 'success' })} />
 
-      {/* ── Page Header ───────────────────────────────────────────────────── */}
+      {/* ── Page Header ───────────────────────────────────────────────────────
+          No "New Invoice" action: bills come from logged transactions, never from
+          this page. See the header comment. */}
       <div className="page-header-bar">
         <div>
           <h1 className="page-title">{t('billing.title')}</h1>
           <p className="page-desc">{t('billing.subtitle')}</p>
         </div>
-        <button className="btn btn-primary" onClick={openAdd} id="add-bill-btn">
-          + {t('billing.addBill')}
-        </button>
       </div>
 
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
@@ -197,14 +207,16 @@ export default function BillingPage() {
               <ReceiptIcon style={{ width: '2rem', height: '2rem', color: 'var(--color-text-muted)' }} />
             </div>
             <p style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: 4 }}>
-              {searchQuery ? t('billing.noSearchResults') || 'No bills match search.'
-                : activeFilter !== 'All' ? `No ${activeFilter} bills found.`
-                : 'No bills generated yet.'}
+              {searchQuery ? t('billing.noSearchResults')
+                : activeFilter !== 'All' ? t('billing.noBillsFiltered')
+                : t('billing.noBills')}
             </p>
             {!searchQuery && activeFilter === 'All' && (
-              <button className="btn btn-primary" onClick={openAdd} style={{ marginTop: 12 }}>
-                + {t('billing.addBill')}
-              </button>
+              /* Tell the vendor where bills actually come from. Landing on an empty
+                 archive with no next step is what made this page feel purposeless. */
+              <p style={{ fontSize: '0.82rem', color: 'var(--color-text-muted)', marginTop: 6 }}>
+                {t('billing.noBillsHint')}
+              </p>
             )}
           </div>
         )}
@@ -233,8 +245,17 @@ export default function BillingPage() {
                       <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>{bill.customer_name}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{bill.customer_mobile}</div>
                     </td>
+                    {/* A range bill stores its span in period_start/period_end and is
+                        dated the day the period closes. Printing bill.date alone made a
+                        week-long bill look identical to a single-day one, so there was no
+                        way to find "the bill covering the 1st to the 14th" by looking. */}
                     <td className="table-cell" style={{ fontSize: '0.82rem', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-                      {new Date(bill.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      {formatBillPeriod(bill, isMarathi)}
+                      {isPeriodBill(bill) && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                          {t('billing.period')}
+                        </div>
+                      )}
                     </td>
                     <td className="table-cell" style={{ fontWeight: 700, textAlign: 'right' }}>
                       ₹{Number(bill.final_amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -248,12 +269,13 @@ export default function BillingPage() {
                       </span>
                     </td>
                     <td className="table-cell">
+                      {/* View opens ReceiptPrint, which is the bill viewer *and* holds
+                          Print / Download PDF / WhatsApp. A separate row-level Print
+                          button led to the same modal and the same second click, so it
+                          was pure duplication. */}
                       <div className="action-btns">
-                        <button className="btn-icon" onClick={() => openPrint(bill)} title={t('billing.print')} id={`print-btn-${bill.id}`} style={{ background: 'var(--color-success-bg)' }}>
-                          <PrintIcon style={{ color: 'var(--color-success)' }} />
-                        </button>
-                        <button className="btn-icon btn-icon-edit" onClick={() => openEdit(bill)} title={t('common.edit')} id={`edit-btn-${bill.id}`}>
-                          <EditIcon />
+                        <button className="btn-icon" onClick={() => openView(bill)} title={t('billing.viewBill')} id={`view-btn-${bill.id}`} style={{ background: 'var(--color-success-bg)' }}>
+                          <EyeIcon style={{ color: 'var(--color-success)' }} />
                         </button>
                         <button className="btn-icon btn-icon-delete" onClick={() => openDelete(bill)} title={t('common.delete')} id={`delete-btn-${bill.id}`}>
                           <TrashIcon />
@@ -269,14 +291,6 @@ export default function BillingPage() {
       </div>
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
-      {modalOpen && (
-        <BillModal
-          isOpen={modalOpen}
-          onClose={(savedBill) => { setModalOpen(false); if (savedBill) setPrintTarget(savedBill); }}
-          onSubmit={handleModalSubmit}
-          bill={editingBill}
-        />
-      )}
       <ReceiptPrint isOpen={Boolean(printTarget)} onClose={() => setPrintTarget(null)} bill={printTarget} />
       <DeleteConfirmModal
         isOpen={Boolean(deleteTarget)}

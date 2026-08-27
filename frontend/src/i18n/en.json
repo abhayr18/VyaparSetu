@@ -77,7 +77,8 @@
     "noData": "No records found.",
     "error": "Something went wrong. Please try again.",
     "close": "Close",
-    "all": "All"
+    "all": "All",
+    "print": "Print"
   },
   "activation": {
     "title": "Activate VyapaarSetu",
@@ -110,6 +111,9 @@
     "addressPlaceholder": "Enter address (optional)",
     "notes": "Notes",
     "notesPlaceholder": "Additional notes (optional)",
+    "openingBalance": "Opening Balance (₹)",
+    "openingBalanceHint": "Amount already owed from your notebook. Added straight to their udhar — no bill is created.",
+    "openingBalanceInvalid": "Opening balance must be a number, zero or more.",
     "creditBalance": "Credit Balance",
     "createdAt": "Registered On",
     "deleteConfirmTitle": "Delete Customer",
@@ -228,6 +232,8 @@
     "amount": "Amount",
     "discount": "Discount",
     "grandTotal": "Grand Total",
+    "period": "Period",
+    "dayTotal": "Day's Total",
     "paymentStatus": "Payment Status",
     "totalBills": "Total Invoices",
     "totalRevenue": "Total Revenue",
@@ -236,7 +242,12 @@
     "selectVegetable": "Select Vegetable",
     "deleteConfirmTitle": "Delete Invoice",
     "deleteConfirmMsg": "Are you sure you want to delete invoice",
-    "deleteConfirmNote": "This will delete the invoice permanently. This action cannot be undone.",
+    "deleteConfirmNote": "The entries on this invoice go back to unbilled, so you can correct them and generate the invoice again.",
+    "noBills": "No invoices yet.",
+    "noBillsFiltered": "No invoices with this status.",
+    "noBillsHint": "Invoices are generated on the Transactions page — pick a customer, then Generate Bill.",
+    "noSearchResults": "No invoices match your search.",
+    "viewBill": "View Invoice",
     "saveSuccess": "Invoice saved successfully.",
     "deleteSuccess": "Invoice deleted successfully.",
     "print": "Print Receipt",
@@ -286,6 +297,12 @@
     "typeCreditAdded": "Credit Added",
     "typePaymentReceived": "Payment Received",
     "typeCreditAdjustment": "Adjustment",
+    "typeOpeningBalance": "Opening Balance",
+    "setOpeningBalance": "Set Opening Balance",
+    "openingBalanceHelp": "Enter what this customer already owed before you started using VyapaarSetu. It goes straight onto their udhar — no bill is created, so your sales and commission reports stay accurate. This can only be set once; use an adjustment afterwards to correct it.",
+    "openingBalanceNotePlaceholder": "e.g. Brought forward from notebook",
+    "openingBalanceSuccess": "Opening balance recorded.",
+    "openingBalanceAlreadySet": "This customer's opening balance is already recorded.",
     "balanceAfter": "Balance",
     "amountRequired": "Amount is required.",
     "amountInvalid": "Amount must be greater than 0.",
@@ -408,7 +425,25 @@
     "deleteConfirmMsg": "Are you sure you want to delete this transaction?",
     "deleteSuccess": "Transaction deleted successfully.",
     "generateBill": "Generate Today's Bill",
-    "billGeneratedSuccess": "Bill generated successfully"
+    "generatePeriodBill": "Generate Period Bill",
+    "billGeneratedSuccess": "Bill generated successfully",
+    "pending": {
+      "title": "Pending Settlements",
+      "subtitle": "Customers whose entries have not been billed yet. Click one to load its entries below.",
+      "allSettled": "Every entry has been billed. Nothing is pending.",
+      "totalPending": "Unbilled total",
+      "acrossEntries": "{{count}} entries · {{customers}} customers",
+      "customer": "Customer",
+      "entries": "Entries",
+      "period": "Period",
+      "waiting": "Waiting",
+      "amount": "Amount",
+      "open": "Open",
+      "since": {
+        "today": "Today",
+        "days": "{{count}} days"
+      }
+    }
   }
 }
 

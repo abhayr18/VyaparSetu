@@ -1,6 +1,7 @@
 // backend/models/reportModel.js
 const { execSelect } = require('../database/db');
 const { toRupees, rowToRupees } = require('../utils/money');
+const { localDateSql } = require('../utils/businessDay');
 
 /** Get sales summary + bills list for date range */
 function getSalesSummary(startDate, endDate) {
@@ -105,22 +106,26 @@ function getCreditSummary(dateVal) {
   const outstandingRes = execSelect(`SELECT COALESCE(SUM(credit_balance), 0) AS total_outstanding FROM customers WHERE is_deleted = 0`);
   const totalOutstanding = outstandingRes[0]?.total_outstanding || 0.0;
 
-  // Credit added on that date
+  // Credit added on that date — CREDIT_ADDED only, on purpose. This is an activity
+  // figure: how much udhar the shop extended that day. An opening balance entered while
+  // migrating a notebook, or a correcting adjustment, moves the outstanding total but is
+  // not credit the shop gave out, so neither belongs here. The reconciling view of every
+  // row is customerModel.getLedger's splitSigned summary.
   const addedRes = execSelect(
-    `SELECT COALESCE(SUM(amount), 0) AS credit_added 
-     FROM credit_transactions 
-     WHERE transaction_type = 'CREDIT_ADDED' 
-       AND date(created_at) = ?`,
+    `SELECT COALESCE(SUM(amount), 0) AS credit_added
+     FROM credit_transactions
+     WHERE transaction_type = 'CREDIT_ADDED'
+       AND ${localDateSql('created_at')} = ?`,
     [dateVal]
   );
   const creditAdded = addedRes[0]?.credit_added || 0.0;
 
-  // Recovery amount on that date
+  // Recovery amount on that date — money actually collected, so PAYMENT_RECEIVED only.
   const recoveredRes = execSelect(
-    `SELECT COALESCE(SUM(amount), 0) AS credit_recovered 
-     FROM credit_transactions 
-     WHERE transaction_type = 'PAYMENT_RECEIVED' 
-       AND date(created_at) = ?`,
+    `SELECT COALESCE(SUM(amount), 0) AS credit_recovered
+     FROM credit_transactions
+     WHERE transaction_type = 'PAYMENT_RECEIVED'
+       AND ${localDateSql('created_at')} = ?`,
     [dateVal]
   );
   const creditRecovered = recoveredRes[0]?.credit_recovered || 0.0;
