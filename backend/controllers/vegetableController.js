@@ -38,8 +38,8 @@ function getById(req, res, next) {
 /** POST /api/vegetables */
 function create(req, res, next) {
   try {
-    const { name, rate, unit, search_keywords, notes } = req.body;
-    const veg = vegetableService.createVegetable({ name, rate, unit, search_keywords, notes });
+    const { name, rate, unit, category, search_keywords, notes } = req.body;
+    const veg = vegetableService.createVegetable({ name, rate, unit, category, search_keywords, notes });
     res.status(201).json({ success: true, data: veg, message: 'Vegetable created successfully.' });
   } catch (err) { next(err); }
 }
@@ -49,8 +49,8 @@ function update(req, res, next) {
   try {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ success: false, message: 'Invalid ID.' });
-    const { name, rate, unit, search_keywords, notes } = req.body;
-    const veg = vegetableService.updateVegetable(id, { name, rate, unit, search_keywords, notes });
+    const { name, rate, unit, category, search_keywords, notes } = req.body;
+    const veg = vegetableService.updateVegetable(id, { name, rate, unit, category, search_keywords, notes });
     res.json({ success: true, data: veg, message: 'Vegetable updated successfully.' });
   } catch (err) { next(err); }
 }
@@ -65,4 +65,21 @@ function remove(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getAll, getById, searchVegetables, create, update, remove };
+/** POST /api/vegetables/bulk */
+function bulkImport(req, res, next) {
+  try {
+    const { items, updateExisting = true } = req.body;
+    const result = vegetableService.bulkImportVegetables(items, { updateExisting });
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: `Successfully processed ${result.total} vegetables (${result.created} created, ${result.updated} updated, ${result.skipped} skipped).`,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getAll, getById, searchVegetables, create, update, remove, bulkImport };
+
+

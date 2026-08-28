@@ -181,6 +181,21 @@ function getCustomerLedger(id) {
   return customerModel.getLedger(id);
 }
 
+/**
+ * Bulk import multiple customers.
+ * @param {Array<Object>} items
+ * @param {Object} options
+ */
+function bulkImportCustomers(items, options = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error('No customer records provided for import.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const { updateExisting = true } = options;
+  return customerModel.bulkUpsert(items, { updateExisting });
+}
+
 module.exports = {
   getAllCustomers,
   getCustomerById,
@@ -189,5 +204,7 @@ module.exports = {
   updateCustomer,
   deleteCustomer,
   getCustomerLedger,
+  bulkImportCustomers,
 };
+
 

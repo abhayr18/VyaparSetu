@@ -123,19 +123,49 @@ const VegetableAutocomplete = forwardRef(function VegetableAutocomplete(
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
-      <input
-        ref={inputRef}
-        id={id}
-        type="text"
-        className={`input-field ${hasError ? 'input-error' : ''}`}
-        placeholder={placeholder}
-        value={query}
-        onChange={handleInputChange}
-        onFocus={() => setIsOpen(true)}
-        onKeyDown={handleKeyDown}
-        autoComplete="off"
-        style={{ fontSize: '1rem', padding: '0.65rem 0.85rem' }}
-      />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          ref={inputRef}
+          id={id}
+          type="text"
+          className={`input-field ${hasError ? 'input-error' : ''}`}
+          placeholder={placeholder}
+          value={query}
+          onChange={handleInputChange}
+          onFocus={(e) => {
+            e.target.select();
+            setIsOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+          autoComplete="off"
+          style={{ fontSize: '1rem', padding: '0.65rem 0.85rem', paddingRight: query ? '2rem' : '0.85rem', width: '100%' }}
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              onSelectVegetable(null);
+              setIsOpen(true);
+              inputRef.current?.focus();
+            }}
+            style={{
+              position: 'absolute',
+              right: '8px',
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              padding: '2px 6px',
+              borderRadius: '50%',
+            }}
+            title="Clear / Change vegetable"
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
       {translitPills.length > 0 && (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>

@@ -735,6 +735,165 @@ async function deleteTransaction(id) {
 }
 
 /**
+ * Update an existing transaction by ID.
+ * Recalculates financial totals, rolls back previous credit ledger booking,
+ * and records new credit/udhar debt if applicable within a transaction.
+ */
+async function updateTransaction(id, payload) {
+  try {
+    const existing = transactionModel.findById(id);
+    if (!existing) return { success: false, error: 'Transaction not found' };
+
+    // Disallow editing if already consolidated into a bill
+    if (existing.bill_id) {
+      return {
+        success: false,
+        error: 'This transaction is part of a generated bill. Delete or cancel the bill first, then edit the transaction.',
+      };
+    }
+
+    const {
+      customer_id = existing.customer_id,
+      vegetable_id = existing.vegetable_id,
+      vegetable_name_snapshot,
+      weight = existing.weight,
+      rate = existing.rate,
+      unit = existing.unit || 'kg',
+      payment_type = existing.payment_type || 'Credit',
+      payment_mode = existing.payment_mode || 'Cash',
+      paid_amount,
+      transaction_date = existing.transaction_date,
+    } = payload || {};
+
+    // 1. Validate Customer
+    const customer = customerModel.findById(customer_id);
+    if (!customer) {
+      return { success: false, error: 'Selected customer does not exist' };
+    }
+
+    // 2. Validate Vegetable
+    const vegetable = vegetableModel.findById(vegetable_id);
+    if (!vegetable) {
+      return { success: false, error: 'Selected vegetable does not exist' };
+    }
+
+    // 3. Validate Weight
+    const numWeight = Number(weight);
+    if (isNaN(numWeight) || numWeight <= 0) {
+      return { success: false, error: 'Weight must be greater than 0' };
+    }
+
+    // 4. Validate Rate
+    const numRate = Number(rate);
+    if (isNaN(numRate) || numRate < 0) {
+      return { success: false, error: 'Rate must be 0 or greater' };
+    }
+
+    // 5. Calculate Base, Commission, Final Amount at the shop's configured rate
+    const totals = calculateTransactionTotals(numWeight, numRate, getShopCommissionPercent());
+
+    // 6. Payment Amount Calculations
+    let finalPaid = 0;
+    let finalRemaining = totals.finalAmount;
+
+    if (payment_type === 'Paid') {
+      finalPaid = totals.finalAmount;
+      finalRemaining = 0;
+    } else if (payment_type === 'Partial') {
+      const rawPaid = Number(paid_amount !== undefined ? paid_amount : existing.paid_amount) || 0;
+      finalPaid = Math.min(totals.finalAmount, Math.max(0, Math.round(rawPaid * 100) / 100));
+      finalRemaining = Math.round((totals.finalAmount - finalPaid) * 100) / 100;
+    } else {
+      // Credit
+      finalPaid = 0;
+      finalRemaining = totals.finalAmount;
+    }
+
+    const vegName = vegetable_name_snapshot && vegetable_name_snapshot.trim()
+      ? vegetable_name_snapshot.trim()
+      : vegetable.name;
+
+    const tDate = transaction_date && transaction_date.trim()
+      ? transaction_date.trim()
+      : existing.transaction_date;
+
+    const updated = transaction(() => {
+      // Step A: Revert old credit booking from old customer
+      const bookedRow = execGet(
+        `SELECT COALESCE(SUM(amount), 0) AS booked FROM credit_transactions
+         WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+        [id]
+      );
+      const booked = Number(bookedRow?.booked || 0);
+
+      if (booked > 0) {
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+          booked,
+          existing.customer_id,
+        ]);
+      }
+
+      // Step B: Delete old credit_transactions for this transaction
+      execRun(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
+
+      // Step C: Update the transaction record
+      const result = transactionModel.updateById(id, {
+        customer_id: Number(customer_id),
+        vegetable_id: Number(vegetable_id),
+        vegetable_name_snapshot: vegName,
+        weight: numWeight,
+        unit: unit || vegetable.unit || 'kg',
+        rate: numRate,
+        base_amount: totals.baseAmount,
+        commission_rate: totals.commissionRate,
+        commission_amount: totals.commissionAmount,
+        final_amount: totals.finalAmount,
+        payment_type,
+        payment_mode: payment_type === 'Credit' ? 'Credit' : payment_mode,
+        paid_amount: finalPaid,
+        remaining_amount: finalRemaining,
+        transaction_date: tDate,
+      });
+
+      // Step D: If there is remaining credit/udhar, add debt to customer and write ledger entry
+      if (finalRemaining > 0) {
+        const remainingPaise = toPaise(finalRemaining);
+        execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+          remainingPaise,
+          Number(customer_id),
+        ]);
+
+        const updatedCustomer = customerModel.findById(customer_id);
+        const newBalancePaise = toPaise(updatedCustomer.credit_balance);
+
+        execRun(
+          `INSERT INTO credit_transactions (
+            customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            Number(customer_id),
+            id,
+            'CREDIT_ADDED',
+            remainingPaise,
+            payment_type === 'Credit' ? 'Credit' : payment_mode,
+            `Edited sale: ${numWeight} ${unit} ${vegName} @ ₹${numRate}`,
+            newBalancePaise,
+          ]
+        );
+      }
+
+      return result;
+    });
+
+    logger.info(`Transaction ${id} updated successfully`);
+    return { success: true, data: updated };
+  } catch (err) {
+    logger.error(`Failed to update transaction ${id}:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Customers with entries still waiting to be billed, oldest first.
  *
  * Read-only aggregate — nothing here decides anything, it only tells the vendor where
@@ -750,6 +909,7 @@ async function getPendingSettlements() {
 
 module.exports = {
   createTransaction,
+  updateTransaction,
   generateBillFromTransactions,
   generateStatement,
   autoBillPastTransactions,

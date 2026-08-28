@@ -544,6 +544,14 @@ const MIGRATIONS = [
       `);
     },
   },
+
+  {
+    version: 10,
+    name: 'vegetables-add-category-column',
+    up(db) {
+      addColumnIfMissing(db, 'vegetables', 'category', "TEXT DEFAULT 'General'");
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

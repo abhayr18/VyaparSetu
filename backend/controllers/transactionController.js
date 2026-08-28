@@ -83,6 +83,15 @@ async function getCustomerRangeTransactions(req, res) {
   return res.status(400).json({ success: false, error: result.error });
 }
 
+async function updateTransaction(req, res) {
+  const { id } = req.params;
+  const result = await transactionService.updateTransaction(id, req.body);
+  if (result.success) {
+    return res.json({ success: true, data: result.data, message: 'Transaction updated successfully.' });
+  }
+  return res.status(400).json({ success: false, error: result.error });
+}
+
 async function deleteTransaction(req, res) {
   const { id } = req.params;
   const result = await transactionService.deleteTransaction(id);
@@ -94,6 +103,7 @@ async function deleteTransaction(req, res) {
 
 module.exports = {
   createTransaction,
+  updateTransaction,
   generateBill,
   generateStatement,
   getAllTransactions,

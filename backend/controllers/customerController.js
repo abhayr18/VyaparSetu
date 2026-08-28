@@ -111,4 +111,23 @@ function getLedger(req, res, next) {
   }
 }
 
-module.exports = { getAll, getById, searchCustomers, create, update, remove, getLedger };
+/**
+ * POST /api/customers/bulk
+ */
+function bulkImport(req, res, next) {
+  try {
+    const { items, updateExisting = true } = req.body;
+    const result = customerService.bulkImportCustomers(items, { updateExisting });
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: `Successfully processed ${result.total} customers (${result.created} created, ${result.updated} updated, ${result.skipped} skipped).`,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getAll, getById, searchCustomers, create, update, remove, getLedger, bulkImport };
+
+

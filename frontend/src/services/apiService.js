@@ -78,6 +78,9 @@ export const customersApi = {
 
   /** DELETE /api/customers/:id */
   remove: (id) => apiClient.delete(`/api/customers/${id}`),
+
+  /** POST /api/customers/bulk */
+  bulkImport: (data) => apiClient.post('/api/customers/bulk', data),
 };
 
 // ─── Vegetables API ───────────────────────────────────────────────────────────
@@ -99,7 +102,11 @@ export const vegetablesApi = {
 
   /** DELETE /api/vegetables/:id */
   remove: (id) => apiClient.delete(`/api/vegetables/${id}`),
+
+  /** POST /api/vegetables/bulk */
+  bulkImport: (data) => apiClient.post('/api/vegetables/bulk', data),
 };
+
 
 // ─── Bills API ───────────────────────────────────────────────────────────────
 export const billsApi = {
@@ -142,6 +149,7 @@ export const reportsApi = {
   getVegetables: (startDate, endDate) => apiClient.get('/api/reports/vegetables', { params: { startDate, endDate } }),
   getCredit: (date) => apiClient.get('/api/reports/credit', { params: { date } }),
   getCommission: (startDate, endDate) => apiClient.get('/api/reports/commission', { params: { startDate, endDate } }),
+  getAllInOne: (startDate, endDate) => apiClient.get('/api/reports/all-in-one', { params: { startDate, endDate } }),
 };
 
 // ─── Backup API ──────────────────────────────────────────────────────────────
@@ -191,6 +199,7 @@ export const transactionApi = {
   getByCustomer: (customerId, params) => apiClient.get(`/api/transactions/customer/${customerId}`, { params }),
   getCustomerDaily: (customerId, date) => apiClient.get(`/api/transactions/customer/${customerId}/daily`, { params: { date } }),
   getCustomerRange: (customerId, startDate, endDate) => apiClient.get(`/api/transactions/customer/${customerId}/range`, { params: { startDate, endDate } }),
+  update: (id, data) => apiClient.put(`/api/transactions/${id}`, data),
   remove: (id) => apiClient.delete(`/api/transactions/${id}`),
 };
 

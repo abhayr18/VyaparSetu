@@ -9,5 +9,6 @@ router.get('/customers', reportController.getCustomers);
 router.get('/vegetables', reportController.getVegetables);
 router.get('/credit', reportController.getCredit);
 router.get('/commission', reportController.getCommission);
+router.get('/all-in-one', reportController.getAllInOne);
 
 module.exports = router;

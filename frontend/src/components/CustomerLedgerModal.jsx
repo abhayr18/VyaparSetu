@@ -13,8 +13,9 @@ import { useTranslation } from '../hooks/useTranslation';
 import { displayAmount } from '../utils/creditLedger';
 import {
   ReceiptIcon, PhoneIcon, MapPinIcon, AlertIcon,
-  HistoryIcon, CheckIcon, ChartIcon,
+  HistoryIcon, CheckIcon, ChartIcon, EyeIcon,
 } from './Icons';
+import ReceiptPrint from './ReceiptPrint';
 
 // ─── Small Helpers ────────────────────────────────────────────────────────────
 function fmt(val) {
@@ -86,7 +87,8 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose,
   const [ledger, setLedger]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
-  const [tab, setTab]         = useState('all'); // all | invoices | payments
+  const [tab, setTab]                 = useState('all'); // all | invoices | payments
+  const [viewingBill, setViewingBill] = useState(null);
 
   // Opening-balance entry. Collapsed until the vendor asks for it, because it is a
   // once-per-customer migration step, not part of day-to-day work.
@@ -334,14 +336,14 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose,
     if (items.length === 0) return <EmptyState label="No history found for this customer." />;
     return items.map((item) => (
       item._type === 'bill'
-        ? <BillRow key={`b-${item.id}`} bill={item} />
+        ? <BillRow key={`b-${item.id}`} bill={item} onView={setViewingBill} />
         : <TxRow key={`t-${item.id}`} tx={item} />
     ));
   }
 
   function renderInvoices(bills) {
     if (bills.length === 0) return <EmptyState label="No invoices found." />;
-    return bills.map(b => <BillRow key={b.id} bill={b} />);
+    return bills.map(b => <BillRow key={b.id} bill={b} onView={setViewingBill} />);
   }
 
   function renderTransactions(txs, type) {
@@ -407,6 +409,15 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose,
           {renderContent()}
         </div>
       </div>
+
+      {/* ── Direct Invoice Viewer ────────────────────────────────────────── */}
+      {viewingBill && (
+        <ReceiptPrint
+          isOpen={Boolean(viewingBill)}
+          onClose={() => setViewingBill(null)}
+          bill={viewingBill}
+        />
+      )}
     </>
   );
 }
@@ -421,19 +432,22 @@ function EmptyState({ label }) {
   );
 }
 
-function BillRow({ bill }) {
+function BillRow({ bill, onView }) {
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '90px 1fr auto auto',
-      gap: 12,
-      alignItems: 'center',
-      padding: '10px 20px',
-      borderBottom: '1px solid var(--color-border-light)',
-      transition: 'background 0.1s',
-    }}
-    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-bg-light)'}
-    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '90px 1fr auto auto auto',
+        gap: 12,
+        alignItems: 'center',
+        padding: '10px 20px',
+        borderBottom: '1px solid var(--color-border-light)',
+        transition: 'background 0.1s',
+        cursor: 'pointer',
+      }}
+      onClick={() => onView && onView(bill)}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--color-bg-light)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
       {/* Date */}
       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
@@ -467,6 +481,26 @@ function BillRow({ bill }) {
 
       {/* Status */}
       <StatusBadge status={bill.payment_status} />
+
+      {/* View Action Icon */}
+      <button
+        type="button"
+        className="btn-icon"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onView) onView(bill);
+        }}
+        title="View Invoice"
+        style={{
+          background: 'var(--color-primary-light)',
+          color: 'var(--color-primary)',
+          border: 'none',
+          padding: '4px 6px',
+          cursor: 'pointer',
+        }}
+      >
+        <EyeIcon style={{ width: 14, height: 14 }} />
+      </button>
     </div>
   );
 }

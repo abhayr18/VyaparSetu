@@ -93,7 +93,15 @@ export default function TransactionEntry({
     }
     if (customer) {
       setErrors((prev) => ({ ...prev, customer: null }));
-      setTimeout(() => vegetableRef.current?.focus(), 50);
+      // If vegetable is already selected from a previous entry, jump straight to weight input!
+      if (selectedVegetable) {
+        setTimeout(() => {
+          weightRef.current?.focus();
+          weightRef.current?.select();
+        }, 50);
+      } else {
+        setTimeout(() => vegetableRef.current?.focus(), 50);
+      }
     }
   }
 
@@ -103,7 +111,10 @@ export default function TransactionEntry({
     if (veg) {
       setRate(veg.rate != null ? String(veg.rate) : '');
       setErrors((prev) => ({ ...prev, vegetable: null }));
-      setTimeout(() => weightRef.current?.focus(), 50);
+      setTimeout(() => {
+        weightRef.current?.focus();
+        weightRef.current?.select();
+      }, 50);
     }
   }
 
@@ -146,22 +157,21 @@ export default function TransactionEntry({
 
     const res = await onSubmitTransaction(payload);
     if (res?.success) {
-      // Keep selectedCustomer sticky for rapid multi-vegetable entry.
-      // Reset only the vegetable and line details.
-      setSelectedVegetable(null);
+      // Mandi workflow: Keep selected vegetable & rate sticky for consecutive customer sales.
+      // Reset customer and weight fields for the next buyer.
+      setSelectedCustomer(null);
       setWeight('');
-      setRate('');
       setPaidInput('');
       setPaymentType('Credit');
       setPaymentMode('Cash');
       setErrors({});
 
-      // Clear vegetable autocomplete
-      vegetableRef.current?.clear();
+      // Clear customer autocomplete
+      customerRef.current?.clear();
 
-      // Return focus directly to Vegetable input for next item of this customer
+      // Return focus directly to Customer input for the next buyer
       setTimeout(() => {
-        vegetableRef.current?.focus();
+        customerRef.current?.focus();
       }, 50);
     }
   }

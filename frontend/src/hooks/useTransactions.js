@@ -302,6 +302,30 @@ export function useTransactions() {
     setEndDate(settlement.newest_date);
   }, []);
 
+  // Update transaction
+  async function updateTransaction(id, payload) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await transactionApi.update(id, payload);
+      if (res?.success) {
+        setToastMessage({ text: 'updateSuccess', type: 'success' });
+        if (activeCustomerId) {
+          fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
+        }
+        loadPendingSettlements();
+        return { success: true, data: res.data };
+      }
+      setToastMessage({ text: 'updateFailed', detail: res?.error, type: 'error' });
+      return { success: false, error: res?.error };
+    } catch (err) {
+      setToastMessage({ text: 'updateFailed', detail: err.message, type: 'error' });
+      return { success: false, error: err.message };
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return {
     customers,
     vegetables,
@@ -326,6 +350,7 @@ export function useTransactions() {
     openSettlement,
     refreshPendingSettlements: loadPendingSettlements,
     createTransaction,
+    updateTransaction,
     generateBill,
     generateStatement,
     deleteTransaction,

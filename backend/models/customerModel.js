@@ -202,4 +202,112 @@ function getLedger(customerId) {
   };
 }
 
-module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger };
+/**
+ * Bulk insert or update customers within a transaction.
+ * @param {Array<{ name: string, mobile: string, address?: string, notes?: string, opening_balance?: number }>} items
+ * @param {{ updateExisting?: boolean }} options
+ */
+function bulkUpsert(items, { updateExisting = true } = {}) {
+  const { transaction } = require('../database/db');
+  const creditModel = require('./creditModel');
+
+  return transaction(() => {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors = [];
+
+    items.forEach((item, index) => {
+      try {
+        const name = (item.name || '').trim();
+        if (!name) {
+          errors.push({ row: index + 1, mobile: item.mobile || '', error: 'Customer name is required.' });
+          return;
+        }
+
+        const mobile = String(item.mobile || '').trim();
+        if (!mobile) {
+          errors.push({ row: index + 1, name, error: 'Mobile number is required.' });
+          return;
+        }
+        if (!/^\d{10}$/.test(mobile)) {
+          errors.push({ row: index + 1, name, mobile, error: 'Mobile number must be exactly 10 digits.' });
+          return;
+        }
+
+        const address = (item.address || '').trim();
+        const notes = (item.notes || '').trim();
+        const openingRaw = item.opening_balance;
+        let opening = 0;
+        if (openingRaw !== undefined && openingRaw !== null && String(openingRaw).trim() !== '') {
+          const num = Number(openingRaw);
+          if (Number.isFinite(num) && num > 0) {
+            opening = Number(num.toFixed(2));
+          }
+        }
+
+        const rows = execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]);
+
+        if (rows.length > 0) {
+          const existing = rows[0];
+          if (updateExisting || existing.is_deleted === 1) {
+            execRun(
+              `UPDATE customers
+               SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [name, address, notes, existing.id]
+            );
+
+            if (existing.is_deleted === 1) {
+              created++;
+            } else {
+              updated++;
+            }
+
+            if (opening > 0 && !creditModel.hasOpeningBalance(existing.id)) {
+              creditModel.recordOpeningBalance({
+                customer_id: existing.id,
+                amount: opening,
+                note: 'Opening balance (imported)',
+              });
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          execRun(
+            `INSERT INTO customers (name, mobile, address, notes, credit_balance)
+             VALUES (?, ?, ?, ?, 0.0)`,
+            [name, mobile, address, notes]
+          );
+
+          const insertedRows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [mobile]);
+          const newId = insertedRows[0]?.id;
+
+          if (newId && opening > 0) {
+            creditModel.recordOpeningBalance({
+              customer_id: newId,
+              amount: opening,
+              note: 'Opening balance (imported)',
+            });
+          }
+
+          created++;
+        }
+      } catch (err) {
+        errors.push({ row: index + 1, name: item.name || '', error: err.message });
+      }
+    });
+
+    return {
+      total: items.length,
+      created,
+      updated,
+      skipped,
+      errors,
+    };
+  });
+}
+
+module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger, bulkUpsert };
+

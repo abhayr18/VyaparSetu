@@ -38,6 +38,9 @@ export function useReports() {
         case 'commission':
           res = await reportsApi.getCommission(startDate, endDate);
           break;
+        case 'all_in_one':
+          res = await reportsApi.getAllInOne(startDate, endDate);
+          break;
         default:
           throw new Error('Invalid report type selected');
       }

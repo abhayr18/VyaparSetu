@@ -18,6 +18,7 @@ router.get('/:id', transactionController.getTransactionById);
 router.get('/customer/:customerId', transactionController.getCustomerTransactions);
 router.get('/customer/:customerId/daily', transactionController.getCustomerDailyPurchase);
 router.get('/customer/:customerId/range', transactionController.getCustomerRangeTransactions);
+router.put('/:id', transactionController.updateTransaction);
 router.delete('/:id', transactionController.deleteTransaction);
 
 module.exports = router;

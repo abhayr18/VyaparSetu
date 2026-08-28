@@ -70,8 +70,19 @@ export function useCustomers() {
     }
   }
 
+  async function bulkImportCustomers(data) {
+    try {
+      const res = await customersApi.bulkImport(data);
+      await fetchAll();
+      return { success: true, data: res.data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     customers,
+    allCustomers,
     loading,
     error,
     searchQuery,
@@ -80,5 +91,7 @@ export function useCustomers() {
     createCustomer,
     updateCustomer,
     deleteCustomer,
+    bulkImportCustomers,
   };
 }
+

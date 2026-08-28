@@ -128,9 +128,12 @@ async function bindAppTo(dbFile) {
     transactionService: require('../../services/transactionService.js'),
     billService: require('../../services/billService.js'),
     creditService: require('../../services/creditService.js'),
+    vegetableService: require('../../services/vegetableService.js'),
+    customerService: require('../../services/customerService.js'),
     settingsService: require('../../services/settingsService.js'),
   };
 }
+
 
 /** A new temp directory, registered for cleanup. */
 function tempDbFile() {

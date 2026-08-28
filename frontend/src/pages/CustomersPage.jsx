@@ -1,21 +1,10 @@
-/**
- * Customers Page
- * Full customer management UI:
- *  - Stats bar
- *  - Search bar
- *  - Customer table
- *  - Add / Edit modal
- *  - Delete confirmation
- *  - Customer ledger history modal
- *  - Toast notifications
- */
-
 import { useState, useCallback } from 'react';
 import { useCustomers } from '../hooks/useCustomers';
 import { useTranslation } from '../hooks/useTranslation';
 import CustomerModal from '../components/CustomerModal';
 import CustomerLedgerModal from '../components/CustomerLedgerModal';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
+import ImportCustomersModal from '../components/ImportCustomersModal';
 import MarathiInput from '../components/MarathiInput';
 import {
   PhoneIcon,
@@ -25,8 +14,12 @@ import {
   ReceiptIcon,
   SearchIcon,
   AlertIcon,
-  HistoryIcon
+  HistoryIcon,
+  DownloadIcon,
+  UploadIcon,
+  FileSpreadsheetIcon,
 } from '../components/Icons';
+import { exportCustomersToExcel } from '../utils/excelUtils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function hasDevanagari(str) {
@@ -136,14 +129,22 @@ function CustomerRow({ customer, onEdit, onDelete, onHistory, t }) {
 export default function CustomersPage() {
   const { t } = useTranslation();
   const {
-    customers, loading, error,
-    searchQuery, setSearchQuery,
+    customers,
+    allCustomers,
+    loading,
+    error,
+    searchQuery,
+    setSearchQuery,
     fetchAll,
-    createCustomer, updateCustomer, deleteCustomer,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer,
+    bulkImportCustomers,
   } = useCustomers();
 
   // Modal state
   const [modalOpen, setModalOpen]               = useState(false);
+  const [importModalOpen, setImportModalOpen]   = useState(false);
   const [editingCustomer, setEditingCustomer]   = useState(null);
   const [deleteTarget, setDeleteTarget]         = useState(null);
   const [deleteLoading, setDeleteLoading]       = useState(false);
@@ -200,6 +201,31 @@ export default function CustomersPage() {
     }
   }
 
+  function handleExport() {
+    if (!customers || customers.length === 0) {
+      showToast(t('excel.noDataToExport') || 'No customers to export', 'error');
+      return;
+    }
+    try {
+      exportCustomersToExcel(customers);
+      showToast(t('excel.exportSuccess') || 'Customers exported successfully to Excel!');
+    } catch (err) {
+      showToast(err.message || 'Export failed', 'error');
+    }
+  }
+
+  async function handleBulkImportSubmit(data) {
+    const res = await bulkImportCustomers(data);
+    if (res.success) {
+      const { created, updated, skipped } = res.data;
+      showToast(
+        `${t('excel.importSuccess') || 'Successfully imported'}: ${created} ${t('excel.added') || 'added'}, ${updated} ${t('excel.updated') || 'updated'}${skipped > 0 ? `, ${skipped} ${t('excel.skipped') || 'skipped'}` : ''}.`
+      );
+    } else {
+      throw new Error(res.error || 'Import failed');
+    }
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="customers-page">
@@ -216,13 +242,40 @@ export default function CustomersPage() {
           <h1 className="page-title">{t('customers.title')}</h1>
           <p className="page-desc">{t('customers.subtitle')}</p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={openAdd}
-          id="add-customer-btn"
-        >
-          + {t('customers.addCustomer')}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Export Excel Button */}
+          <button
+            className="btn btn-secondary"
+            onClick={handleExport}
+            id="export-customer-btn"
+            title={t('excel.exportExcel') || 'Export to Excel'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <DownloadIcon style={{ width: 15, height: 15 }} />
+            <span>{t('excel.exportExcel') || 'Export Excel'}</span>
+          </button>
+
+          {/* Import Excel Button */}
+          <button
+            className="btn btn-secondary"
+            onClick={() => setImportModalOpen(true)}
+            id="import-customer-btn"
+            title={t('excel.importExcel') || 'Import from Excel'}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <UploadIcon style={{ width: 15, height: 15 }} />
+            <span>{t('excel.importExcel') || 'Import Excel'}</span>
+          </button>
+
+          {/* Add Customer Button */}
+          <button
+            className="btn btn-primary"
+            onClick={openAdd}
+            id="add-customer-btn"
+          >
+            + {t('customers.addCustomer')}
+          </button>
+        </div>
       </div>
 
       {/* ── KPI Stats ──────────────────────────────────────────────────────── */}
@@ -301,9 +354,14 @@ export default function CustomersPage() {
               {searchQuery ? t('customers.noSearchResults') : t('customers.noCustomers')}
             </p>
             {!searchQuery && (
-              <button className="btn btn-primary" onClick={openAdd} style={{ marginTop: 12 }}>
-                + {t('customers.addCustomer')}
-              </button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 12, justifyContent: 'center' }}>
+                <button className="btn btn-primary" onClick={openAdd}>
+                  + {t('customers.addCustomer')}
+                </button>
+                <button className="btn btn-secondary" onClick={() => setImportModalOpen(true)}>
+                  <UploadIcon style={{ width: 15, height: 15 }} /> {t('excel.importExcel') || 'Import Excel'}
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -348,6 +406,14 @@ export default function CustomersPage() {
         />
       )}
 
+      {/* Import Customers Modal */}
+      <ImportCustomersModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        existingCustomers={allCustomers || []}
+        onImportSuccess={handleBulkImportSubmit}
+      />
+
       {/* Customer Full Ledger / History Modal */}
       {ledgerCustomer && (
         <CustomerLedgerModal
@@ -372,3 +438,4 @@ export default function CustomersPage() {
     </div>
   );
 }
+

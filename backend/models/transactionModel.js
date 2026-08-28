@@ -323,6 +323,67 @@ function deleteById(id) {
   return true;
 }
 
+/**
+ * Updates an existing transaction record.
+ */
+function updateById(id, {
+  customer_id,
+  vegetable_id,
+  vegetable_name_snapshot,
+  weight,
+  unit = 'kg',
+  rate,
+  base_amount,
+  commission_rate = DEFAULT_COMMISSION_PERCENT,
+  commission_amount,
+  final_amount,
+  payment_type = 'Credit',
+  payment_mode = 'Credit',
+  paid_amount = 0,
+  remaining_amount = 0,
+  transaction_date
+}) {
+  execRun(
+    `UPDATE transactions SET
+      customer_id = ?,
+      vegetable_id = ?,
+      vegetable_name_snapshot = ?,
+      weight = ?,
+      unit = ?,
+      rate = ?,
+      base_amount = ?,
+      commission_rate = ?,
+      commission_amount = ?,
+      final_amount = ?,
+      payment_type = ?,
+      payment_mode = ?,
+      paid_amount = ?,
+      remaining_amount = ?,
+      transaction_date = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`,
+    [
+      customer_id,
+      vegetable_id,
+      vegetable_name_snapshot,
+      weight,
+      unit,
+      toPaise(rate),
+      toPaise(base_amount),
+      commission_rate,
+      toPaise(commission_amount),
+      toPaise(final_amount),
+      payment_type,
+      payment_mode,
+      toPaise(paid_amount),
+      toPaise(remaining_amount),
+      transaction_date,
+      id
+    ]
+  );
+  return findById(id);
+}
+
 module.exports = {
   create,
   findById,
@@ -335,5 +396,6 @@ module.exports = {
   getDailyCustomerSummary,
   markAsBilled,
   clearBillLink,
-  deleteById
+  deleteById,
+  updateById
 };

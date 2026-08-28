@@ -101,6 +101,7 @@ export default function TransactionsPage() {
     pendingSettlements,
     openSettlement,
     createTransaction,
+    updateTransaction,
     generateBill,
     generateStatement,
     deleteTransaction
@@ -161,6 +162,7 @@ export default function TransactionsPage() {
       {/* MODULE B: Customer Daily Purchase & Transaction History */}
       <CustomerDailyPurchase
         customers={customers}
+        vegetables={vegetables}
         activeCustomerId={activeCustomerId}
         onSelectCustomer={(cId) => setActiveCustomerId(cId)}
         dateFilterType={dateFilterType}
@@ -175,8 +177,10 @@ export default function TransactionsPage() {
         dailyData={dailyData}
         historyLoading={historyLoading}
         onDeleteTransaction={deleteTransaction}
+        onUpdateTransaction={updateTransaction}
         onGenerateBill={generateBill}
         onGenerateStatement={generateStatement}
+        commissionRate={settings.commission_rate}
       />
 
 

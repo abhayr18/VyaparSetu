@@ -5,7 +5,7 @@
 
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from '../hooks/useTranslation';
-import { LeafIcon } from '../components/Icons';
+import appLogo from '../assets/logo.jpg';
 
 // ─── Nav Icon SVGs ────────────────────────────────────────────────────────────
 const NavIcons = {
@@ -78,14 +78,12 @@ const NavIcons = {
 
 const NAV_ITEMS = [
   { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard'    },
-  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
-  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
   { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions' },
-  // Directly below Transactions: it is the read view of what that page writes, and a
-  // vendor who has just logged the day's entries goes here to total them.
   { key: 'daybook',      to: '/daybook',      icon: NavIcons.DayBook,      label: 'nav.daybook'      },
   { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing'      },
   { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar'        },
+  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
+  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
   { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports'      },
   { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup'       },
   { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings'     },
@@ -97,13 +95,15 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar" id="main-sidebar">
-      {/* Brand */}
+      {/* Official App Logo */}
       <div className="sidebar-brand">
-        <div className="sidebar-brand-name" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <LeafIcon style={{ width: '18px', height: '18px', color: 'var(--color-primary)', flexShrink: 0 }} />
-          <span>{t('common.appName')}</span>
-        </div>
-        <div className="sidebar-brand-tag">{t('common.tagline')}</div>
+        <NavLink to="/" className="sidebar-brand-link" title="VyapaarSetu">
+          <img
+            src={appLogo}
+            alt="VyapaarSetu"
+            className="sidebar-brand-logo"
+          />
+        </NavLink>
       </div>
 
       {/* Navigation */}

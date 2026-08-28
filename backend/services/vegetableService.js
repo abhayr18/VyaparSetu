@@ -86,6 +86,16 @@ function deleteVegetable(id) {
   return vegetableModel.remove(id);
 }
 
+function bulkImportVegetables(items, options = {}) {
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error('No vegetable records provided for import.');
+    err.statusCode = 400;
+    throw err;
+  }
+  const { updateExisting = true } = options;
+  return vegetableModel.bulkUpsert(items, { updateExisting });
+}
+
 module.exports = {
   getAllVegetables,
   getVegetableById,
@@ -93,4 +103,6 @@ module.exports = {
   createVegetable,
   updateVegetable,
   deleteVegetable,
+  bulkImportVegetables,
 };
+

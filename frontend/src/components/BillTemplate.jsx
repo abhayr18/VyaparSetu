@@ -150,10 +150,20 @@ export default function BillTemplate({ bill }) {
     );
   }
 
-  // Extract market location / city
-  const city = settings.address
+  // Extract market location, city, market name, gala
+  const city = settings.city || (settings.address
     ? settings.address.split(',').pop().trim()
-    : (isMarathi ? 'फलटण' : 'Phaltan');
+    : (isMarathi ? 'फलटण' : 'Phaltan'));
+  const marketName = settings.market_name || (isMarathi ? 'कृषी उत्पन्न बाजार समिती' : 'APMC Market');
+  const galaNumber = settings.gala_number ? `(${settings.gala_number})` : '';
+
+  // Devotion text
+  const defaultDevotion = isMarathi ? '॥ हरि ॐ ॥  ॥ श्रीराम ॥  ॥ अंबा ॥' : '|| Hari Om ||  || Shri Ram ||  || Amba ||';
+  const devotionText = (settings.devotion_text && settings.devotion_text.trim()) || defaultDevotion;
+  const devotionParts = devotionText.split(/\s{2,}|\s{1,}\|\s{1,}|\t/).filter(Boolean);
+
+  // Phone numbers line
+  const phones = [settings.mobile_number, settings.secondary_mobile].filter(Boolean).join(' / ');
 
   return (
     <div
@@ -172,20 +182,22 @@ export default function BillTemplate({ bill }) {
         boxSizing: 'border-box',
       }}
     >
-      {/* Devotion Headers (॥ हरि ॐ ॥  ॥ श्रीराम ॥  ॥ अंबा ॥) */}
+      {/* Devotion Headers */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: devotionParts.length > 1 ? 'space-between' : 'center',
           fontSize: '0.82rem',
           fontWeight: 'bold',
           color: themeColor,
           marginBottom: '6px',
         }}
       >
-        <span>{isMarathi ? '॥ हरि ॐ ॥' : '|| Hari Om ||'}</span>
-        <span>{isMarathi ? '॥ श्रीराम ॥' : '|| Shri Ram ||'}</span>
-        <span>{isMarathi ? '॥ अंबा ॥' : '|| Amba ||'}</span>
+        {devotionParts.length > 1 ? (
+          devotionParts.map((part, idx) => <span key={idx}>{part}</span>)
+        ) : (
+          <span>{devotionText}</span>
+        )}
       </div>
 
       {/* APMC Market Line */}
@@ -200,7 +212,7 @@ export default function BillTemplate({ bill }) {
         }}
       >
         <span>
-          {isMarathi ? 'कृषी उत्पन्न बाजार समिती,' : 'APMC,'} {city}
+          {marketName}, {city} {galaNumber}
         </span>
         <span>
           {isMarathi ? `(${city} न्यायकक्षेत)` : `(${city} Jurisdiction)`}
@@ -230,15 +242,26 @@ export default function BillTemplate({ bill }) {
             marginTop: '2px',
           }}
         >
-          {settings.owner_name ? (
+          {settings.owner_name && (
             <span>
-              {settings.owner_name} - {settings.mobile_number}
-            </span>
-          ) : (
-            <span>
-              {isMarathi ? 'भाजीपाला व फळे अडतदार' : 'Vegetables & Fruits Commission Agent'}
+              {settings.owner_name} {phones ? `(${phones})` : ''}
             </span>
           )}
+          {!settings.owner_name && phones && (
+            <span>{phones}</span>
+          )}
+        </div>
+
+        {/* Tagline / Business Nature */}
+        <div
+          style={{
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            color: '#444',
+            marginTop: '2px',
+          }}
+        >
+          {settings.tagline || (isMarathi ? 'भाजीपाला व फळे अडतदार' : 'Vegetables & Fruits Commission Agent')}
         </div>
       </div>
 
@@ -258,7 +281,9 @@ export default function BillTemplate({ bill }) {
       >
         <div>
           <span>{isMarathi ? 'पा. नं.' : 'Bill No.'} </span>
-          <span style={{ fontSize: '1.1rem', color: themeColor }}>{bill.bill_number}</span>
+          <span style={{ fontSize: '1.1rem', color: themeColor }}>
+            {bill.bill_number || (isMarathi ? 'खाते उतारा' : 'STATEMENT')}
+          </span>
         </div>
         <div style={{ fontSize: '0.78rem', maxWidth: '60%', textAlign: 'right' }}>
           {settings.address || (isMarathi ? 'भाजीपाला मार्केट' : 'Vegetable Market')}
@@ -533,13 +558,19 @@ export default function BillTemplate({ bill }) {
       <div
         style={{
           textAlign: 'center',
-          marginTop: '25px',
+          marginTop: '20px',
           fontSize: '0.78rem',
-          color: '#666',
-          fontStyle: 'italic',
+          color: '#555',
         }}
       >
-        {t('billing.thankYou')}
+        <div style={{ fontStyle: 'italic', marginBottom: settings.upi_id ? 4 : 0 }}>
+          {settings.bill_footer_note || t('billing.thankYou')}
+        </div>
+        {settings.upi_id && (
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: themeColor }}>
+            UPI ID: {settings.upi_id}
+          </div>
+        )}
       </div>
     </div>
   );

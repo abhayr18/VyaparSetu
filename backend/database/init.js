@@ -224,11 +224,21 @@ function seedSettings(db) {
     ['language', 'en', 'UI display language (en or mr)'],
     ['app_version', '1.0.0', 'Application version'],
     ['vendor_name', '', 'Vendor / Shop name'],
-    ['owner_name', '', 'Owner name'],
-    ['mobile_number', '', 'Mobile number'],
+    ['tagline', '', 'Business Tagline / Nature of work'],
+    ['owner_name', '', 'Owner / Proprietor name'],
+    ['mobile_number', '', 'Primary Mobile number'],
+    ['secondary_mobile', '', 'Secondary / WhatsApp mobile number'],
+    ['market_name', '', 'APMC Market name'],
+    ['gala_number', '', 'Shop / Gala number'],
     ['address', '', 'Business address'],
+    ['city', '', 'City / Jurisdiction'],
+    ['devotion_text', '', 'Header devotion / blessing text'],
+    ['bill_footer_note', '', 'Bill footer note or terms'],
+    ['upi_id', '', 'UPI ID for payments'],
     ['commission_rate', '8', 'Commission percentage rate'],
     ['default_payment_mode', 'Cash', 'Default payment type mode'],
+    ['units', JSON.stringify(['kg', 'piece', 'bundle', 'dozen', 'gram', 'liter', 'crate', 'bag', 'quintal']), 'Configurable measurement units list'],
+    ['categories', JSON.stringify(['पालेभाज्या (Leafy)', 'फळभाज्या (Fruit)', 'कंदमुळे (Roots/Tubers)', 'मिरची व मसाले (Chilli & Spices)', 'सर्वसाधारण (General)']), 'Configurable vegetable categories list'],
   ];
 
   const insert = db.prepare(
