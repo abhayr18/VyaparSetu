@@ -13,13 +13,22 @@
  *
  * `billNumber` is optional: not every query joins `bills`. With it, the badge names the bill
  * so the vendor can find it; without it, the badge still states the fact correctly.
+ *
+ * `onOpenBill` is optional too. Given one, the badge becomes a button that opens the bill —
+ * the shortest path from "this entry is settled" to the sheet the customer was handed. It
+ * stays one component rather than two so the reading of NULL can never fork; only whether
+ * the result is clickable changes.
+ *
+ * The NULL reading itself lives in `utils/billDisplay.isBilled`, because the history
+ * table needs the same answer to decide whether Delete is allowed.
  */
 
 import { useTranslation } from '../hooks/useTranslation';
+import { isBilled } from '../utils/billDisplay';
 
-export default function BilledBadge({ billId, billNumber, id }) {
+export default function BilledBadge({ billId, billNumber, id, onOpenBill }) {
   const { t } = useTranslation();
-  const isBilled = billId !== null && billId !== undefined && billId !== '';
+  const billed = isBilled(billId);
 
   const style = {
     display: 'inline-block',
@@ -31,7 +40,7 @@ export default function BilledBadge({ billId, billNumber, id }) {
     border: '1px solid',
   };
 
-  if (!isBilled) {
+  if (!billed) {
     return (
       <span
         id={id}
@@ -42,15 +51,39 @@ export default function BilledBadge({ billId, billNumber, id }) {
     );
   }
 
+  // The bill number replaces the word "Billed" rather than sitting beside it: the number
+  // already implies the entry is billed, and the badge has to fit in a cell.
+  const label = billNumber ? `✓ ${billNumber}` : `✓ ${t('daybook.status.billed')}`;
+  const billedStyle = { ...style, background: '#f0fdf4', color: '#15803d', borderColor: '#86efac' };
+
+  if (!onOpenBill) {
+    return (
+      <span id={id} title={t('daybook.status.billed')} style={billedStyle}>
+        {label}
+      </span>
+    );
+  }
+
   return (
-    <span
+    <button
+      type="button"
       id={id}
-      // The bill number replaces the word "Billed" rather than sitting beside it: the
-      // number already implies the entry is billed, and the badge has to fit in a cell.
-      title={t('daybook.status.billed')}
-      style={{ ...style, background: '#f0fdf4', color: '#15803d', borderColor: '#86efac' }}
+      onClick={() => onOpenBill(billId)}
+      title={t('daybook.status.openBill')}
+      style={{
+        ...billedStyle,
+        cursor: 'pointer',
+        font: 'inherit',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        // Underlined because a green pill on its own does not read as clickable, and a
+        // vendor who does not know it opens the bill will never try it.
+        textDecoration: 'underline',
+        textDecorationStyle: 'dotted',
+        textUnderlineOffset: '2px',
+      }}
     >
-      {billNumber ? `✓ ${billNumber}` : `✓ ${t('daybook.status.billed')}`}
-    </span>
+      {label}
+    </button>
   );
 }

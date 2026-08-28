@@ -10,11 +10,14 @@
  */
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../hooks/useTranslation';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import TodayBillModal from './TodayBillModal';
+import BilledBadge from './BilledBadge';
 import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
+import { isBilled } from '../utils/billDisplay';
 
 export default function CustomerDailyPurchase({
   customers = [],
@@ -35,6 +38,7 @@ export default function CustomerDailyPurchase({
   onGenerateBill
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const [deletingId, setDeletingId] = useState(null);
   const [generatedBill, setGeneratedBill] = useState(null);
@@ -44,6 +48,19 @@ export default function CustomerDailyPurchase({
   const activeCustomer = customers.find((c) => c.id === activeCustomerId);
   const summary = dailyData.summary || {};
   const transactions = dailyData.transactions || [];
+
+  /**
+   * Open the bill an entry was consolidated into, in the archive that owns it.
+   *
+   * Deep-linked by **id**, not by the bill number as search text. The Billing search is
+   * Fuse.js at threshold 0.4, so searching "B-2" also returns B-20, B-21 and B-12 — the
+   * vendor would click one bill and be shown a list of several, which looks like it
+   * worked. An id is exact.
+   */
+  function openBillInArchive(billId) {
+    if (!billId) return;
+    navigate(`/billing?bill=${encodeURIComponent(billId)}`);
+  }
 
   async function handleConfirmDelete() {
     if (!deletingId) return;
@@ -280,12 +297,15 @@ export default function CustomerDailyPurchase({
                     <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.commission')}</th>
                     <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.finalAmount')}</th>
                     <th style={{ padding: '0.75rem 1rem' }}>{t('billing.paymentStatus')}</th>
+                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.billStatus')}</th>
                     <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((tx) => (
-                    <tr key={tx.id} style={{ borderBottom: '1px solid #e2e8f0', fontSize: '0.9rem' }}>
+                  {transactions.map((tx) => {
+                    const billed = isBilled(tx.bill_id);
+                    return (
+                    <tr key={tx.id} id={`history-row-${tx.id}`} style={{ borderBottom: '1px solid #e2e8f0', fontSize: '0.9rem' }}>
                       <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>
                         {tx.transaction_date}
                       </td>
@@ -329,23 +349,42 @@ export default function CustomerDailyPurchase({
                           {tx.payment_type || 'Credit'}
                         </span>
                       </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <BilledBadge
+                          billId={tx.bill_id}
+                          billNumber={tx.bill_number}
+                          id={`history-bill-${tx.id}`}
+                          onOpenBill={openBillInArchive}
+                        />
+                      </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                        {/* Billed entries cannot be deleted individually: the bill's stored
+                            totals and its line items would no longer match the sales behind
+                            them. The backend already refuses, but it refused *silently* —
+                            the confirm modal closed, no message appeared, and the row stayed
+                            put. Disabling the button states the rule before it is broken;
+                            the tooltip says what to do instead. */}
                         <button
                           type="button"
                           className="btn btn-outline"
                           onClick={() => setDeletingId(tx.id)}
+                          disabled={billed}
+                          id={`history-delete-${tx.id}`}
+                          title={billed ? t('transactions.deleteBlockedBilled') : t('common.delete')}
                           style={{
                             padding: '3px 8px',
                             fontSize: '0.78rem',
-                            color: '#ef4444',
-                            borderColor: '#fca5a5'
+                            color: billed ? '#94a3b8' : '#ef4444',
+                            borderColor: billed ? '#e2e8f0' : '#fca5a5',
+                            cursor: billed ? 'not-allowed' : 'pointer'
                           }}
                         >
                           🗑️ {t('common.delete')}
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

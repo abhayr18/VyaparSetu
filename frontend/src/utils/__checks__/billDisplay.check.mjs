@@ -18,6 +18,7 @@ import {
   groupItemsByDate,
   isPeriodBill,
   formatBillPeriod,
+  isBilled,
 } from '../billDisplay.js';
 
 let failures = 0;
@@ -149,6 +150,22 @@ const inconsistent = {
   items: [item('A', 1, 400, 400), item('B', 1, 500, 500)],
 };
 check('inconsistent: the discrepancy is not hidden in the last line', columnSum(grossItems(inconsistent.items, inconsistent)), 972);
+
+// ── isBilled: the fact behind both the badge and the Delete button ──────────────
+// Getting this backwards would tell a vendor a debt was settled when it was not, and
+// would offer a Delete the backend is going to refuse. Both directions are asserted.
+check('a real bill id is billed',            isBilled(7), true);
+check('id 1 is billed',                      isBilled(1), true);
+// id 0 is not a value SQLite AUTOINCREMENT hands out, but truthiness checks are the
+// classic way a real id gets read as absent, so it is pinned deliberately.
+check('id 0 is still an id',                 isBilled(0), true);
+check('a string id is billed',               isBilled('7'), true);
+check('null is not billed',                  isBilled(null), false);
+check('undefined is not billed',             isBilled(undefined), false);
+check('a missing property is not billed',    isBilled({}.bill_id), false);
+// An empty string is what a JSON round-trip or form state leaves behind where a missing
+// id was meant; treating it as an id would mark an unbilled entry settled.
+check('empty string is not billed',          isBilled(''), false);
 
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures > 0) process.exit(1);

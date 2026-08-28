@@ -11,8 +11,24 @@ import TransactionEntry from '../components/TransactionEntry';
 import PendingSettlements from '../components/PendingSettlements';
 import CustomerDailyPurchase from '../components/CustomerDailyPurchase';
 
+/**
+ * Non-blocking toast.
+ *
+ * Carries errors as well as confirmations. It was hardcoded green with a ✅, so the only
+ * way to report a refusal was to dress it as a success — which is why refusals were
+ * dropped on the floor instead.
+ */
 function ToastNotification({ toast, onClose, t }) {
   if (!toast) return null;
+
+  const isError = toast.type === 'error';
+
+  // `t()` returns the key itself when a translation is missing, so the old
+  // `t(key) || toast.text` never fell back — it rendered "transactions.deleteFailed".
+  const key = `transactions.${toast.text}`;
+  const translated = t(key);
+  const headline = translated === key ? toast.text : translated;
+
   return (
     <div
       className={`toast toast-${toast.type || 'success'}`}
@@ -22,18 +38,29 @@ function ToastNotification({ toast, onClose, t }) {
         bottom: '20px',
         right: '20px',
         zIndex: 9999,
+        maxWidth: '26rem',
         display: 'flex',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         gap: '10px',
         padding: '12px 18px',
-        background: '#15803d',
+        background: isError ? '#b91c1c' : '#15803d',
         color: 'white',
         borderRadius: '6px',
         boxShadow: '0 10px 15px -3px rgba(0,0,0,0.2)',
         fontWeight: 600
       }}
     >
-      <span>✅ {t(`transactions.${toast.text}`) || toast.text}</span>
+      <span>
+        {isError ? '⚠️' : '✅'} {headline}
+        {/* The backend's own sentence, when there is one. On a refusal that reason is
+            the whole point of the message — "could not delete" alone tells the vendor
+            nothing about what to do next. */}
+        {toast.detail && (
+          <span style={{ display: 'block', fontWeight: 400, fontSize: '0.82rem', marginTop: 3, opacity: 0.95 }}>
+            {toast.detail}
+          </span>
+        )}
+      </span>
       <button
         onClick={onClose}
         style={{
@@ -85,12 +112,13 @@ export default function TransactionsPage() {
   // in the entry form match what the server will calculate and store.
   const { settings } = useSettings();
 
-  // Auto hide toast after 3 seconds
+  // Auto hide the toast. An error explains a rule and often names a next step, so it is
+  // given longer to be read than a confirmation that only says "saved".
   useEffect(() => {
     if (toastMessage) {
       const timer = setTimeout(() => {
         setToastMessage(null);
-      }, 3000);
+      }, toastMessage.type === 'error' ? 7000 : 3000);
       return () => clearTimeout(timer);
     }
   }, [toastMessage, setToastMessage]);

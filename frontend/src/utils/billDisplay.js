@@ -102,6 +102,26 @@ export function isPeriodBill(bill) {
 }
 
 /**
+ * True when a logged entry has already been consolidated into a bill.
+ *
+ * A transaction's `bill_id` is the single fact behind this: NULL means it is still
+ * waiting to be settled, non-NULL means a bill already claimed it and generating
+ * another will not pick it up again. That drives what the vendor sees *and* what they
+ * are allowed to do — a billed entry cannot be deleted on its own, because the bill's
+ * stored totals would stop matching the sales behind them.
+ *
+ * Defined once, here, because the badge and the history table's Delete button both
+ * need the same answer. Two hand-rolled copies would eventually disagree, and the one
+ * that read it backwards would tell a vendor a debt was settled when it was not.
+ *
+ * `''` is rejected alongside null because JSON round-trips and form state have both
+ * produced an empty string where a missing id was meant.
+ */
+export function isBilled(billId) {
+  return billId !== null && billId !== undefined && billId !== '';
+}
+
+/**
  * Bill items bucketed into the days they were sold on, each with its own subtotal.
  *
  * Returns `null` when not one line carries a date — a period bill that was edited

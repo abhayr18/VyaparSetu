@@ -249,6 +249,7 @@
     "noBillsHint": "Invoices are generated on the Transactions page — pick a customer, then Generate Bill.",
     "noSearchResults": "No invoices match your search.",
     "viewBill": "View Invoice",
+    "billNotFound": "That invoice no longer exists. It may have been deleted.",
     "saveSuccess": "Invoice saved successfully.",
     "deleteSuccess": "Invoice deleted successfully.",
     "print": "Print Receipt",
@@ -425,6 +426,9 @@
     "deleteConfirmTitle": "Delete Transaction",
     "deleteConfirmMsg": "Are you sure you want to delete this transaction?",
     "deleteSuccess": "Transaction deleted successfully.",
+    "deleteFailed": "Could not delete this entry",
+    "deleteBlockedBilled": "This entry is on a bill. Delete the bill first, then delete the entry.",
+    "billStatus": "Bill",
     "generateBill": "Generate Today's Bill",
     "generatePeriodBill": "Generate Period Bill",
     "billGeneratedSuccess": "Bill generated successfully",
@@ -487,7 +491,8 @@
     },
     "status": {
       "pending": "Not billed",
-      "billed": "Billed"
+      "billed": "Billed",
+      "openBill": "Open this bill"
     }
   }
 }

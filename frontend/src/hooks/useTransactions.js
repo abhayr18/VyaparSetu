@@ -242,8 +242,15 @@ export function useTransactions() {
         loadPendingSettlements();
         return { success: true };
       }
+      // The backend refuses to delete an entry that belongs to a bill, and this used to
+      // return that refusal to a caller that ignored it: the confirm modal closed, the
+      // row stayed, and no message appeared anywhere. The button is disabled on billed
+      // rows now, but the table can still be a few seconds stale — the entry may have
+      // been billed since it was drawn — so the reason has to reach the vendor.
+      setToastMessage({ text: 'deleteFailed', detail: res?.error, type: 'error' });
       return { success: false, error: res?.error };
     } catch (err) {
+      setToastMessage({ text: 'deleteFailed', detail: err.message, type: 'error' });
       return { success: false, error: err.message };
     } finally {
       setLoading(false);

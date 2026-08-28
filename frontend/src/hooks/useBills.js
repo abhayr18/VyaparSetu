@@ -13,6 +13,10 @@ export function useBills() {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // Distinct from `!loading`: loading is false both before the first fetch starts and
+  // after it finishes. A deep link that has to decide "this bill does not exist" needs
+  // to tell those apart, or it reports not-found against a list it has not read yet.
+  const [loaded, setLoaded]     = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -24,6 +28,7 @@ export function useBills() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, []);
 
@@ -69,7 +74,9 @@ export function useBills() {
 
   return {
     bills,
+    allBills,
     loading,
+    loaded,
     error,
     searchQuery,
     setSearchQuery,

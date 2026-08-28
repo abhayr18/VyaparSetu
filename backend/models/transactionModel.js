@@ -80,12 +80,19 @@ function findById(id) {
 
 /**
  * Find transactions for a customer on a specific date (YYYY-MM-DD).
+ *
+ * The `bills` join is LEFT for the same reason it is in `findAll`: an entry still waiting
+ * to be settled has a NULL `bill_id` and is the row the vendor is actually looking for.
+ * It carries `bill_number` so the history table can name the bill an entry went into
+ * rather than only saying that one exists.
  */
 function findByCustomerAndDate(customerId, date) {
   return execSelect(
-    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+            b.bill_number AS bill_number
      FROM transactions t
      JOIN customers c ON t.customer_id = c.id
+     LEFT JOIN bills b ON t.bill_id = b.id
      WHERE t.customer_id = ? AND t.transaction_date = ?
      ORDER BY t.created_at DESC, t.id DESC`,
     [customerId, date]
@@ -94,12 +101,18 @@ function findByCustomerAndDate(customerId, date) {
 
 /**
  * Find transactions for a customer within a date range (YYYY-MM-DD to YYYY-MM-DD).
+ *
+ * Same LEFT join as its single-date twin, and for the same reason — a range is where
+ * billed and unbilled entries are most likely to sit side by side, because the vendor
+ * may already have billed some days inside it.
  */
 function findByCustomerAndDateRange(customerId, startDate, endDate) {
   return execSelect(
-    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+            b.bill_number AS bill_number
      FROM transactions t
      JOIN customers c ON t.customer_id = c.id
+     LEFT JOIN bills b ON t.bill_id = b.id
      WHERE t.customer_id = ?
        AND t.transaction_date >= ?
        AND t.transaction_date <= ?

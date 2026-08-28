@@ -23,7 +23,8 @@
  * which writes a real PAYMENT_RECEIVED ledger row.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useBills } from '../hooks/useBills';
 import { useTranslation } from '../hooks/useTranslation';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
@@ -55,7 +56,7 @@ const STATUS_FILTERS = ['All', 'Paid', 'Credit', 'Partial'];
 
 export default function BillingPage() {
   const { t, language } = useTranslation();
-  const { bills, loading, error, searchQuery, setSearchQuery, deleteBill } = useBills();
+  const { bills, allBills, loading, loaded, error, searchQuery, setSearchQuery, deleteBill } = useBills();
   const isMarathi = language === 'mr';
 
   const [activeFilter, setActiveFilter]     = useState('All');
@@ -64,6 +65,8 @@ export default function BillingPage() {
   const [printTarget, setPrintTarget]       = useState(null);
   const [toast, setToast]                   = useState({ message: '', type: 'success' });
 
+  const [searchParams, setSearchParams] = useSearchParams();
+
   function showToast(message, type = 'success') {
     setToast({ message, type });
     setTimeout(() => setToast({ message: '', type: 'success' }), 3500);
@@ -71,6 +74,34 @@ export default function BillingPage() {
 
   const openDelete = useCallback((b) => setDeleteTarget(b), []);
   const openView   = useCallback((b) => setPrintTarget(b), []);
+
+  /**
+   * `?bill=<id>` opens that bill's viewer straight away.
+   *
+   * This is where the history table's bill badge lands. The vendor clicked a bill number
+   * because they want to look at the bill, so showing them a filtered list would just be
+   * a second click — ReceiptPrint is the viewer *and* holds Print / PDF / WhatsApp.
+   *
+   * Matched against `allBills` rather than the rendered `bills`, so a search box left
+   * filtering from a previous visit cannot hide the target. The param is cleared once
+   * handled, which is also what stops the modal reopening every time it is closed.
+   */
+  useEffect(() => {
+    const wanted = searchParams.get('bill');
+    if (!wanted) return;
+    // Wait for the archive to actually be read before concluding anything about it.
+    if (!loaded) return;
+
+    const match = allBills.find((b) => String(b.id) === String(wanted));
+    if (match) {
+      setPrintTarget(match);
+    } else {
+      // Deleted in another window, or a stale link. Say so — the alternative is a click
+      // that appears to do nothing at all.
+      showToast(t('billing.billNotFound'), 'error');
+    }
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, allBills, loaded, t]);
 
   async function handleDeleteConfirm() {
     if (!deleteTarget) return;
