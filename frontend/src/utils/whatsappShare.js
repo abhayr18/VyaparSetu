@@ -8,7 +8,6 @@ import {
   grossItems,
   grossSubtotal,
   groupItemsByDate,
-  isPeriodBill,
   formatBillDate,
   formatBillPeriod,
 } from './billDisplay';
@@ -55,9 +54,21 @@ export function generateBillWhatsAppMessage(bill, language, t) {
   const discountAmount   = Number(bill.discount_amount || 0).toFixed(2);
   const discountValue    = Number(bill.discount_value || 0);
   const discountType     = bill.discount_type || 'fixed';
-  const finalAmount      = Number(bill.final_amount || 0).toFixed(2);
-  const paidAmount       = Number(bill.paid_amount || 0).toFixed(2);
-  const remainingAmount  = Number(bill.remaining_amount || 0).toFixed(2);
+  const finalAmountNum   = Number(bill.final_amount || 0);
+  const paidAmountNum    = Number(bill.paid_amount || 0);
+  const remainingAmountNum = Number(bill.remaining_amount || 0);
+
+  const customerBalance  = Number(bill.customer_credit_balance || 0);
+  const previousBalanceNum = Math.max(0, Math.round((customerBalance - remainingAmountNum) * 100) / 100);
+  const totalPayableNum  = Math.round((finalAmountNum + previousBalanceNum) * 100) / 100;
+  const netDueNum        = Math.round((previousBalanceNum + remainingAmountNum) * 100) / 100;
+
+  const finalAmount      = finalAmountNum.toFixed(2);
+  const previousBalance  = previousBalanceNum.toFixed(2);
+  const totalPayable     = totalPayableNum.toFixed(2);
+  const paidAmount       = paidAmountNum.toFixed(2);
+  const netRemaining     = netDueNum.toFixed(2);
+
   const statusKey        = `billing.status${bill.payment_status}`;
   const statusTranslated = t(statusKey) || bill.payment_status;
 
@@ -72,9 +83,8 @@ export function generateBillWhatsAppMessage(bill, language, t) {
     return `${idx}. ${vegName} - ${qty} ${unit} x ₹${rate} = ₹${total}`;
   }
 
-  // A bill covering a period is written out day by day, the way the notebook it
-  // replaces was read.
-  const dayGroups = isPeriodBill(bill) ? groupItemsByDate(displayItems) : null;
+  // Always group items datewise so each day's purchases are shown with date header and subtotal
+  const dayGroups = groupItemsByDate(displayItems, bill.date);
 
   let itemsListText;
   if (dayGroups) {
@@ -101,20 +111,26 @@ export function generateBillWhatsAppMessage(bill, language, t) {
     const discountText = Number(discountAmount) > 0
       ? `सवलत ${discountType === 'percentage' ? `(${discountValue}%)` : '(Fixed)'}: -₹${discountAmount}\n`
       : '';
+    const prevDuesText = previousBalanceNum > 0
+      ? `मागील बाकी: ₹${previousBalance}\n`
+      : '';
+    const billNoText = billNumber
+      ? `बिल क्रमांक: ${billNumber}\n`
+      : `दस्तऐवज: खाते उतारा (Statement)\n`;
 
     return `नमस्कार ${customerName},
-आपले बिल तयार झाले आहे.
+आपला तपशील खालीलप्रमाणे आहे:
 
-बिल क्रमांक: ${billNumber}
-${dateLabel}: ${periodLabel}
+${billNoText}${dateLabel}: ${periodLabel}
 
 भाज्या:
 ${itemsListText}
 
 एकूण: ₹${subtotal}
-${discountText}अंतिम रक्कम: ₹${finalAmount}
+${discountText}कालावधी / आजचे बिल: ₹${finalAmount}
+${prevDuesText}एकूण देय रक्कम: ₹${totalPayable}
 भरलेली रक्कम: ₹${paidAmount}
-बाकी रक्कम: ₹${remainingAmount}
+एकूण शिल्लक बाकी: ₹${netRemaining}
 पेमेंट स्थिती: ${statusTranslated}
 
 धन्यवाद.`;
@@ -123,20 +139,26 @@ ${discountText}अंतिम रक्कम: ₹${finalAmount}
     const discountText = Number(discountAmount) > 0
       ? `Discount ${discountType === 'percentage' ? `(${discountValue}%)` : '(Fixed)'}: -₹${discountAmount}\n`
       : '';
+    const prevDuesText = previousBalanceNum > 0
+      ? `Previous Outstanding: ₹${previousBalance}\n`
+      : '';
+    const billNoText = billNumber
+      ? `Bill No: ${billNumber}\n`
+      : `Document: Customer Statement\n`;
 
     return `Hello ${customerName},
-Your bill has been generated.
+Here is your summary:
 
-Bill No: ${billNumber}
-${dateLabel}: ${periodLabel}
+${billNoText}${dateLabel}: ${periodLabel}
 
-Items:
+Vegetables:
 ${itemsListText}
 
 Subtotal: ₹${subtotal}
-${discountText}Final Amount: ₹${finalAmount}
-Paid Amount: ₹${paidAmount}
-Remaining Amount: ₹${remainingAmount}
+${discountText}Period / Today Bill: ₹${finalAmount}
+${prevDuesText}Total Payable: ₹${totalPayable}
+Amount Paid: ₹${paidAmount}
+Total Remaining Dues: ₹${netRemaining}
 Payment Status: ${statusTranslated}
 
 Thank you.`;

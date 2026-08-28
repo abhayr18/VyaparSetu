@@ -226,6 +226,31 @@ export function useTransactions() {
     }
   }
 
+  /**
+   * Generate a read-only period statement (not saved to DB).
+   *
+   * Returns a bill-shaped object for display/print/share, without creating
+   * an invoice in the database. Used for date-range customer reports.
+   */
+  async function generateStatement(customerId, { startDate: sd, endDate: ed }) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await transactionApi.generateStatement({ customerId, startDate: sd, endDate: ed });
+      if (res?.success) {
+        return { success: true, data: res.data };
+      }
+      setError(res?.error || 'Failed to generate statement');
+      return { success: false, error: res?.error };
+    } catch (err) {
+      const msg = err.message || 'Failed to generate statement';
+      setError(msg);
+      return { success: false, error: msg };
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Delete transaction
   async function deleteTransaction(id) {
 
@@ -302,6 +327,7 @@ export function useTransactions() {
     refreshPendingSettlements: loadPendingSettlements,
     createTransaction,
     generateBill,
+    generateStatement,
     deleteTransaction,
     refreshHistory: () => fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate)
   };

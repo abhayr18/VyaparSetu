@@ -50,11 +50,8 @@ function ToastNotification({ toast, onClose, t }) {
         fontWeight: 600
       }}
     >
-      <span>
-        {isError ? '⚠️' : '✅'} {headline}
-        {/* The backend's own sentence, when there is one. On a refusal that reason is
-            the whole point of the message — "could not delete" alone tells the vendor
-            nothing about what to do next. */}
+      <span style={{ display: 'inline-block' }}>
+        <span>{isError ? '⚠️' : '✅'}</span> <span>{headline}</span>
         {toast.detail && (
           <span style={{ display: 'block', fontWeight: 400, fontSize: '0.82rem', marginTop: 3, opacity: 0.95 }}>
             {toast.detail}
@@ -105,6 +102,7 @@ export default function TransactionsPage() {
     openSettlement,
     createTransaction,
     generateBill,
+    generateStatement,
     deleteTransaction
   } = useTransactions();
 
@@ -178,6 +176,7 @@ export default function TransactionsPage() {
         historyLoading={historyLoading}
         onDeleteTransaction={deleteTransaction}
         onGenerateBill={generateBill}
+        onGenerateStatement={generateStatement}
       />
 
 

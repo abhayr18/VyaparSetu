@@ -9,6 +9,7 @@ const transactionController = require('../controllers/transactionController');
 
 router.post('/', transactionController.createTransaction);
 router.post('/generate-bill', transactionController.generateBill);
+router.post('/generate-statement', transactionController.generateStatement);
 router.get('/', transactionController.getAllTransactions);
 // Must stay above '/:id'. Express matches in declaration order and ':id' matches any
 // single segment, so declared after it this would arrive as getTransactionById('pending-settlements').

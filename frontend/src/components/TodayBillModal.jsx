@@ -13,9 +13,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { generateBillWhatsAppMessage, createWhatsAppShareUrl } from '../utils/whatsappShare';
 import {
   grossItems,
-  grossSubtotal,
   groupItemsByDate,
-  isPeriodBill,
   formatBillDate,
   formatBillPeriod,
 } from '../utils/billDisplay';
@@ -35,11 +33,16 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
   // the customer an all-in price with nothing to haggle over. The stored figures are
   // untouched and the vendor's commission report still has them in full.
   const items = grossItems(bill.items, bill);
-  const displaySubtotal = grossSubtotal(bill);
 
-  // A bill covering a period is read datewise — one section per day, each with its
-  // own total, then the grand total.
-  const dayGroups = isPeriodBill(bill) ? groupItemsByDate(items) : null;
+  const customerBalance = Number(bill.customer_credit_balance || 0);
+  const remainingAmount = Number(bill.remaining_amount || 0);
+  const finalAmount = Number(bill.final_amount || 0);
+  const previousBalance = Math.max(0, Math.round((customerBalance - remainingAmount) * 100) / 100);
+  const totalPayableAmount = Math.round((finalAmount + previousBalance) * 100) / 100;
+  const netDueAmount = Math.round((previousBalance + remainingAmount) * 100) / 100;
+
+  // Always group items datewise so every bill displays clear per-day breakdown
+  const dayGroups = groupItemsByDate(items, bill.date);
   const periodLabel = formatBillPeriod(bill, isMarathi);
 
   // Generate WhatsApp Share URL
@@ -111,7 +114,7 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.75rem' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#0f172a', fontWeight: 800 }}>
-              📄 {t('billing.receiptTitle')} ({bill.bill_number})
+              📄 {bill.bill_number ? `${t('billing.receiptTitle')} (${bill.bill_number})` : (isMarathi ? 'खाते उतारा (Customer Statement)' : 'Customer Statement')}
             </h2>
             <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
               {dayGroups ? t('billing.period') : t('dashboard.date')}: {periodLabel}
@@ -133,7 +136,9 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
             <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#16a34a', fontWeight: 800 }}>
               🌿 VyaparSetu Mandai Vendor
             </h3>
-            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Vegetable Market Bill</span>
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              {bill.bill_number ? 'Vegetable Market Bill' : 'Customer Account Statement'}
+            </span>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', fontSize: '0.9rem' }}>
@@ -142,7 +147,15 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
               <strong style={{ color: '#0f172a' }}>{t('customers.mobile')}:</strong> {customerMobile || 'N/A'}
             </div>
             <div style={{ textAlign: 'right' }}>
-              <strong style={{ color: '#0f172a' }}>{t('billing.billNumber')}:</strong> {bill.bill_number}<br />
+              {bill.bill_number ? (
+                <>
+                  <strong style={{ color: '#0f172a' }}>{t('billing.billNumber')}:</strong> {bill.bill_number}<br />
+                </>
+              ) : (
+                <>
+                  <strong style={{ color: '#0f172a' }}>{isMarathi ? 'दस्तऐवज:' : 'Document:'}</strong> {isMarathi ? 'खाते उतारा' : 'Statement'}<br />
+                </>
+              )}
               <strong style={{ color: '#0f172a' }}>
                 {dayGroups ? t('billing.period') : t('dashboard.date')}:
               </strong> {periodLabel}
@@ -217,20 +230,26 @@ export default function TodayBillModal({ isOpen, onClose, bill }) {
               above, so this column adds up to the grand total on its own. */}
           <div style={{ borderTop: '2px dashed #cbd5e1', paddingTop: '0.75rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{t('billing.grandTotal')}:</span>
-              <strong>₹{displaySubtotal.toFixed(2)}</strong>
+              <span>{isMarathi ? 'आजचे बिल (Current Bill):' : 'Current Bill Total:'}</span>
+              <strong>₹{finalAmount.toFixed(2)}</strong>
             </div>
+            {previousBalance > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b45309', fontWeight: 600 }}>
+                <span>{isMarathi ? 'मागील बाकी (Previous Dues):' : 'Previous Outstanding:'}</span>
+                <span>₹{previousBalance.toFixed(2)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.1rem', color: '#16a34a', fontWeight: 800, marginTop: '4px' }}>
-              <span>{t('transactions.finalAmount')}:</span>
-              <span>₹{Number(bill.final_amount).toFixed(2)}</span>
+              <span>{isMarathi ? 'एकूण देय रक्कम (Total Payable):' : 'Total Payable:'}</span>
+              <span>₹{totalPayableAmount.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d', marginTop: '4px' }}>
               <span>{t('billing.paid')}:</span>
               <span>₹{Number(bill.paid_amount || 0).toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c', fontWeight: 700 }}>
-              <span>{t('billing.remainingAmount')}:</span>
-              <span>₹{Number(bill.remaining_amount || 0).toFixed(2)}</span>
+              <span>{isMarathi ? 'एकूण शिल्लक बाकी (Net Remaining):' : 'Net Remaining Dues:'}</span>
+              <span>₹{netDueAmount.toFixed(2)}</span>
             </div>
           </div>
         </div>

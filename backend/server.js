@@ -177,6 +177,13 @@ async function startServer({ port, host } = {}) {
   const result = await listenOnFirstFreePort(candidates, bindHost);
   logger.info(`VyapaarSetu backend running on http://${bindHost}:${result.port}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+  // Auto-bill any unbilled transactions from past days (fire-and-forget)
+  const { autoBillPastTransactions } = require('./services/transactionService');
+  autoBillPastTransactions().catch((err) =>
+    logger.error(`Auto-bill startup task failed: ${err.message}`)
+  );
+
   return result;
 }
 

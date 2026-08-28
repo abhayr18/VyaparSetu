@@ -3,9 +3,7 @@ import useSettings from '../hooks/useSettings';
 import { useTranslation } from '../hooks/useTranslation';
 import {
   grossItems,
-  grossSubtotal,
   groupItemsByDate,
-  isPeriodBill,
   formatBillDate,
   formatBillPeriod,
 } from '../utils/billDisplay';
@@ -102,17 +100,22 @@ export default function BillTemplate({ bill }) {
   const paidAmount = bill.paid_amount || 0;
   const remainingAmount = bill.remaining_amount || 0;
 
+  // Previous outstanding balance before this bill:
+  // Derived from the customer's total outstanding balance minus what this bill left unpaid.
+  const customerBalance = Number(bill.customer_credit_balance || 0);
+  const previousBalance = Math.max(0, Math.round((customerBalance - remainingAmount) * 100) / 100);
+  const totalPayableAmount = Math.round((finalAmount + previousBalance) * 100) / 100;
+  const netDueAmount = Math.round((previousBalance + remainingAmount) * 100) / 100;
+
   const isMarathi = language === 'mr';
 
   // Commission is folded into the item rates and never shown as a line. The subtotal
   // shown is therefore the grossed one, so the column above it adds up to it and
   // subtotal − discount + hamali + transport still lands on Total Payable.
   const displayItems = grossItems(bill.items, bill);
-  const displaySubtotal = grossSubtotal(bill);
 
-  // A bill covering a period prints its lines under each day; a single-day bill
-  // prints one flat table, exactly as it always has.
-  const dayGroups = isPeriodBill(bill) ? groupItemsByDate(displayItems) : null;
+  // Always group items datewise so every bill displays clear per-day breakdown
+  const dayGroups = groupItemsByDate(displayItems, bill.date);
   const periodLabel = formatBillPeriod(bill, isMarathi);
 
   const themeColor = isMarathi ? '#b71c1c' : '#1a6b3c'; // Traditional Red Ink for Marathi APMC, Slate Green for English
@@ -446,34 +449,41 @@ export default function BillTemplate({ bill }) {
           </tbody>
         </table>
 
-        {/* Right Side: Calculation Totals Box.
-            There is deliberately no commission line here — it is folded into the item
-            rates above (see utils/billDisplay.js). Commission is still stored and
-            still appears in full in the vendor's own commission report. */}
+        {/* Right Side: Calculation Totals Box */}
         <table style={{ width: '100%', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
           <tbody>
             <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
               <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'एकूण रू. (Subtotal)' : 'Total Rs (Subtotal)'}
+                {isMarathi ? 'आजचे बिल (Current Bill)' : 'Current Bill Total'}
               </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '100px' }}>
-                ₹{displaySubtotal.toFixed(2)}
+              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '105px' }}>
+                ₹{finalAmount.toFixed(2)}
               </td>
             </tr>
+            {previousBalance > 0 && (
+              <tr style={{ borderBottom: `1px solid ${themeColor}`, background: '#fffbeb' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#b45309', borderRight: `1px solid ${themeColor}` }}>
+                  {isMarathi ? 'मागील बाकी (Prev. Dues)' : 'Previous Outstanding'}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#b45309' }}>
+                  ₹{previousBalance.toFixed(2)}
+                </td>
+              </tr>
+            )}
             <tr style={{ borderBottom: `1px solid ${themeColor}`, background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
               <td style={{ padding: '8px', fontWeight: '900', color: themeColor, fontSize: '0.92rem', borderRight: `1px solid ${themeColor}` }}>
                 {isMarathi ? 'एकूण देय रू.' : 'Total Payable Rs'}
               </td>
               <td style={{ padding: '8px', textAlign: 'right', fontWeight: '900', fontSize: '0.95rem', color: themeColor }}>
-                ₹{finalAmount.toFixed(2)}
+                ₹{totalPayableAmount.toFixed(2)}
               </td>
             </tr>
-            <tr style={{ color: remainingAmount > 0 ? '#dc2626' : 'inherit' }}>
+            <tr style={{ color: netDueAmount > 0 ? '#dc2626' : 'inherit' }}>
               <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'उर्वरित बाकी (Dues)' : 'Remaining Dues'}
+                {isMarathi ? 'उर्वरित बाकी (Net Dues)' : 'Remaining Dues'}
               </td>
               <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>
-                ₹{remainingAmount.toFixed(2)}
+                ₹{netDueAmount.toFixed(2)}
               </td>
             </tr>
           </tbody>
@@ -494,7 +504,7 @@ export default function BillTemplate({ bill }) {
           {isMarathi ? 'अक्षरी रू. :' : 'Amount in Words :'}
         </span>
         <span style={{ fontStyle: 'italic' }}>
-          {getAmountInWords(finalAmount, isMarathi)}
+          {getAmountInWords(totalPayableAmount, isMarathi)}
         </span>
       </div>
 

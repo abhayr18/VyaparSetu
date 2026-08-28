@@ -35,7 +35,7 @@ export default function PendingSettlements({
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', marginBottom: settlements.length ? '1rem' : 0 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
-            🧾 {t('transactions.pending.title')}
+            <span>🧾</span> <span>{t('transactions.pending.title')}</span>
           </h3>
           <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
             {t('transactions.pending.subtitle')}
@@ -59,15 +59,14 @@ export default function PendingSettlements({
 
       {settlements.length === 0 ? (
         <div
+          key="empty-pending"
           id="pending-settlements-empty"
           style={{ textAlign: 'center', padding: '1.5rem 1rem', color: '#15803d', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', marginTop: '1rem' }}
         >
-          ✅ {t('transactions.pending.allSettled')}
+          <span>✅</span> <span>{t('transactions.pending.allSettled')}</span>
         </div>
       ) : (
-        // Scrolls past ~6 rows instead of hiding the tail behind a toggle: a settlement
-        // the vendor cannot see is a settlement they will not chase.
-        <div className="table-container" style={{ overflowX: 'auto', maxHeight: '19rem', overflowY: 'auto' }}>
+        <div key="table-pending" className="table-container" style={{ overflowX: 'auto', maxHeight: '19rem', overflowY: 'auto' }}>
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f1f5f9', textAlign: 'left', fontSize: '0.85rem', color: '#475569' }}>
@@ -88,7 +87,7 @@ export default function PendingSettlements({
 
                 return (
                   <tr
-                    key={s.customer_id}
+                    key={String(s.customer_id)}
                     id={`pending-row-${s.customer_id}`}
                     onClick={() => onOpenSettlement(s)}
                     style={{
@@ -99,7 +98,7 @@ export default function PendingSettlements({
                     }}
                   >
                     <td style={{ padding: '0.6rem 1rem', fontWeight: 700, color: '#0f172a' }}>
-                      {s.customer_name}
+                      <span>{s.customer_name}</span>
                       {s.customer_mobile && (
                         <span style={{ display: 'block', fontSize: '0.75rem', fontWeight: 400, color: '#64748b' }}>
                           {s.customer_mobile}
@@ -112,9 +111,6 @@ export default function PendingSettlements({
                     <td style={{ padding: '0.6rem 1rem', color: '#334155', whiteSpace: 'nowrap' }}>
                       {from === to ? from : `${from} – ${to}`}
                     </td>
-                    {/* Age of the oldest entry, not a count of days with entries. A tab
-                        left open a fortnight is the one to chase first, which is also why
-                        the backend orders this list by oldest pending day. */}
                     <td style={{ padding: '0.6rem 1rem', whiteSpace: 'nowrap', color: waited >= 7 ? '#b91c1c' : '#64748b', fontWeight: waited >= 7 ? 700 : 400 }}>
                       {waited === null
                         ? '—'
@@ -130,9 +126,6 @@ export default function PendingSettlements({
                         type="button"
                         className="btn btn-outline"
                         id={`pending-open-${s.customer_id}`}
-                        // The row is clickable too; this is here so the action is
-                        // discoverable and reachable by keyboard. stopPropagation keeps
-                        // the two from firing openSettlement twice.
                         onClick={(e) => { e.stopPropagation(); onOpenSettlement(s); }}
                         style={{ padding: '3px 10px', fontSize: '0.78rem', whiteSpace: 'nowrap' }}
                       >

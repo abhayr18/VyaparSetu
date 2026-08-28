@@ -292,7 +292,7 @@ function markAsBilled(ids, billId) {
   const placeholders = ids.map(() => '?').join(', ');
   execRun(
     `UPDATE transactions SET bill_id = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id IN (${placeholders}) AND bill_id IS NULL`,
+     WHERE id IN (${placeholders})`,
     [billId, ...ids]
   );
 

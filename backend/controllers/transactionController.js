@@ -21,6 +21,14 @@ async function generateBill(req, res) {
   return res.status(400).json({ success: false, error: result.error });
 }
 
+async function generateStatement(req, res) {
+  const result = await transactionService.generateStatement(req.body);
+  if (result.success) {
+    return res.json({ success: true, data: result.data });
+  }
+  return res.status(400).json({ success: false, error: result.error });
+}
+
 async function getAllTransactions(req, res) {
   const result = await transactionService.getAllTransactions(req.query);
   if (result.success) {
@@ -87,6 +95,7 @@ async function deleteTransaction(req, res) {
 module.exports = {
   createTransaction,
   generateBill,
+  generateStatement,
   getAllTransactions,
   getPendingSettlements,
   getTransactionById,

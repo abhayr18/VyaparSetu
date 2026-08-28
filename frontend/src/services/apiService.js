@@ -180,6 +180,7 @@ export const driveApi = {
 export const transactionApi = {
   create: (data) => apiClient.post('/api/transactions', data),
   generateBill: (data) => apiClient.post('/api/transactions/generate-bill', data),
+  generateStatement: (data) => apiClient.post('/api/transactions/generate-statement', data),
   getAll: (params) => apiClient.get('/api/transactions', { params }),
 
   // Every customer with entries not yet consolidated into a bill, oldest pending day

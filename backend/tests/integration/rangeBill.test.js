@@ -371,4 +371,52 @@ describe('a period that straddles a commission rate change', () => {
     expect(paise(res.data.subtotal + res.data.commission_amount)).toBe(paise(res.data.final_amount));
     expect(creditBalance(ctx, customer.id)).toBe(636);
   });
+
+  describe('generateStatement (on-the-fly read-only statement)', () => {
+    it('returns all transactions in the date range without creating a bill in the database', async () => {
+      const { ctx, customer } = await weekOfCreditSales();
+
+      // Generate a single-day bill for Day 1
+      const dailyBill = await ctx.transactionService.generateBillFromTransactions({
+        customerId: customer.id,
+        date: DAYS[0],
+      });
+      expect(dailyBill.success).toBe(true);
+      expect(ctx.billModel.findAll()).toHaveLength(1);
+
+      // Generate statement for Day 1 to Day 5
+      const statement = await ctx.transactionService.generateStatement({
+        customerId: customer.id,
+        startDate: DAYS[0],
+        endDate: DAYS[4],
+      });
+
+      expect(statement.success).toBe(true);
+      // Statement has no database id or bill_number
+      expect(statement.data.id).toBeNull();
+      expect(statement.data.bill_number).toBeNull();
+      // Includes all 5 days (Day 1 already billed + Days 2-5 unbilled)
+      expect(statement.data.items).toHaveLength(5);
+      expect(statement.data.items.map((i) => i.item_date)).toEqual(DAYS);
+      // Subtotal across all 5 days = 5 x 300 = 1500
+      expect(paise(statement.data.subtotal)).toBe(1500);
+      // Database bill count remains 1 — nothing new was written!
+      expect(ctx.billModel.findAll()).toHaveLength(1);
+    });
+  });
+
+  describe('autoBillPastTransactions', () => {
+    it('auto-generates daily bills for unbilled past dates', async () => {
+      const { ctx, customer } = await weekOfCreditSales();
+      expect(ctx.billModel.findAll()).toHaveLength(0);
+
+      // Run auto-bill for past dates
+      const res = await ctx.transactionService.autoBillPastTransactions();
+      expect(res.generated).toBe(5);
+
+      // Now 5 daily bills exist in database
+      const bills = ctx.billModel.findAll();
+      expect(bills).toHaveLength(5);
+    });
+  });
 });

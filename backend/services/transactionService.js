@@ -14,8 +14,9 @@ const {
   normalizeCommissionPercent,
   DEFAULT_COMMISSION_PERCENT,
 } = require('../utils/calculation');
-const { execRun, execGet, transaction } = require('../database/db');
+const { execRun, execGet, execSelect, transaction } = require('../database/db');
 const { toPaise } = require('../utils/money');
+const logger = require('../utils/logger');
 
 /**
  * Returns local YYYY-MM-DD date string.
@@ -250,23 +251,20 @@ function parseDateOnly(value) {
 const MAX_BILL_PERIOD_DAYS = 366;
 
 /**
- * Consolidates a customer's transactions into a formal Bill.
+ * Consolidates a customer's unbilled transactions for a single day into a formal Bill.
  *
- * Two modes. Given `startDate` and `endDate` it covers that whole period, printing a
- * datewise breakdown; given neither it covers a single day, which is the original
- * behaviour and stays the default. Either way only *unbilled* transactions are
- * consolidated, and they are claimed by the bill as part of the same database
- * transaction that creates it. Running this twice therefore finds nothing the second
- * time instead of billing the customer again — and a range that overlaps days already
- * billed simply skips them.
+ * Only *unbilled* transactions are consolidated, and they are claimed by the bill as
+ * part of the same database transaction that creates it. Running this twice therefore
+ * finds nothing the second time instead of billing the customer again.
+ *
+ * For period/range reports, use `generateStatement` instead — it returns a read-only
+ * bill-shaped object without saving anything to the database.
  *
  * The bill does not book credit: `createTransaction` already did, when each sale
  * was entered. The existing ledger rows are relabelled with the new bill's id so
  * the passbook still points at the bill, and the customer's balance is untouched.
  */
 async function generateBillFromTransactions({ customerId, date, startDate, endDate }) {
-  // Presence of either endpoint means the caller intended a range; a half-supplied
-  // one is a bug in the caller, not an invitation to silently bill a single day.
   const wantsRange = Boolean(
     (typeof startDate === 'string' && startDate.trim()) ||
     (typeof endDate === 'string' && endDate.trim())
@@ -295,8 +293,6 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
 
     periodStart = from.text;
     periodEnd = to.text;
-    // The bill is dated the day its period closes, so every existing date-keyed
-    // report and the bills list place it in exactly one period.
     targetDate = to.text;
   } else {
     targetDate = date ? date.trim() : getLocalDateString();
@@ -305,11 +301,11 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
   const customer = customerModel.findById(customerId);
   if (!customer) return { success: false, error: 'Customer not found' };
 
-  const transactions = wantsRange
+  const rawTransactions = wantsRange
     ? transactionModel.findUnbilledByCustomerAndDateRange(customerId, periodStart, periodEnd)
     : transactionModel.findUnbilledByCustomerAndDate(customerId, targetDate);
 
-  if (!transactions || transactions.length === 0) {
+  if (!rawTransactions || rawTransactions.length === 0) {
     const alreadyBilled = wantsRange
       ? transactionModel.findByCustomerAndDateRange(customerId, periodStart, periodEnd)
       : transactionModel.findByCustomerAndDate(customerId, targetDate);
@@ -330,6 +326,11 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
     };
   }
 
+  // Sort chronologically so the bill prints entries in sequence
+  const transactions = [...rawTransactions].sort(
+    (a, b) => a.transaction_date.localeCompare(b.transaction_date) || (a.id - b.id)
+  );
+
   // Calculate totals across the transactions being consolidated
   const subtotal = transactions.reduce((acc, t) => acc + Number(t.base_amount || 0), 0);
   const commissionAmount = transactions.reduce((acc, t) => acc + Number(t.commission_amount || 0), 0);
@@ -344,22 +345,33 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
     paymentStatus = 'Partial';
   }
 
-  const items = transactions.map((t) => ({
-    vegetable_id: t.vegetable_id,
-    vegetable_name: t.vegetable_name_snapshot,
-    quantity: t.weight,
-    rate: t.rate,
-    total: t.base_amount,
-    vegetable_unit: t.unit || 'kg',
-    // The day this line was sold, which is what the printed bill groups by.
-    item_date: t.transaction_date
-  }));
+  // Consolidate entries of the same vegetable on the same date into a single line item
+  const mergedItemsMap = new Map();
+  for (const t of transactions) {
+    const key = `${t.transaction_date || targetDate}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
+    const existing = mergedItemsMap.get(key);
+    if (!existing) {
+      mergedItemsMap.set(key, {
+        vegetable_id: t.vegetable_id,
+        vegetable_name: t.vegetable_name_snapshot,
+        quantity: Number(t.weight || 0),
+        rate: Number(t.rate || 0),
+        total: Number(t.base_amount || 0),
+        vegetable_unit: t.unit || 'kg',
+        item_date: t.transaction_date || targetDate,
+      });
+    } else {
+      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
+      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
+      existing.rate = existing.quantity > 0
+        ? Math.round((existing.total / existing.quantity) * 100) / 100
+        : existing.rate;
+    }
+  }
+  const items = Array.from(mergedItemsMap.values());
 
   const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
 
-  // The bill number is billModel's to mint (a short running serial, drawn inside the
-  // insert transaction). It used to be built here out of the period, the customer id
-  // and the epoch clock, which made two sources of truth for one format.
   const transactionIds = transactions.map((t) => t.id);
 
   try {
@@ -397,9 +409,7 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
       }
 
       // Point the existing ledger rows at this bill so the passbook and the bill
-      // agree, without adding rows that would inflate the balance. Keyed on the
-      // transaction ids rather than a date, so a range bill relabels every day it
-      // covers.
+      // agree, without adding rows that would inflate the balance.
       const placeholders = transactionIds.map(() => '?').join(', ');
       execRun(
         `UPDATE credit_transactions SET bill_id = ?
@@ -413,6 +423,182 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
     return { success: true, data: createdBill };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Generates a read-only period statement for a customer across a date range.
+ *
+ * This is NOT saved to the database — it returns a bill-shaped object for the
+ * frontend to render, print, download as PDF, or share via WhatsApp. The vendor
+ * can regenerate it any time for any date range without cluttering the Invoices.
+ *
+ * All transactions (billed and unbilled) within the range are included, so the
+ * customer gets a complete picture of their purchases across the period.
+ */
+async function generateStatement({ customerId, startDate, endDate }) {
+  const from = parseDateOnly(startDate);
+  const to = parseDateOnly(endDate);
+  if (!from || !to) {
+    return { success: false, error: 'A date range needs a valid start and end date (YYYY-MM-DD)' };
+  }
+  if (from.utc > to.utc) {
+    return { success: false, error: 'The start date must not be after the end date' };
+  }
+  const span = Math.round((to.utc - from.utc) / 86400000) + 1;
+  if (span > MAX_BILL_PERIOD_DAYS) {
+    return {
+      success: false,
+      error: `A statement can cover at most ${MAX_BILL_PERIOD_DAYS} days — this range covers ${span}`,
+    };
+  }
+
+  const periodStart = from.text;
+  const periodEnd = to.text;
+
+  const customer = customerModel.findById(customerId);
+  if (!customer) return { success: false, error: 'Customer not found' };
+
+  const rawTransactions = transactionModel.findByCustomerAndDateRange(
+    customerId, periodStart, periodEnd
+  );
+
+  if (!rawTransactions || rawTransactions.length === 0) {
+    return {
+      success: false,
+      error: 'No transactions found for this customer in the selected period',
+    };
+  }
+
+  // Sort chronologically (oldest date first)
+  const transactions = [...rawTransactions].sort(
+    (a, b) => a.transaction_date.localeCompare(b.transaction_date) || (a.id - b.id)
+  );
+
+  // Calculate totals
+  const subtotal = transactions.reduce((acc, t) => acc + Number(t.base_amount || 0), 0);
+  const commissionAmount = transactions.reduce((acc, t) => acc + Number(t.commission_amount || 0), 0);
+  const finalAmount = transactions.reduce((acc, t) => acc + Number(t.final_amount || 0), 0);
+  const paidAmount = transactions.reduce((acc, t) => acc + Number(t.paid_amount || 0), 0);
+  const remainingAmount = transactions.reduce((acc, t) => acc + Number(t.remaining_amount || 0), 0);
+
+  let paymentStatus = 'Credit';
+  if (remainingAmount <= 0) {
+    paymentStatus = 'Paid';
+  } else if (paidAmount > 0) {
+    paymentStatus = 'Partial';
+  }
+
+  // Consolidate entries of the same vegetable on the same date
+  const mergedItemsMap = new Map();
+  for (const t of transactions) {
+    const key = `${t.transaction_date}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
+    const existing = mergedItemsMap.get(key);
+    if (!existing) {
+      mergedItemsMap.set(key, {
+        vegetable_id: t.vegetable_id,
+        vegetable_name: t.vegetable_name_snapshot,
+        quantity: Number(t.weight || 0),
+        rate: Number(t.rate || 0),
+        total: Number(t.base_amount || 0),
+        vegetable_unit: t.unit || 'kg',
+        item_date: t.transaction_date,
+      });
+    } else {
+      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
+      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
+      existing.rate = existing.quantity > 0
+        ? Math.round((existing.total / existing.quantity) * 100) / 100
+        : existing.rate;
+    }
+  }
+  const items = Array.from(mergedItemsMap.values());
+
+  const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
+
+  // Read the customer's current credit balance for "previous outstanding" display
+  const { toRupees } = require('../utils/money');
+  const customerBalance = toRupees(customer.credit_balance || 0);
+
+  // Return a bill-shaped object WITHOUT saving anything
+  return {
+    success: true,
+    data: {
+      // No id or bill_number — this is a statement, not a saved invoice
+      id: null,
+      bill_number: null,
+      customer_id: Number(customerId),
+      customer_name: customer.name,
+      customer_mobile: customer.mobile,
+      customer_credit_balance: customerBalance,
+      date: periodEnd,
+      period_start: periodStart,
+      period_end: periodEnd,
+      subtotal: Math.round(subtotal * 100) / 100,
+      discount_type: 'fixed',
+      discount_value: 0,
+      discount_amount: 0,
+      commission_rate: billCommissionRate,
+      commission_amount: Math.round(commissionAmount * 100) / 100,
+      hamali_amount: 0,
+      transport_amount: 0,
+      final_amount: Math.round(finalAmount * 100) / 100,
+      paid_amount: Math.round(paidAmount * 100) / 100,
+      remaining_amount: Math.round(remainingAmount * 100) / 100,
+      payment_type: paymentStatus === 'Credit' ? 'Credit' : 'Cash',
+      payment_status: paymentStatus,
+      items,
+    },
+  };
+}
+
+/**
+ * Auto-bills unbilled transactions from dates before today.
+ *
+ * Runs once on server startup. For each (customer, date) pair that has unbilled
+ * transactions from a past date, generates and saves a daily bill. This ensures
+ * that if a vendor forgot to click "Generate Bill" yesterday, the entries are
+ * still captured as invoices.
+ */
+async function autoBillPastTransactions() {
+  const today = getLocalDateString();
+  try {
+    const unbilledDays = execSelect(
+      `SELECT DISTINCT customer_id, transaction_date
+       FROM transactions
+       WHERE bill_id IS NULL AND transaction_date < ?
+       ORDER BY transaction_date ASC`,
+      [today]
+    );
+
+    if (unbilledDays.length === 0) {
+      logger.info('Auto-bill: no unbilled past transactions found.');
+      return { generated: 0 };
+    }
+
+    let generated = 0;
+    for (const { customer_id, transaction_date } of unbilledDays) {
+      const result = await generateBillFromTransactions({
+        customerId: customer_id,
+        date: transaction_date,
+      });
+      if (result.success) {
+        generated++;
+        logger.info(
+          `Auto-bill: generated bill for customer #${customer_id} on ${transaction_date} → ${result.data.bill_number}`
+        );
+      } else {
+        logger.warn(
+          `Auto-bill: skipped customer #${customer_id} on ${transaction_date} — ${result.error}`
+        );
+      }
+    }
+
+    logger.info(`Auto-bill: generated ${generated} bill(s) for past unbilled transactions.`);
+    return { generated };
+  } catch (err) {
+    logger.error(`Auto-bill failed: ${err.message}`);
+    return { generated: 0, error: err.message };
   }
 }
 
@@ -565,6 +751,8 @@ async function getPendingSettlements() {
 module.exports = {
   createTransaction,
   generateBillFromTransactions,
+  generateStatement,
+  autoBillPastTransactions,
   getTransactionById,
   getCustomerTransactions,
   getCustomerDailyPurchase,

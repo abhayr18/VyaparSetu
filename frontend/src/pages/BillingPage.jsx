@@ -33,7 +33,7 @@ import MarathiInput from '../components/MarathiInput';
 import { formatBillPeriod, isPeriodBill } from '../utils/billDisplay';
 import {
   ReceiptIcon, SearchIcon, AlertIcon, HistoryIcon,
-  EyeIcon, TrashIcon, CheckIcon, ChartIcon
+  EyeIcon, TrashIcon, CheckIcon, ChartIcon, CalendarIcon
 } from '../components/Icons';
 
 function hasDevanagari(str) { return /[\u0900-\u097F]/.test(str); }
@@ -56,7 +56,22 @@ const STATUS_FILTERS = ['All', 'Paid', 'Credit', 'Partial'];
 
 export default function BillingPage() {
   const { t, language } = useTranslation();
-  const { bills, allBills, loading, loaded, error, searchQuery, setSearchQuery, deleteBill } = useBills();
+  const {
+    bills,
+    allBills,
+    loading,
+    loaded,
+    error,
+    searchQuery,
+    setSearchQuery,
+    dateFilterType,
+    setDateFilterType,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
+    deleteBill,
+  } = useBills();
   const isMarathi = language === 'mr';
 
   const [activeFilter, setActiveFilter]     = useState('All');
@@ -199,6 +214,97 @@ export default function BillingPage() {
             <span className="filter-tab-count">{counts[status]}</span>
           </button>
         ))}
+      </div>
+
+      {/* ── Date & Period Filter Bar ────────────────────────────────────────── */}
+      <div
+        className="card"
+        style={{
+          padding: '0.85rem 1.1rem',
+          marginBottom: '1rem',
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: 600, fontSize: '0.85rem' }}>
+            <CalendarIcon style={{ width: '18px', height: '18px', color: 'var(--color-primary)' }} />
+            <span>{t('billing.dateFilter.customRange') || 'Filter by Date'}:</span>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+            {[
+              { key: 'all',       label: t('billing.dateFilter.all')       || 'All Time'   },
+              { key: 'today',     label: t('billing.dateFilter.today')     || 'Today'      },
+              { key: 'yesterday', label: t('billing.dateFilter.yesterday') || 'Yesterday'  },
+              { key: 'week',      label: t('billing.dateFilter.thisWeek')  || 'This Week'  },
+              { key: 'month',     label: t('billing.dateFilter.thisMonth') || 'This Month' },
+              { key: 'range',     label: t('billing.dateFilter.customRange') || 'Custom Range' },
+            ].map(({ key, label }) => {
+              const active = dateFilterType === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setDateFilterType(key)}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    border: active ? '1px solid var(--color-primary)' : '1px solid #cbd5e1',
+                    background: active ? 'var(--color-primary)' : '#ffffff',
+                    color: active ? '#ffffff' : '#334155',
+                    fontSize: '0.8rem',
+                    fontWeight: active ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {dateFilterType === 'range' && (
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '1rem',
+              marginTop: '0.75rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px dashed #cbd5e1',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#475569' }}>
+                {t('billing.dateFilter.startDate') || 'Start Date'}:
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#475569' }}>
+                {t('billing.dateFilter.endDate') || 'End Date'}:
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ padding: '4px 8px', fontSize: '0.85rem' }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Search Bar ────────────────────────────────────────────────────── */}

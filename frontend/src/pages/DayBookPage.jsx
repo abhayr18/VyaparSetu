@@ -17,6 +17,7 @@
  */
 
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from '../hooks/useTranslation';
 import { useDayBook } from '../hooks/useDayBook';
 import BilledBadge from '../components/BilledBadge';
@@ -56,6 +57,7 @@ function unitLabel(t, unit) {
 
 export default function DayBookPage() {
   const { t, language } = useTranslation();
+  const navigate = useNavigate();
   const isMarathi = language === 'mr';
 
   const {
@@ -71,6 +73,14 @@ export default function DayBookPage() {
     loading,
     error,
   } = useDayBook();
+
+  /**
+   * Open the bill in the billing archive directly from the Day Book row.
+   */
+  function openBillInArchive(billId) {
+    if (!billId) return;
+    navigate(`/billing?bill=${encodeURIComponent(billId)}`);
+  }
 
   /**
    * "Friday, 28 August 2026" — the weekday matters. A vendor navigating back through days
@@ -340,7 +350,12 @@ export default function DayBookPage() {
                           {rupees(due)}
                         </td>
                         <td style={{ ...cellStyle, textAlign: 'center' }}>
-                          <BilledBadge billId={e.bill_id} billNumber={e.bill_number} id={`daybook-status-${e.id}`} />
+                          <BilledBadge
+                            billId={e.bill_id}
+                            billNumber={e.bill_number}
+                            id={`daybook-status-${e.id}`}
+                            onOpenBill={openBillInArchive}
+                          />
                         </td>
                       </tr>
                     );

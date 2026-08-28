@@ -35,7 +35,8 @@ export default function CustomerDailyPurchase({
   dailyData = { summary: {}, transactions: [] },
   historyLoading = false,
   onDeleteTransaction,
-  onGenerateBill
+  onGenerateBill,
+  onGenerateStatement
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -72,15 +73,21 @@ export default function CustomerDailyPurchase({
     if (!activeCustomerId) return;
     setBillGenerating(true);
     try {
-      // The period comes from the same filter that produced the table above, so the
-      // bill covers what the vendor is looking at — a single day, or the whole range.
-      const res = await onGenerateBill(activeCustomerId, billPeriod || { date: selectedDate });
+      let res;
+      if (dateFilterType === 'range' && onGenerateStatement) {
+        // Range reports are generated on-the-fly without saving to DB/Invoices
+        res = await onGenerateStatement(activeCustomerId, { startDate, endDate });
+      } else {
+        // Single day bills are consolidated and saved as invoices in DB
+        res = await onGenerateBill(activeCustomerId, billPeriod || { date: selectedDate });
+      }
+
       if (res?.success && res.data) {
         setGeneratedBill(res.data);
         setIsBillModalOpen(true);
       }
     } catch (err) {
-      console.error('Failed to generate bill:', err);
+      console.error('Failed to generate bill or statement:', err);
     } finally {
       setBillGenerating(false);
     }

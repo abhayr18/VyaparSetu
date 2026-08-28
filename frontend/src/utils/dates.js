@@ -33,6 +33,23 @@ export function getYesterdayDateString() {
   return getLocalDateString(d);
 }
 
+/** First day of current week (Monday) as `YYYY-MM-DD`. */
+export function getStartOfWeekDateString(dateObj = new Date()) {
+  const d = new Date(dateObj);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return getLocalDateString(d);
+}
+
+/** First day of current month as `YYYY-MM-DD`. */
+export function getStartOfMonthDateString(dateObj = new Date()) {
+  const d = new Date(dateObj);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}-01`;
+}
+
 /** `days` before today as `YYYY-MM-DD`. */
 export function getDaysAgoDateString(days) {
   const d = new Date();

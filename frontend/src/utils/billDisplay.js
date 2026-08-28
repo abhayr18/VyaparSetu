@@ -124,32 +124,44 @@ export function isBilled(billId) {
 /**
  * Bill items bucketed into the days they were sold on, each with its own subtotal.
  *
- * Returns `null` when not one line carries a date — a period bill that was edited
- * before `bill_items.item_date` existed, for instance. Callers then fall back to the
- * flat table rather than printing a section header with no date in it.
+ * If item_date is not set on individual items, fallbackDate is used so all bills
+ * can be presented in a clean, consistent datewise layout.
  *
  * Insertion order is kept rather than sorted: `billItemModel.getByBillId` already
  * orders by `item_date`, and a second opinion here could only disagree with it.
  */
-export function groupItemsByDate(items) {
+export function groupItemsByDate(items, fallbackDate = null) {
   const list = Array.isArray(items) ? items : [];
-  if (!list.some((it) => it.item_date)) return null;
+  if (list.length === 0) return null;
+  const hasDates = list.some((it) => it.item_date);
+  if (!hasDates && !fallbackDate) return null;
 
   const groups = [];
   const byDate = new Map();
 
   for (const item of list) {
-    // An undated line gets its own bucket instead of joining the day above it: a row
-    // written before the column existed should read as undated, not as having
-    // happened on whatever day happens to precede it.
-    const key = item.item_date || '';
+    const key = item.item_date || fallbackDate || '';
     let group = byDate.get(key);
     if (!group) {
-      group = { date: item.item_date || null, items: [], subtotal: 0 };
+      group = { date: key || null, items: [], subtotal: 0, _itemMap: new Map() };
       byDate.set(key, group);
       groups.push(group);
     }
-    group.items.push(item);
+
+    const itemKey = `${item.vegetable_name || ''}__${item.vegetable_unit || ''}`;
+    const existing = group._itemMap.get(itemKey);
+    if (!existing) {
+      const copy = { ...item };
+      group._itemMap.set(itemKey, copy);
+      group.items.push(copy);
+    } else {
+      existing.quantity = round2(Number(existing.quantity || 0) + Number(item.quantity || 0));
+      existing.total = round2(Number(existing.total || 0) + Number(item.total || 0));
+      existing.rate = existing.quantity > 0
+        ? round2(existing.total / existing.quantity)
+        : existing.rate;
+    }
+
     group.subtotal = round2(group.subtotal + Number(item.total || 0));
   }
 

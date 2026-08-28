@@ -54,6 +54,7 @@ const MONEY_FIELDS = {
     'final_amount',
     'paid_amount',
     'remaining_amount',
+    'customer_credit_balance',
   ],
   bill_items: ['rate', 'total'],
   transactions: [

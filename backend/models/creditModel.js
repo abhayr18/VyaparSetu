@@ -113,6 +113,68 @@ function findBalanceMismatches(tolerance = 0) {
   }));
 }
 
+/**
+ * Automatically applies a payment (in paise) across a customer's unpaid / partial
+ * bills and transactions in chronological FIFO order (oldest first).
+ */
+function settleDebtsFifo(customerId, amountPaise) {
+  if (!amountPaise || amountPaise <= 0) return;
+
+  // 1. Settle Bills in FIFO order
+  const unpaidBills = execSelect(
+    `SELECT id, paid_amount, remaining_amount, final_amount
+     FROM bills
+     WHERE customer_id = ? AND remaining_amount > 0
+     ORDER BY date ASC, id ASC`,
+    [customerId]
+  );
+
+  let billPayLeft = amountPaise;
+  for (const bill of unpaidBills) {
+    if (billPayLeft <= 0) break;
+    const billRem = Number(bill.remaining_amount || 0);
+    const payForBill = Math.min(billPayLeft, billRem);
+    const newPaid = Number(bill.paid_amount || 0) + payForBill;
+    const newRem = billRem - payForBill;
+    const newStatus = newRem === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Credit');
+
+    execRun(
+      `UPDATE bills
+       SET paid_amount = ?, remaining_amount = ?, payment_status = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [newPaid, newRem, newStatus, bill.id]
+    );
+    billPayLeft -= payForBill;
+  }
+
+  // 2. Settle Transactions in FIFO order
+  const unpaidTxs = execSelect(
+    `SELECT id, paid_amount, remaining_amount, final_amount
+     FROM transactions
+     WHERE customer_id = ? AND remaining_amount > 0
+     ORDER BY transaction_date ASC, id ASC`,
+    [customerId]
+  );
+
+  let txPayLeft = amountPaise;
+  for (const tx of unpaidTxs) {
+    if (txPayLeft <= 0) break;
+    const txRem = Number(tx.remaining_amount || 0);
+    const payForTx = Math.min(txPayLeft, txRem);
+    const newPaid = Number(tx.paid_amount || 0) + payForTx;
+    const newRem = txRem - payForTx;
+    const newType = newRem === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Credit');
+
+    execRun(
+      `UPDATE transactions
+       SET paid_amount = ?, remaining_amount = ?, payment_type = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [newPaid, newRem, newType, tx.id]
+    );
+    txPayLeft -= payForTx;
+  }
+}
+
 /** Transactional payment registration */
 function recordPayment({ customer_id, amount, payment_mode, note }) {
   return transaction(() => {
@@ -134,6 +196,9 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
        VALUES (?, 'PAYMENT_RECEIVED', ?, ?, ?, ?)`,
       [customer_id, amountPaise, payment_mode, note || 'Payment received', balanceAfter]
     );
+
+    // Settle bills and transactions in FIFO order
+    settleDebtsFifo(customer_id, amountPaise);
 
     return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
   });
@@ -168,6 +233,11 @@ function recordAdjustment({ customer_id, amount, note }) {
        VALUES (?, 'CREDIT_ADJUSTMENT', ?, 'Other', ?, ?)`,
       [customer_id, signedPaise, note || 'Balance adjustment', balanceAfter]
     );
+
+    // If debt is reduced/written off, settle unpaid debts FIFO
+    if (signedPaise < 0) {
+      settleDebtsFifo(customer_id, Math.abs(signedPaise));
+    }
 
     return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
   });

@@ -7,12 +7,87 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { billsApi } from '../services/apiService';
 import { applyFuzzyFilter } from '../utils/fuzzySearch';
+import {
+  getLocalDateString,
+  getYesterdayDateString,
+  getStartOfWeekDateString,
+  getStartOfMonthDateString,
+} from '../utils/dates';
+
+function billMatchesDate(b, filterType, startDate, endDate, selectedDate) {
+  if (filterType === 'all') return true;
+
+  const today = getLocalDateString();
+  const yesterday = getYesterdayDateString();
+  const weekStart = getStartOfWeekDateString();
+  const monthStart = getStartOfMonthDateString();
+
+  let rangeStart = null;
+  let rangeEnd = null;
+
+  if (filterType === 'today') {
+    rangeStart = today;
+    rangeEnd = today;
+  } else if (filterType === 'yesterday') {
+    rangeStart = yesterday;
+    rangeEnd = yesterday;
+  } else if (filterType === 'week') {
+    rangeStart = weekStart;
+    rangeEnd = today;
+  } else if (filterType === 'month') {
+    rangeStart = monthStart;
+    rangeEnd = today;
+  } else if (filterType === 'range') {
+    rangeStart = startDate || null;
+    rangeEnd = endDate || null;
+  } else if (filterType === 'specific') {
+    rangeStart = selectedDate || null;
+    rangeEnd = selectedDate || null;
+  }
+
+  if (!rangeStart && !rangeEnd) return true;
+
+  const billDate = b.date;
+  const periodStart = b.period_start;
+  const periodEnd = b.period_end;
+
+  if (rangeStart && rangeEnd) {
+    if (periodStart && periodEnd) {
+      return (
+        (periodStart <= rangeEnd && periodEnd >= rangeStart) ||
+        (billDate >= rangeStart && billDate <= rangeEnd)
+      );
+    }
+    return billDate >= rangeStart && billDate <= rangeEnd;
+  }
+
+  if (rangeStart && !rangeEnd) {
+    if (periodStart && periodEnd) {
+      return periodEnd >= rangeStart || billDate >= rangeStart;
+    }
+    return billDate >= rangeStart;
+  }
+
+  if (!rangeStart && rangeEnd) {
+    if (periodStart && periodEnd) {
+      return periodStart <= rangeEnd || billDate <= rangeEnd;
+    }
+    return billDate <= rangeEnd;
+  }
+
+  return true;
+}
 
 export function useBills() {
   const [allBills, setAllBills] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [dateFilterType, setDateFilterType] = useState('all'); // 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'specific' | 'range'
+  const [selectedDate, setSelectedDate]     = useState(getLocalDateString());
+  const [startDate, setStartDate]           = useState(getLocalDateString());
+  const [endDate, setEndDate]               = useState(getLocalDateString());
+
   // Distinct from `!loading`: loading is false both before the first fetch starts and
   // after it finishes. A deep link that has to decide "this bill does not exist" needs
   // to tell those apart, or it reports not-found against a list it has not read yet.
@@ -36,11 +111,17 @@ export function useBills() {
     fetchAll();
   }, [fetchAll]);
 
-  // Frontend fuzzy search on loaded bills list (instant offline filtering)
+  // Combined date filter + fuzzy text search
+  const dateFilteredBills = useMemo(() => {
+    return allBills.filter((b) =>
+      billMatchesDate(b, dateFilterType, startDate, endDate, selectedDate)
+    );
+  }, [allBills, dateFilterType, startDate, endDate, selectedDate]);
+
   const bills = useMemo(() => {
-    if (!searchQuery.trim()) return allBills;
-    return applyFuzzyFilter(allBills, searchQuery, ['bill_number', 'customer_name', 'notes']);
-  }, [allBills, searchQuery]);
+    if (!searchQuery.trim()) return dateFilteredBills;
+    return applyFuzzyFilter(dateFilteredBills, searchQuery, ['bill_number', 'customer_name', 'notes']);
+  }, [dateFilteredBills, searchQuery]);
 
   async function createBill(data) {
     try {
@@ -80,6 +161,14 @@ export function useBills() {
     error,
     searchQuery,
     setSearchQuery,
+    dateFilterType,
+    setDateFilterType,
+    selectedDate,
+    setSelectedDate,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
     fetchAll,
     createBill,
     updateBill,

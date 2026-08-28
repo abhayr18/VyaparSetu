@@ -8,7 +8,7 @@ const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
 /** Get all bills with customer names, and attach items */
 function findAll() {
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      ORDER BY b.date DESC, b.id DESC`
@@ -22,7 +22,7 @@ function findAll() {
 /** Get a bill by its ID, with items attached */
 function findById(id) {
   const rows = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.id = ?`,
@@ -38,7 +38,7 @@ function findById(id) {
 /** Get a bill by its bill_number, with items attached */
 function findByNumber(number) {
   const rows = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.bill_number = ?`,
@@ -55,7 +55,7 @@ function findByNumber(number) {
 function search(query) {
   const like = `%${query}%`;
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.bill_number LIKE ? OR c.name LIKE ?
@@ -71,7 +71,7 @@ function search(query) {
 /** Get bills by customer ID, and attach items */
 function findByCustomerId(customerId) {
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.customer_id = ?

@@ -146,8 +146,8 @@ export default function TransactionEntry({
 
     const res = await onSubmitTransaction(payload);
     if (res?.success) {
-      // Reset form entries
-      setSelectedCustomer(null);
+      // Keep selectedCustomer sticky for rapid multi-vegetable entry.
+      // Reset only the vegetable and line details.
       setSelectedVegetable(null);
       setWeight('');
       setRate('');
@@ -156,13 +156,12 @@ export default function TransactionEntry({
       setPaymentMode('Cash');
       setErrors({});
 
-      // Clear autocompletes if refs support clear
-      customerRef.current?.clear();
+      // Clear vegetable autocomplete
       vegetableRef.current?.clear();
 
-      // Immediately return focus to Customer Input for next transaction
+      // Return focus directly to Vegetable input for next item of this customer
       setTimeout(() => {
-        customerRef.current?.focus();
+        vegetableRef.current?.focus();
       }, 50);
     }
   }
