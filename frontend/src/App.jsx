@@ -15,6 +15,7 @@ import CustomersPage  from './pages/CustomersPage';
 import VegetablesPage from './pages/VegetablesPage';
 import BillingPage    from './pages/BillingPage';
 import TransactionsPage from './pages/TransactionsPage';
+import DayBookPage     from './pages/DayBookPage';
 import UdharPage      from './pages/UdharPage';
 import ReportsPage    from './pages/ReportsPage';
 import BackupPage     from './pages/BackupPage';
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="vegetables"   element={<VegetablesPage   />} />
               <Route path="billing"      element={<BillingPage      />} />
               <Route path="transactions" element={<TransactionsPage />} />
+              <Route path="daybook"      element={<DayBookPage      />} />
               <Route path="udhar"        element={<UdharPage        />} />
               <Route path="reports"      element={<ReportsPage      />} />
               <Route path="backup"       element={<BackupPage       />} />

@@ -17,23 +17,7 @@
 
 import { useTranslation } from '../hooks/useTranslation';
 import { formatBillDate } from '../utils/billDisplay';
-
-/**
- * Whole days between a YYYY-MM-DD string and today, both taken at local midnight.
- *
- * Built from the parts rather than `new Date(str)`, which parses a bare date as UTC and
- * so lands on the previous day for anyone west of Greenwich. The product ships to Indian
- * shops where that cannot bite, but the correct version costs nothing.
- */
-function daysSince(dateStr) {
-  if (!dateStr) return null;
-  const [y, m, d] = String(dateStr).split('-').map(Number);
-  if (!y || !m || !d) return null;
-  const then = new Date(y, m - 1, d);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((today - then) / 86400000);
-}
+import { daysSince } from '../utils/dates';
 
 export default function PendingSettlements({
   settlements = [],

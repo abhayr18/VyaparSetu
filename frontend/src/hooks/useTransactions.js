@@ -1,25 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { transactionApi, customersApi, vegetablesApi } from '../services/apiService';
-
-function getLocalDateString(dateObj = new Date()) {
-  const d = new Date(dateObj);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function getYesterdayDateString() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return getLocalDateString(d);
-}
-
-function getDaysAgoDateString(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return getLocalDateString(d);
-}
+import { getLocalDateString, getYesterdayDateString, getDaysAgoDateString } from '../utils/dates';
 
 /**
  * How far back the date-range filter reaches when the vendor first opens it.

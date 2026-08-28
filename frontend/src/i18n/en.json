@@ -5,6 +5,7 @@
     "vegetables": "Vegetables",
     "billing": "Invoices",
     "transactions": "Transactions",
+    "daybook": "Day Book",
     "udhar": "Udhar / Credit",
     "reports": "Reports",
     "backup": "Backup & Restore",
@@ -443,6 +444,50 @@
         "today": "Today",
         "days": "{{count}} days"
       }
+    }
+  },
+  "daybook": {
+    "title": "Day Book",
+    "todayTag": "Today",
+    "prevDay": "Previous day",
+    "nextDay": "Next day",
+    "today": "Today",
+    "kpi": {
+      "entries": "Entries",
+      "customers": "{{count}} customers",
+      "totalValue": "Total Value",
+      "received": "Received",
+      "outstanding": "Outstanding",
+      "commission": "Commission Earned"
+    },
+    "empty": {
+      "title": "No entries on this day",
+      "today": "Go to Transactions to log the first entry of the day.",
+      "pastDay": "No sales were recorded on this date."
+    },
+    "byVegetable": {
+      "title": "Vegetable-wise Totals",
+      "subtitle": "How much of each vegetable moved, biggest earner first.",
+      "vegetable": "Vegetable",
+      "entries": "Entries",
+      "quantity": "Quantity",
+      "amount": "Amount"
+    },
+    "entries": {
+      "title": "All Entries",
+      "subtitle": "Every entry of the day, in the order it was logged.",
+      "time": "Time",
+      "customer": "Customer",
+      "vegetable": "Vegetable",
+      "quantity": "Quantity",
+      "rate": "Rate",
+      "amount": "Amount",
+      "due": "Due",
+      "status": "Status"
+    },
+    "status": {
+      "pending": "Not billed",
+      "billed": "Billed"
     }
   }
 }

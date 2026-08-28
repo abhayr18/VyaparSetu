@@ -42,6 +42,12 @@ const NavIcons = {
       <line x1="7" y1="15" x2="12" y2="15" />
     </svg>
   ),
+  DayBook: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+    </svg>
+  ),
   Udhar: () => (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23"/>
@@ -75,6 +81,9 @@ const NAV_ITEMS = [
   { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
   { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
   { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions' },
+  // Directly below Transactions: it is the read view of what that page writes, and a
+  // vendor who has just logged the day's entries goes here to total them.
+  { key: 'daybook',      to: '/daybook',      icon: NavIcons.DayBook,      label: 'nav.daybook'      },
   { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing'      },
   { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar'        },
   { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports'      },

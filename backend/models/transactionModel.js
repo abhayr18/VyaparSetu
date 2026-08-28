@@ -110,11 +110,20 @@ function findByCustomerAndDateRange(customerId, startDate, endDate) {
 
 /**
  * Find all transactions for a customer (or all customers) with optional date filtering.
+ *
+ * This is what the Day Book reads with just a `date`: one day's entries across every
+ * customer, which is why the customer join is here rather than in the caller.
+ *
+ * `bills` is a LEFT join on purpose — an unbilled entry has a NULL `bill_id` and must
+ * still appear. An INNER join would silently hide exactly the rows the vendor most needs
+ * to see. `bill_number` is TEXT, so rowToRupees leaves it alone.
  */
 function findAll({ customerId, date, startDate, endDate }) {
-  let sql = `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+  let sql = `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+                    b.bill_number AS bill_number
              FROM transactions t
              JOIN customers c ON t.customer_id = c.id
+             LEFT JOIN bills b ON t.bill_id = b.id
              WHERE 1=1`;
   const params = [];
 
