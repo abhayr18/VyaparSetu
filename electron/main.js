@@ -10,9 +10,98 @@
  * app is installed under Program Files, its own directory is read-only to it.
  */
 
-const { app, BrowserWindow, shell, dialog } = require('electron');
+const { app, BrowserWindow, shell, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const dotenv = require('dotenv');
+
+// Load environment variables (.env) from root and backend
+dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '../backend/.env') });
+
+
+// Expose open-external handler for Google OAuth & system browser opening
+ipcMain.handle('open-external', async (_, url) => {
+  if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+    return { success: true };
+  }
+  return { success: false, error: 'Invalid URL' };
+});
+
+/**
+ * Checks internet connectivity without DNS spam
+ */
+function checkOnline() {
+  return new Promise((resolve) => {
+    const req = http.get('http://clients3.google.com/generate_204', (res) => {
+      resolve(res.statusCode === 204);
+      res.resume();
+    });
+    req.setTimeout(4000, () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.on('error', () => resolve(false));
+  });
+}
+
+/**
+ * Starts the change-triggered auto cloud backup runner.
+ * Runs every 15 seconds:
+ *   - Checks if db_dirty === 1
+ *   - If dirty & online & Drive connected: flushes WAL and upserts backup
+ */
+function setupAutoCloudBackup(port) {
+  let isSyncing = false;
+
+  async function runAutoBackup() {
+    if (isSyncing) return; // Prevent overlapping runs
+
+    try {
+      const online = await checkOnline();
+      if (!online) return; // Offline: gracefully wait
+
+      isSyncing = true;
+      const res = await new Promise((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: '127.0.0.1',
+            port,
+            path: '/api/drive/auto-backup',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
+          },
+          (response) => {
+            let body = '';
+            response.on('data', (d) => { body += d; });
+            response.on('end', () => resolve({ statusCode: response.statusCode, body }));
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+
+      if (res.body) {
+        try {
+          const data = JSON.parse(res.body);
+          if (data.success && !data.skipped) {
+            log(`[AutoBackup] ✓ Data changes detected & synced to Drive (${data.data?.file?.size} bytes)`);
+          }
+        } catch (_) {}
+      }
+    } catch (err) {
+      log(`[AutoBackup] ${err.message}`);
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  // Initial check 5 seconds after startup, then every 15 seconds
+  setTimeout(runAutoBackup, 5000);
+  setInterval(runAutoBackup, 15000);
+}
 
 // --- File logging -----------------------------------------------------------
 // A packaged GUI app has no console, so console output is lost — including on a
@@ -49,6 +138,11 @@ process.on('uncaughtException', (err) => {
 // Software compositing is more than enough for this CRUD UI and is far more
 // robust across the varied client machines this now ships to.
 app.disableHardwareAcceleration();
+
+const { registerWhatsAppShareHandler } = require('./whatsappShareHandler');
+
+// Register IPC handlers
+registerWhatsAppShareHandler();
 
 // Ports the backend tries, in order, before letting the OS pick one.
 //
@@ -120,6 +214,7 @@ if (!app.requestSingleInstanceLock()) {
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
+        preload: path.join(__dirname, 'preload.js'),
       },
     });
 
@@ -174,6 +269,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       const port = await startBackend();
       createWindow(port);
+      setupAutoCloudBackup(port);
     } catch (err) {
       const msg = err && err.stack ? err.stack : String(err);
       log(`FATAL: ${msg}`);

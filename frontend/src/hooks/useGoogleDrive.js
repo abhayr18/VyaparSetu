@@ -3,6 +3,9 @@ import { driveApi } from '../services/apiService';
 
 export default function useGoogleDrive() {
   const [connected, setConnected] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const [lastChange, setLastChange] = useState(null);
   const [driveBackups, setDriveBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -11,8 +14,11 @@ export default function useGoogleDrive() {
   const fetchStatus = useCallback(async () => {
     try {
       const res = await driveApi.getStatus();
-      if (res && res.success) {
+      if (res && res.success && res.data) {
         setConnected(res.data.connected);
+        setIsDirty(!!res.data.isDirty);
+        setLastSync(res.data.lastSync || null);
+        setLastChange(res.data.lastChange || null);
         return res.data.connected;
       }
     } catch (err) {
@@ -38,12 +44,19 @@ export default function useGoogleDrive() {
     try {
       const res = await driveApi.getAuthUrl();
       if (res && res.success && res.authUrl) {
-        window.location.href = res.authUrl;
+        // In Electron: Launch system browser so Google does not block with 403 disallowed_useragent
+        if (typeof window !== 'undefined' && window.electronAPI?.openExternal) {
+          await window.electronAPI.openExternal(res.authUrl);
+          setSuccess('Opening Google OAuth login in your default web browser...');
+        } else {
+          window.location.href = res.authUrl;
+        }
       } else {
         throw new Error('Could not retrieve authentication URL.');
       }
     } catch (err) {
       setError(err.message || 'OAuth initialization failed.');
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -56,6 +69,7 @@ export default function useGoogleDrive() {
       const res = await driveApi.disconnect();
       if (res && res.success) {
         setConnected(false);
+        setIsDirty(false);
         setDriveBackups([]);
         setSuccess('Disconnected from Google Drive successfully.');
       }
@@ -66,14 +80,19 @@ export default function useGoogleDrive() {
     }
   }, []);
 
-  const backupToDrive = useCallback(async () => {
+  const backupToDrive = useCallback(async (force = true) => {
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
-      const res = await driveApi.backup();
+      const res = await driveApi.backup(force);
       if (res && res.success) {
-        setSuccess(`Backup uploaded to Google Drive successfully: ${res.data.filename}`);
+        if (res.skipped) {
+          setSuccess('Database has not changed since last sync. Cloud copy is already up-to-date.');
+        } else {
+          setSuccess(`Backup synced to Google Drive successfully: ${res.data?.filename || 'vyapaarsetu-backup.db'}`);
+        }
+        await fetchStatus();
         await fetchDriveBackups();
         return res.data;
       }
@@ -84,7 +103,7 @@ export default function useGoogleDrive() {
     } finally {
       setLoading(false);
     }
-  }, [fetchDriveBackups]);
+  }, [fetchStatus, fetchDriveBackups]);
 
   const restoreFromDrive = useCallback(async (fileId) => {
     setLoading(true);
@@ -94,6 +113,7 @@ export default function useGoogleDrive() {
       const res = await driveApi.restore(fileId);
       if (res && res.success) {
         setSuccess(`Database restored successfully from Google Drive backup. Local safety backup created: ${res.data.safetyBackup}`);
+        await fetchStatus();
         return res.data;
       }
       throw new Error(res.message || 'Google Drive restore failed.');
@@ -103,7 +123,7 @@ export default function useGoogleDrive() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchStatus]);
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -120,7 +140,7 @@ export default function useGoogleDrive() {
     }
   }, [fetchStatus, fetchDriveBackups]);
 
-  // Initial load
+  // Initial load & URL query param check
   useEffect(() => {
     const init = async () => {
       setLoading(true);
@@ -128,15 +148,17 @@ export default function useGoogleDrive() {
       if (isConnected) {
         await fetchDriveBackups();
       }
-      
-      // Check query params for redirected callback success
+
+      // Check query params for redirected callback success or error
       const params = new URLSearchParams(window.location.search);
       if (params.get('drive_connected') === 'true') {
         setSuccess('Connected to Google Drive successfully!');
-        // Clean query parameters from URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get('drive_error')) {
+        setError(`Google Drive error: ${params.get('drive_error')}`);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
-      
+
       setLoading(false);
     };
     init();
@@ -144,6 +166,9 @@ export default function useGoogleDrive() {
 
   return {
     connected,
+    isDirty,
+    lastSync,
+    lastChange,
     driveBackups,
     loading,
     error,

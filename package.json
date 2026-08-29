@@ -9,6 +9,7 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "electron .",
     "build:frontend": "npm --prefix frontend run build",
     "make-icon": "node build/make-icon.mjs",
     "pack": "npm run build:frontend && electron-builder --dir",

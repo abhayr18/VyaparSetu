@@ -16,6 +16,7 @@ import {
   HistoryIcon, CheckIcon, ChartIcon, EyeIcon,
 } from './Icons';
 import ReceiptPrint from './ReceiptPrint';
+import { sanitizeWhatsAppPhone, createWhatsAppShareUrl } from '../utils/whatsappShare';
 
 // ─── Small Helpers ────────────────────────────────────────────────────────────
 function fmt(val) {
@@ -190,8 +191,10 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose,
 
     lines.push(`_Sent from VyapaarSetu_`);
 
-    const text = encodeURIComponent(lines.join('\n'));
-    window.open(`https://wa.me/91${mobile}?text=${text}`, '_blank');
+    const text = lines.join('\n');
+    const cleanPhone = sanitizeWhatsAppPhone(mobile);
+    const url = createWhatsAppShareUrl(cleanPhone, text) || `https://api.whatsapp.com/send/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   // ─── Render Items Based on Tab ─────────────────────────────────────────────

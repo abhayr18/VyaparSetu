@@ -1,6 +1,7 @@
 /**
- * BackupPage — MyBillBook Data & Sync-style
- * Status KPI cards + section cards for Local / Drive backup
+ * BackupPage — VyapaarSetu Data & Cloud Sync
+ * Status KPI cards + section cards for Local / Google Drive backup
+ * Conforms to GOOGLE_DRIVE_BACKUP_GUIDE.md
  */
 
 import { useState, useEffect } from 'react';
@@ -9,7 +10,8 @@ import useGoogleDrive from '../hooks/useGoogleDrive';
 import { useTranslation } from '../hooks/useTranslation';
 import {
   HistoryIcon, GlobeIcon, AlertIcon, CloudIcon,
-  CheckIcon, SaveIcon, KeyIcon, UploadIcon, PlugIcon, FolderIcon
+  CheckIcon, SaveIcon, KeyIcon, UploadIcon, PlugIcon, FolderIcon,
+  RefreshIcon
 } from '../components/Icons';
 
 export default function BackupPage() {
@@ -21,7 +23,7 @@ export default function BackupPage() {
   } = useBackup();
 
   const {
-    connected: driveConnected, driveBackups,
+    connected: driveConnected, isDirty, lastSync, lastChange, driveBackups,
     loading: driveLoading, error: driveError, success: driveSuccess,
     setSuccess: setDriveSuccess, setError: setDriveError,
     connectDrive, disconnectDrive, backupToDrive, restoreFromDrive, refreshAll: refreshDrive,
@@ -37,48 +39,79 @@ export default function BackupPage() {
   };
 
   useEffect(() => {
-    if (driveSuccess) { const t = setTimeout(() => setDriveSuccess(null), 6000); return () => clearTimeout(t); }
+    if (driveSuccess) { const timer = setTimeout(() => setDriveSuccess(null), 6000); return () => clearTimeout(timer); }
   }, [driveSuccess, setDriveSuccess]);
 
   useEffect(() => {
-    if (driveError) { const t = setTimeout(() => setDriveError(null), 6000); return () => clearTimeout(t); }
+    if (driveError) { const timer = setTimeout(() => setDriveError(null), 6000); return () => clearTimeout(timer); }
   }, [driveError, setDriveError]);
 
   const handleCreateBackup = async () => {
     setLocalLoading(true);
-    try { const d = await createLocalBackup(); showNotice(`${t('backup.backupSuccess')} (${d.filename})`); }
-    catch (err) { showNotice(`${t('backup.backupFailed')}: ${err.message}`, true); }
-    finally { setLocalLoading(false); }
+    try {
+      const d = await createLocalBackup();
+      showNotice(`${t('backup.backupSuccess')} (${d.filename})`);
+    } catch (err) {
+      showNotice(`${t('backup.backupFailed')}: ${err.message}`, true);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const handleRestore = async (filename) => {
-    if (!window.confirm(t('backup.confirmRestore'))) return;
+    if (!window.confirm(t('backup.confirmRestore') || 'Restore database from this backup? A safety backup will be created first.')) return;
     setLocalLoading(true);
-    try { const d = await restoreBackup(filename); showNotice(`${t('backup.restoreSuccess')} Safety backup: ${d.safetyBackup}`); }
-    catch (err) { showNotice(`${t('backup.restoreFailed')}: ${err.message}`, true); }
-    finally { setLocalLoading(false); }
+    try {
+      const d = await restoreBackup(filename);
+      showNotice(`${t('backup.restoreSuccess')} Safety backup created: ${d.safetyBackup}`);
+    } catch (err) {
+      showNotice(`${t('backup.restoreFailed')}: ${err.message}`, true);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const handleBackupToDrive = async () => {
     setLocalLoading(true);
-    try { const d = await backupToDrive(); await refreshLocal(); showNotice(`${t('backup.backupSuccess')} (${d.filename})`); }
-    catch (err) { showNotice(`${t('backup.backupFailed')}: ${err.message}`, true); }
-    finally { setLocalLoading(false); }
+    try {
+      const d = await backupToDrive(true);
+      await refreshLocal();
+      if (d) {
+        showNotice(`${t('backup.backupSuccess')} (${d.filename || 'vyapaarsetu-backup.db'})`);
+      }
+    } catch (err) {
+      showNotice(`${t('backup.backupFailed')}: ${err.message}`, true);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const handleRestoreFromDrive = async (fileId) => {
-    if (!window.confirm(t('backup.confirmRestoreDrive'))) return;
+    if (!window.confirm(t('backup.confirmRestoreDrive') || 'Restore database from Google Drive cloud backup? A safety backup will be created first.')) return;
     setLocalLoading(true);
-    try { const d = await restoreFromDrive(fileId); await refreshLocal(); showNotice(`${t('backup.restoreSuccess')} Safety backup: ${d.safetyBackup}`); }
-    catch (err) { showNotice(`${t('backup.restoreFailed')}: ${err.message}`, true); }
-    finally { setLocalLoading(false); }
+    try {
+      const d = await restoreFromDrive(fileId);
+      await refreshLocal();
+      showNotice(`${t('backup.restoreSuccess')} Safety backup created: ${d.safetyBackup}`);
+    } catch (err) {
+      showNotice(`${t('backup.restoreFailed')}: ${err.message}`, true);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const handleRefreshAll = async () => {
     setLocalLoading(true);
-    try { await refreshLocal(); if (internetOnline && driveConnected) await refreshDrive(); }
-    catch (err) { console.error('Failed to refresh backups:', err); }
-    finally { setLocalLoading(false); }
+    try {
+      await refreshLocal();
+      if (internetOnline && driveConnected) {
+        await refreshDrive();
+      }
+    } catch (err) {
+      console.error('Failed to refresh backups:', err);
+    } finally {
+      setLocalLoading(false);
+    }
   };
 
   const formatBytes = (bytes) => {
@@ -141,12 +174,12 @@ export default function BackupPage() {
 
         {/* Drive Status */}
         <div className="kpi-card">
-          <div className={`kpi-icon-box${driveConnected ? ' kpi-icon-green' : ' kpi-icon-blue'}`}>
+          <div className={`kpi-icon-box${driveConnected ? (isDirty ? ' kpi-icon-orange' : ' kpi-icon-green') : ' kpi-icon-blue'}`}>
             <CloudIcon style={{ width: '20px', height: '20px' }} />
           </div>
           <div className="kpi-content">
-            <div className="kpi-value" style={{ fontSize: '1rem' }}>
-              {driveConnected ? t('backup.connected') : t('backup.disconnected')}
+            <div className="kpi-value" style={{ fontSize: '0.95rem' }}>
+              {driveConnected ? (isDirty ? 'Pending Auto-Sync' : 'Cloud Synced') : t('backup.disconnected')}
             </div>
             <div className="kpi-label">{t('backup.googleDrive')}</div>
           </div>
@@ -184,7 +217,7 @@ export default function BackupPage() {
         <div className="backup-section-header">
           <div className="backup-section-title">
             <FolderIcon style={{ color: 'var(--color-primary)', width: '16px', height: '16px' }} />
-            Local Backup
+            Local Backup Engine
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
             <span>{t('backup.lastBackup')}:</span>
@@ -193,7 +226,7 @@ export default function BackupPage() {
         </div>
         <div className="backup-section-body">
           <p style={{ margin: '0 0 16px 0', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
-            Create a local backup of all your data. Backups are stored in the <code style={{ background: 'var(--color-bg)', padding: '2px 6px', borderRadius: 4 }}>/backups</code> folder.
+            Create an offline, WAL-safe snapshot of all transactions and customer balances. Backups are stored in your secure user <code style={{ background: 'var(--color-bg)', padding: '2px 6px', borderRadius: 4 }}>/backups</code> folder.
           </p>
           <button id="create-local-backup-btn" className="btn btn-primary" onClick={handleCreateBackup} disabled={isProcessing}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -247,29 +280,48 @@ export default function BackupPage() {
         <div className="backup-section-header">
           <div className="backup-section-title">
             <CloudIcon style={{ color: '#4285f4', width: '16px', height: '16px' }} />
-            {t('backup.googleDrive')}
+            {t('backup.googleDrive')} (Disaster Recovery & Zero-Waste Auto-Sync)
           </div>
           {driveConnected && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', background: 'var(--color-success-bg)', padding: '3px 10px', borderRadius: 20, fontWeight: 600 }}>
-              {t('backup.connected')}
+            <span style={{
+              fontSize: '0.75rem',
+              color: isDirty ? '#d97706' : 'var(--color-success)',
+              background: isDirty ? '#fef3c7' : 'var(--color-success-bg)',
+              padding: '3px 10px',
+              borderRadius: 20,
+              fontWeight: 600
+            }}>
+              {isDirty ? 'Pending Auto-Sync' : 'Auto-Sync Active (Clean)'}
             </span>
           )}
         </div>
         <div className="backup-section-body">
-          {driveConnected && lastDriveFile && (
-            <p style={{ margin: '0 0 14px 0', fontSize: '0.82rem', color: 'var(--color-text-muted)' }}>
-              {t('backup.lastDriveBackup')}: <strong>{formatDateTime(lastDriveFile.createdAt)}</strong>
-            </p>
+          {driveConnected && (
+            <div style={{ marginBottom: 14, fontSize: '0.84rem', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div>
+                Cloud Sync Status:{' '}
+                <strong style={{ color: isDirty ? '#d97706' : 'var(--color-success)' }}>
+                  {isDirty ? 'Unsynced Local Changes (Daemon will sync in 15s when online)' : 'Fully Synchronized with Google Drive'}
+                </strong>
+              </div>
+              {lastSync && (
+                <div>Last Cloud Sync: <strong>{formatDateTime(lastSync)}</strong></div>
+              )}
+              {lastChange && isDirty && (
+                <div>Last Data Change: <strong>{formatDateTime(lastChange)}</strong></div>
+              )}
+            </div>
           )}
+
           <p style={{ margin: '0 0 16px 0', fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
             {driveConnected
-              ? 'Backups are stored in your "MandaiMitra_Backups" Google Drive folder.'
-              : 'Link your Google account to enable secure cloud backups and restore data from anywhere.'}
+              ? 'Automatic 15-second background sync is active. Backups are stored in your "VyapaarSetu_Backups" Google Drive folder using a single canonical file with full Google Drive revision history.'
+              : 'Link your Google account to enable automated background cloud disaster recovery and restore your business data from anywhere.'}
           </p>
 
           {!internetOnline ? (
             <div style={{ padding: '10px 14px', background: '#fffbeb', color: '#92400e', border: '1px solid #fde68a', borderRadius: 'var(--border-radius-sm)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <AlertIcon style={{ flexShrink: 0 }} /> {t('backup.offlineWarning') || 'Google Drive is unavailable while offline.'}
+              <AlertIcon style={{ flexShrink: 0 }} /> {t('backup.offlineWarning') || 'Google Drive sync is paused while offline. Local changes will automatically sync once reconnected.'}
             </div>
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
@@ -283,8 +335,8 @@ export default function BackupPage() {
                   <button className="btn btn-primary" onClick={handleBackupToDrive} disabled={isProcessing}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     {isProcessing && driveLoading
-                      ? <><span className="spinner" style={{ width: 13, height: 13 }} /> {t('backup.loading')}</>
-                      : <><UploadIcon style={{ width: '15px', height: '15px' }} /> {t('backup.driveBackup')}</>}
+                      ? <><span className="spinner" style={{ width: 13, height: 13 }} /> Syncing...</>
+                      : <><UploadIcon style={{ width: '15px', height: '15px' }} /> Sync to Drive Now</>}
                   </button>
                   <button className="btn btn-outline" onClick={disconnectDrive} disabled={isProcessing}
                     style={{ borderColor: 'var(--color-error)', color: 'var(--color-error)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -301,7 +353,7 @@ export default function BackupPage() {
           <div>
             <div style={{ padding: '10px 20px', borderTop: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {t('backup.driveHistory')}
+                Cloud Backup on Google Drive
               </span>
             </div>
             <div className="table-wrapper">

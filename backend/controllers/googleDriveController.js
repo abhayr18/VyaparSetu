@@ -1,7 +1,7 @@
 /**
  * Google Drive Controller
- * Exposes API endpoints for authorization generation, callback handling,
- * connection status check, backup uploads, listing, unlinking, and restoring.
+ * Exposes API endpoints for OAuth authorization generation, callback handling,
+ * auto-backup synchronization, manual sync, listing, unlinking, and restoring.
  */
 
 const driveService = require('../services/googleDriveBackupService');
@@ -22,22 +22,23 @@ function getAuthUrl(req, res, next) {
 }
 
 /**
- * GET /api/drive/oauth-callback
- * Google OAuth redirect destination. Saves code token and redirects back to React client.
+ * GET /api/drive/callback or /api/drive/oauth-callback
+ * Google OAuth redirect destination. Saves tokens and redirects to the React app.
  */
 async function handleCallback(req, res, next) {
   try {
-    const { code } = req.query;
-    if (!code) {
-      return res.status(400).send('Authorization code missing in callback.');
+    const { code, error } = req.query;
+    if (error) {
+      return res.redirect(`/backup?drive_error=${encodeURIComponent(error)}`);
     }
-    
+    if (!code) {
+      return res.redirect('/backup?drive_error=Authorization%20code%20missing');
+    }
+
     await driveService.handleCallback(code);
-    
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    res.redirect(`${frontendUrl}/backup?drive_connected=true`);
+    res.redirect('/backup?drive_connected=true');
   } catch (err) {
-    next(err);
+    res.redirect(`/backup?drive_error=${encodeURIComponent(err.message)}`);
   }
 }
 
@@ -57,15 +58,43 @@ async function getStatus(req, res, next) {
 }
 
 /**
+ * POST /api/drive/auto-backup
+ * Background auto-sync endpoint invoked by the Electron daemon.
+ * Skips gracefully if not connected or if database has no changes.
+ */
+async function autoBackup(req, res, next) {
+  try {
+    const status = await driveService.getDriveStatus();
+    if (!status.connected) {
+      return res.status(200).json({ success: false, reason: 'not_connected' });
+    }
+
+    const force = !!req.body?.force;
+    if (!force && !driveService.isDatabaseDirty()) {
+      return res.status(200).json({ success: true, skipped: true, reason: 'no_changes' });
+    }
+
+    const data = await driveService.upsertDriveBackup(force);
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+/**
  * POST /api/drive/backup
+ * Manual sync triggered from UI.
  */
 async function backup(req, res, next) {
   try {
-    const data = await driveService.uploadBackupToDrive();
+    const force = req.body?.force !== false;
+    const data = await driveService.upsertDriveBackup(force);
     res.status(201).json({
       success: true,
-      message: 'Database backup uploaded to Google Drive successfully.',
-      data,
+      message: data.skipped ? 'Database unchanged; cloud sync skipped.' : 'Database backup synced to Google Drive successfully.',
+      data: data.file,
+      skipped: data.skipped,
+      reason: data.reason,
     });
   } catch (err) {
     next(err);
@@ -93,14 +122,7 @@ async function listBackups(req, res, next) {
  */
 async function restore(req, res, next) {
   try {
-    const { fileId } = req.body;
-    if (!fileId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Google Drive file ID is required for restore.',
-      });
-    }
-
+    const { fileId } = req.body || {};
     const data = await driveService.restoreFromDrive(fileId);
     res.status(200).json({
       success: true,
@@ -132,6 +154,7 @@ module.exports = {
   getAuthUrl,
   handleCallback,
   getStatus,
+  autoBackup,
   backup,
   listBackups,
   restore,

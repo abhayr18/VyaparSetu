@@ -1,7 +1,14 @@
+/**
+ * Local Backup Service
+ * Handles WAL-safe SQLite snapshots, backup history listing,
+ * buffer verification, and fail-safe transactional restorations.
+ */
+
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
 const dns = require('dns').promises;
-const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
+const { DB_PATH, reloadDb, serialize, backupTo, checkpoint } = require('../database/db');
 const logger = require('../utils/logger');
 
 // Repo-root backups/ by default; the packaged app overrides this to a writable
@@ -14,6 +21,29 @@ const BACKUP_DIR = process.env.BACKUP_DIR
 // Ensure backups directory exists
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+/**
+ * Validates SQLite magic header bytes ('SQLite format 3')
+ * @param {Buffer} buffer
+ * @returns {boolean}
+ */
+function isValidSqliteBuffer(buffer) {
+  if (!buffer || buffer.length < 100) return false;
+  const header = buffer.subarray(0, 16).toString();
+  return header.includes('SQLite format 3');
+}
+
+/**
+ * Flushes all uncommitted WAL transactions into the main .db file.
+ * Must be executed before copying, hashing, or restoring the SQLite database.
+ */
+function checkpointDatabase() {
+  try {
+    checkpoint();
+  } catch (err) {
+    logger.warn(`[DB] WAL Checkpoint warning: ${err.message}`);
+  }
 }
 
 /**
@@ -38,6 +68,9 @@ async function createBackup() {
     throw new Error('Database file does not exist to backup.');
   }
 
+  // 1. Flush WAL
+  checkpointDatabase();
+
   // Format filename and set full destination path
   const filename = generateBackupFilename();
   const destPath = path.join(BACKUP_DIR, filename);
@@ -52,7 +85,13 @@ async function createBackup() {
   // recent commits live in the -wal sidecar, so fs.readFileSync(DB_PATH) would
   // capture a stale database missing the latest sales. backup() folds the WAL in
   // and writes one self-contained file.
-  await backupTo(destPath);
+  try {
+    await backupTo(destPath);
+  } catch (err) {
+    logger.warn(`Native backupTo failed, falling back to file copy after checkpoint: ${err.message}`);
+    checkpointDatabase();
+    fs.copyFileSync(DB_PATH, destPath);
+  }
   logger.info(`Backup created successfully at: ${destPath}`);
 
   const stats = fs.statSync(destPath);
@@ -74,7 +113,7 @@ async function listBackups() {
 
   const files = fs.readdirSync(BACKUP_DIR);
   const backups = files
-    .filter((file) => file.startsWith('backup-') && file.endsWith('.db'))
+    .filter((file) => file.startsWith('backup-') && (file.endsWith('.db') || file.endsWith('.sqlite')))
     .map((file) => {
       const filePath = path.join(BACKUP_DIR, file);
       const stats = fs.statSync(filePath);
@@ -121,25 +160,24 @@ async function restoreBackup(filename) {
     throw new Error('Current database file not found. Cannot perform safety backup.');
   }
 
+  const selectedBackupBuffer = fs.readFileSync(targetPath);
+  if (!isValidSqliteBuffer(selectedBackupBuffer)) {
+    throw new Error('Target file is not a valid SQLite database.');
+  }
+
   // 1. Create a safety backup first
   logger.info('Creating safety backup prior to database restore...');
-  // A consistent snapshot of the live database (WAL folded in) to roll back to if
-  // the restore fails. serialize() is WAL-safe where a raw file read would not be.
   const safetyBackupBuffer = serialize();
   const safetyInfo = await createBackup();
   const safetyFilename = safetyInfo.filename;
   logger.info(`Safety backup created at name: ${safetyFilename}`);
 
-  // 2. Read selected backup file contents
-  const selectedBackupBuffer = fs.readFileSync(targetPath);
-
   try {
-    // 3. Try to restore DB. reloadDb owns the on-disk replacement (atomic
-    // temp-write + rename, and clears the stale -wal/-shm sidecars), so there is
-    // no separate fs.writeFileSync here — writing DB_PATH ourselves while the old
-    // -wal still sat beside it would splice two databases together.
+    // 2. Flush WAL & reload DB
+    checkpointDatabase();
     logger.info(`Starting restore from backup file: ${filename}`);
     reloadDb(selectedBackupBuffer);
+    checkpointDatabase();
     logger.info('Database restored successfully from backup.');
     return {
       success: true,
@@ -151,6 +189,7 @@ async function restoreBackup(filename) {
     try {
       // Revert to the pre-restore snapshot.
       reloadDb(safetyBackupBuffer);
+      checkpointDatabase();
       logger.info('Database successfully reverted to safety state.');
     } catch (rollbackErr) {
       logger.error('CRITICAL: Rollback to safety backup failed!', rollbackErr);
@@ -169,18 +208,28 @@ async function getLatestBackupStatus() {
 }
 
 /**
- * Checks internet connectivity using a DNS lookup.
+ * Checks internet connectivity without DNS spam
  * @returns {Promise<boolean>} True if online, false if offline
  */
-async function checkInternetStatus() {
-  try {
-    // Attempt lookup of google.com to test DNS resolution
-    await dns.lookup('google.com');
-    return true;
-  } catch (err) {
-    logger.warn('Internet status check: Offline or DNS lookup failed.');
-    return false;
-  }
+function checkInternetStatus() {
+  return new Promise((resolve) => {
+    const req = http.get('http://clients3.google.com/generate_204', (res) => {
+      resolve(res.statusCode === 204);
+      res.resume();
+    });
+    req.setTimeout(3500, () => {
+      req.destroy();
+      // fallback to DNS lookup if generate_204 times out
+      dns.lookup('google.com')
+        .then(() => resolve(true))
+        .catch(() => resolve(false));
+    });
+    req.on('error', () => {
+      dns.lookup('google.com')
+        .then(() => resolve(true))
+        .catch(() => resolve(false));
+    });
+  });
 }
 
 module.exports = {
@@ -189,5 +238,8 @@ module.exports = {
   restoreBackup,
   getLatestBackupStatus,
   checkInternetStatus,
+  isValidSqliteBuffer,
+  checkpointDatabase,
+  generateBackupFilename,
   BACKUP_DIR,
 };

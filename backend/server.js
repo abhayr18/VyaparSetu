@@ -8,9 +8,13 @@
  *     itself, so this module must NOT auto-boot when merely imported.
  */
 
-require('dotenv').config();
-
 const path = require('path');
+const dotenv = require('dotenv');
+
+// Load environment variables from backend/.env and project root .env
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 const express = require('express');
 const cors = require('cors');
 const { initializeDatabase } = require('./database/init');

@@ -239,6 +239,14 @@ function seedSettings(db) {
     ['default_payment_mode', 'Cash', 'Default payment type mode'],
     ['units', JSON.stringify(['kg', 'piece', 'bundle', 'dozen', 'gram', 'liter', 'crate', 'bag', 'quintal']), 'Configurable measurement units list'],
     ['categories', JSON.stringify(['पालेभाज्या (Leafy)', 'फळभाज्या (Fruit)', 'कंदमुळे (Roots/Tubers)', 'मिरची व मसाले (Chilli & Spices)', 'सर्वसाधारण (General)']), 'Configurable vegetable categories list'],
+    ['db_dirty', '0', 'Flag indicating unbacked-up database modifications (1 or 0)'],
+    ['last_data_change', '', 'Timestamp of last modification in business tables'],
+    ['last_cloud_sync', '', 'Timestamp of last successful Google Drive cloud sync'],
+    ['last_synced_hash', '', 'SHA-256 hash of database at last cloud sync'],
+    ['drive_backup_file_id', '', 'Canonical Google Drive backup file ID'],
+    ['google_client_id', '', 'Google OAuth 2.0 Client ID'],
+    ['google_client_secret', '', 'Google OAuth 2.0 Client Secret'],
+    ['google_redirect_uri', '', 'Google OAuth 2.0 Redirect URI'],
   ];
 
   const insert = db.prepare(
@@ -246,6 +254,54 @@ function seedSettings(db) {
   );
   for (const [key, value, description] of seedData) {
     insert.run(key, value, description);
+  }
+}
+
+/**
+ * Creates lightweight change detection triggers on business tables.
+ * Whenever data is inserted, updated, or deleted, db_dirty is set to '1'
+ * and last_data_change is updated to the current timestamp.
+ */
+function createChangeTrackingTriggers(db) {
+  const businessTables = [
+    'bills',
+    'bill_items',
+    'customers',
+    'vegetables',
+    'transactions',
+    'credit_transactions',
+  ];
+
+  for (const tbl of businessTables) {
+    try {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_insert AFTER INSERT ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_update AFTER UPDATE ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_delete AFTER DELETE ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+      `);
+    } catch (err) {
+      logger.warn(`Could not create change-tracking trigger for ${tbl}: ${err.message}`);
+    }
   }
 }
 
@@ -259,6 +315,7 @@ async function initializeDatabase() {
     createBaselineSchema(db);
     runMigrations(db);
     seedSettings(db);
+    createChangeTrackingTriggers(db);
 
     logger.info(`Database initialized successfully (schema version ${currentVersion(db)})`);
   } catch (err) {
@@ -267,4 +324,4 @@ async function initializeDatabase() {
   }
 }
 
-module.exports = { initializeDatabase };
+module.exports = { initializeDatabase, createChangeTrackingTriggers };

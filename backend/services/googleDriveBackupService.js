@@ -1,84 +1,129 @@
 /**
  * Google Drive Backup Service
+ *
  * Implements Google Drive API OAuth 2.0 authentication, local token storage,
- * backup upload streaming, history listing, and safe database restorations.
+ * zero-waste change detection (SQLite triggers + SHA-256 hash comparison),
+ * canonical single-file overwrite sync, and safe transactional database restorations.
+ *
+ * Conforms to GOOGLE_DRIVE_BACKUP_GUIDE.md
  */
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { google } = require('googleapis');
-const { DB_PATH, reloadDb, serialize, backupTo } = require('../database/db');
+const { DB_PATH, reloadDb, serialize, execGet, execRun } = require('../database/db');
 const backupService = require('./backupService');
 const logger = require('../utils/logger');
 
-// Kept beside the database file in backend/database/ by default — one home for
-// every app-owned persistent artifact, so there is no second location to keep in
-// sync or accidentally launch against. The packaged app overrides this to the same
-// writable per-user dir as the database, which is likewise read-only once installed.
 const TOKENS_PATH = process.env.DRIVE_TOKENS_PATH
   ? path.resolve(process.env.DRIVE_TOKENS_PATH)
   : path.resolve(__dirname, '../database/drive_tokens.json');
 
-// Initialize the Google OAuth2 client
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
+const DRIVE_FOLDER_NAME = 'VyapaarSetu_Backups';
+const BACKUP_FILE_NAME = 'vyapaarsetu-backup.db';
 
-// Auto-save refreshed tokens back to disk when the client issues them
+/**
+ * Retrieve setting from SQLite settings table
+ */
+function getSetting(key) {
+  try {
+    const row = execGet('SELECT value FROM settings WHERE key = ?', [key]);
+    return row?.value || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Update setting in SQLite settings table
+ */
+function setSetting(key, value) {
+  try {
+    execRun(`
+      INSERT INTO settings(key, value) VALUES(?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?
+    `, [key, value, value]);
+  } catch (err) {
+    logger.warn(`Could not set setting '${key}': ${err.message}`);
+  }
+}
+
+/**
+ * Resolves OAuth 2.0 credentials from environment variables or settings table
+ */
+function getOAuthConfig() {
+  const clientId = process.env.GOOGLE_CLIENT_ID || getSetting('google_client_id');
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || getSetting('google_client_secret');
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || getSetting('google_redirect_uri') || 'http://127.0.0.1:5000/api/drive/callback';
+  return { clientId, clientSecret, redirectUri };
+}
+
+/**
+ * Instantiate configured OAuth2 client
+ */
+function getOAuth2Client() {
+  const { clientId, clientSecret, redirectUri } = getOAuthConfig();
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+const oauth2Client = getOAuth2Client();
+
+// Auto-save refreshed tokens when Google updates credentials
 oauth2Client.on('tokens', (tokens) => {
   logger.info('Google OAuth access token refreshed automatically.');
   saveTokens(tokens);
 });
 
 /**
- * Saves and merges newly fetched/refreshed tokens to local disk.
+ * Saves and merges newly fetched/refreshed tokens to disk
  */
 function saveTokens(tokens) {
-  let current = {};
+  let existing = {};
   if (fs.existsSync(TOKENS_PATH)) {
     try {
-      current = JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'));
-    } catch (err) {
-      /* ignore read errors */
-    }
+      existing = JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'));
+    } catch (_) {}
   }
-  
-  // Merge to preserve refresh_token which is only returned on first authorization
-  const merged = { ...current, ...tokens };
-  
-  const dir = path.dirname(TOKENS_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  
+  const merged = { ...existing, ...tokens };
+  fs.mkdirSync(path.dirname(TOKENS_PATH), { recursive: true });
   fs.writeFileSync(TOKENS_PATH, JSON.stringify(merged, null, 2), 'utf8');
   oauth2Client.setCredentials(merged);
   return merged;
 }
 
 /**
- * Loads credentials from local storage disk.
+ * Loads credentials from local storage disk
  */
 function loadTokens() {
-  if (fs.existsSync(TOKENS_PATH)) {
-    try {
-      const tokens = JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'));
-      oauth2Client.setCredentials(tokens);
-      return tokens;
-    } catch (err) {
-      logger.error('Failed to parse locally stored Google tokens:', err);
+  if (!fs.existsSync(TOKENS_PATH)) return null;
+  try {
+    const tokens = JSON.parse(fs.readFileSync(TOKENS_PATH, 'utf8'));
+    const { clientId, clientSecret, redirectUri } = getOAuthConfig();
+    if (clientId) {
+      oauth2Client._clientId = clientId;
+      oauth2Client._clientSecret = clientSecret;
+      oauth2Client.redirectUri = redirectUri;
     }
+    oauth2Client.setCredentials(tokens);
+    return tokens;
+  } catch (err) {
+    logger.error('Failed to parse locally stored Google Drive tokens:', err);
+    return null;
   }
-  return null;
 }
 
 /**
- * Generates the authorization consent URL.
+ * Generates the authorization consent URL
  */
 function getAuthUrl() {
-  return oauth2Client.generateAuthUrl({
+  const { clientId, clientSecret } = getOAuthConfig();
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+  }
+
+  const client = getOAuth2Client();
+  return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: ['https://www.googleapis.com/auth/drive.file'],
@@ -86,45 +131,94 @@ function getAuthUrl() {
 }
 
 /**
- * Processes authorization code to retrieve tokens.
+ * Processes authorization code to retrieve and save tokens
  */
 async function handleCallback(code) {
   if (!code) throw new Error('Authorization code required.');
-  const { tokens } = await oauth2Client.getToken(code);
+  const client = getOAuth2Client();
+  const { tokens } = await client.getToken(code);
   saveTokens(tokens);
   logger.info('Google Drive successfully authenticated and tokens stored.');
   return tokens;
 }
 
 /**
- * Disconnects the linked Google account by deleting stored tokens.
+ * Disconnects the linked Google account by deleting stored tokens
  */
 async function disconnectDrive() {
   if (fs.existsSync(TOKENS_PATH)) {
-    fs.unlinkSync(TOKENS_PATH);
+    try { fs.unlinkSync(TOKENS_PATH); } catch (_) {}
   }
-  oauth2Client.setCredentials(null);
+  oauth2Client.setCredentials({});
   logger.info('Google Drive disconnected.');
   return { success: true };
 }
 
 /**
- * Checks if the Google Drive service has active credentials.
+ * Computes SHA-256 hash of the main database file after WAL checkpoint
+ */
+function computeDbHash() {
+  if (!fs.existsSync(DB_PATH)) return '';
+  backupService.checkpointDatabase();
+  const fileBuffer = fs.readFileSync(DB_PATH);
+  return crypto.createHash('sha256').update(fileBuffer).digest('hex');
+}
+
+/**
+ * Determines if database has un-synced changes
+ */
+function isDatabaseDirty() {
+  const isDirtyFlag = getSetting('db_dirty') === '1';
+  const lastSyncedHash = getSetting('last_synced_hash');
+
+  if (!lastSyncedHash) {
+    return fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 0;
+  }
+  if (!isDirtyFlag) return false;
+
+  const currentHash = computeDbHash();
+  if (currentHash === lastSyncedHash) {
+    markDatabaseClean();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Resets db_dirty to '0' and records last_cloud_sync timestamp
+ */
+function markDatabaseClean() {
+  setSetting('db_dirty', '0');
+  setSetting('last_cloud_sync', new Date().toISOString());
+}
+
+/**
+ * Checks connection and dirty state
  */
 async function getDriveStatus() {
   const tokens = loadTokens();
+  const isConnected = !!tokens;
+  const isDirty = isConnected ? isDatabaseDirty() : false;
+  const lastSync = getSetting('last_cloud_sync');
+  const lastChange = getSetting('last_data_change');
+  const lastHash = getSetting('last_synced_hash');
+
   return {
-    connected: !!tokens,
+    connected: isConnected,
+    isDirty,
+    lastSync,
+    lastChange,
+    lastHash,
   };
 }
 
 /**
- * Retrieves the ID of the 'MandaiMitra_Backups' folder on user's Drive.
- * Creates it if it doesn't already exist.
+ * Retrieves or creates the Google Drive parent folder
  */
 async function getOrCreateFolder(drive) {
+  // Check for VyapaarSetu_Backups or legacy MandaiMitra_Backups
   const response = await drive.files.list({
-    q: "name = 'MandaiMitra_Backups' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+    q: `(name = '${DRIVE_FOLDER_NAME}' or name = 'MandaiMitra_Backups') and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id, name)',
     spaces: 'drive',
   });
@@ -133,14 +227,12 @@ async function getOrCreateFolder(drive) {
     return response.data.files[0].id;
   }
 
-  logger.info("Creating folder 'MandaiMitra_Backups' in Google Drive...");
-  const folderMetadata = {
-    name: 'MandaiMitra_Backups',
-    mimeType: 'application/vnd.google-apps.folder',
-  };
-
+  logger.info(`Creating folder '${DRIVE_FOLDER_NAME}' in Google Drive...`);
   const folder = await drive.files.create({
-    resource: folderMetadata,
+    requestBody: {
+      name: DRIVE_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder',
+    },
     fields: 'id',
   });
 
@@ -148,73 +240,125 @@ async function getOrCreateFolder(drive) {
 }
 
 /**
- * Uploads a local database snapshot file to Google Drive.
+ * Intelligent Single-File Cloud Backup
+ * Overwrites canonical 'vyapaarsetu-backup.db' in-place (revisions preserved in Drive).
+ * Skips if SHA-256 hash is unchanged (zero network waste).
+ *
+ * @param {boolean} force Force upload even if hash is identical
  */
-async function uploadBackupToDrive() {
-  const tokens = loadTokens();
-  if (!tokens) {
+async function upsertDriveBackup(force = false) {
+  if (!loadTokens()) {
     throw new Error('Google Drive is not connected. Please authenticate first.');
+  }
+
+  if (!fs.existsSync(DB_PATH)) {
+    throw new Error('Local SQLite database file not found. Cannot perform cloud backup.');
+  }
+
+  // 1. Flush WAL & compute current hash
+  backupService.checkpointDatabase();
+  const currentHash = computeDbHash();
+  const lastSyncedHash = getSetting('last_synced_hash');
+
+  // 2. Zero-waste skip if nothing changed
+  if (!force && lastSyncedHash && currentHash === lastSyncedHash) {
+    markDatabaseClean();
+    return {
+      file: {
+        id: getSetting('drive_backup_file_id') || '',
+        filename: BACKUP_FILE_NAME,
+        size: fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0,
+        createdAt: getSetting('last_cloud_sync') || new Date().toISOString(),
+      },
+      skipped: true,
+      reason: 'identical_hash',
+    };
   }
 
   const drive = google.drive({ version: 'v3', auth: oauth2Client });
   const folderId = await getOrCreateFolder(drive);
 
-  if (!fs.existsSync(DB_PATH)) {
-    throw new Error('Local SQLite database file not found. Cannot perform upload.');
+  // 3. Resolve persistent file ID
+  let fileId = getSetting('drive_backup_file_id');
+  if (!fileId) {
+    const res = await drive.files.list({
+      q: `name = '${BACKUP_FILE_NAME}' and '${folderId}' in parents and trashed = false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+    });
+    fileId = res.data.files?.[0]?.id || '';
   }
 
-  // Format backup filename
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  const filename = `backup-${year}-${month}-${day}-${hours}-${minutes}-${seconds}.db`;
+  let resultFile = null;
 
-  const fileMetadata = {
-    name: filename,
-    parents: [folderId],
-  };
+  // Stream a clean, WAL-checkpointed snapshot
+  const snapshotPath = path.join(backupService.BACKUP_DIR, `drive-upload-${Date.now()}.db`);
+  await backupService.createBackup().then((b) => {
+    // b is created in backup dir; we can use DB_PATH directly after checkpoint
+  }).catch(() => {});
 
-  // Stream a WAL-safe snapshot rather than DB_PATH itself: an online backup folds
-  // the -wal sidecar in and writes one self-contained file, so the upload can't
-  // miss commits that a raw read of the main file would. Removed in `finally`
-  // once the upload (which drains the stream) resolves.
-  const snapshotPath = path.join(backupService.BACKUP_DIR, `drive-upload-${filename}`);
-  await backupTo(snapshotPath);
+  backupService.checkpointDatabase();
 
-  try {
-    const media = {
-      mimeType: 'application/octet-stream',
-      body: fs.createReadStream(snapshotPath),
-    };
+  // 4. Try updating existing canonical file (preserves revisions in Google Drive)
+  if (fileId) {
+    try {
+      logger.info(`Updating existing Google Drive backup file (ID: ${fileId})...`);
+      const res = await drive.files.update({
+        fileId: fileId,
+        requestBody: { name: BACKUP_FILE_NAME },
+        media: {
+          mimeType: 'application/octet-stream',
+          body: fs.createReadStream(DB_PATH),
+        },
+        fields: 'id, name, size, modifiedTime',
+      });
 
-    logger.info(`Uploading current database to Drive as: ${filename}`);
-    const response = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
+      resultFile = {
+        id: res.data.id,
+        filename: res.data.name,
+        size: Number(res.data.size || 0),
+        createdAt: res.data.modifiedTime,
+      };
+    } catch (err) {
+      logger.warn(`Drive file update failed, attempting creation of new file: ${err.message}`);
+      fileId = '';
+    }
+  }
+
+  // 5. Create if first time or previous file missing
+  if (!fileId) {
+    logger.info(`Creating canonical backup file '${BACKUP_FILE_NAME}' on Google Drive...`);
+    const res = await drive.files.create({
+      requestBody: {
+        name: BACKUP_FILE_NAME,
+        parents: [folderId],
+      },
+      media: {
+        mimeType: 'application/octet-stream',
+        body: fs.createReadStream(DB_PATH),
+      },
       fields: 'id, name, size, createdTime',
     });
 
-    logger.info(`Database snapshot uploaded successfully. Drive File ID: ${response.data.id}`);
-
-    return {
-      id: response.data.id,
-      filename: response.data.name,
-      size: Number(response.data.size || 0),
-      createdAt: response.data.createdTime,
+    resultFile = {
+      id: res.data.id,
+      filename: res.data.name,
+      size: Number(res.data.size || 0),
+      createdAt: res.data.createdTime,
     };
-  } finally {
-    if (fs.existsSync(snapshotPath)) {
-      try { fs.unlinkSync(snapshotPath); } catch (e) { /* ignore cleanup errors */ }
-    }
   }
+
+  // 6. Save metadata & mark database clean
+  setSetting('drive_backup_file_id', resultFile.id);
+  setSetting('last_synced_hash', currentHash);
+  markDatabaseClean();
+
+  logger.info(`Google Drive backup completed successfully (ID: ${resultFile.id}, size: ${resultFile.size} bytes).`);
+  return { file: resultFile, skipped: false };
 }
 
 /**
- * Lists backups stored in the 'MandaiMitra_Backups' folder on Drive.
+ * Lists backups stored in the folder on Drive
  */
 async function listDriveBackups() {
   const tokens = loadTokens();
@@ -225,29 +369,33 @@ async function listDriveBackups() {
   try {
     folderId = await getOrCreateFolder(drive);
   } catch (err) {
-    logger.error('Failed to locate/create Google Drive parent folder:', err);
+    logger.error('Failed to locate Google Drive folder:', err);
     return [];
   }
 
   const response = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false`,
-    fields: 'files(id, name, size, createdTime)',
-    orderBy: 'createdTime desc',
+    fields: 'files(id, name, size, createdTime, modifiedTime)',
+    orderBy: 'modifiedTime desc',
   });
 
   return (response.data.files || []).map((file) => ({
     id: file.id,
     filename: file.name,
     size: Number(file.size || 0),
-    createdAt: file.createdTime,
+    createdAt: file.modifiedTime || file.createdTime,
   }));
 }
 
 /**
- * Downloads a backup file from Google Drive and restores it.
- * Performs a local safety backup first. Reverts on failure.
+ * Downloads a backup file from Google Drive and restores it with safety snapshot & rollback
  */
 async function restoreFromDrive(driveFileId) {
+  if (!driveFileId) {
+    // If not provided, fallback to saved canonical file id
+    driveFileId = getSetting('drive_backup_file_id');
+  }
+
   if (!driveFileId) {
     throw new Error('Google Drive file ID is required for restore.');
   }
@@ -261,19 +409,18 @@ async function restoreFromDrive(driveFileId) {
 
   // 1. Trigger local safety backup first
   logger.info('Creating local safety backup prior to Google Drive restoration...');
-  // WAL-safe snapshot of the current database to roll back to on failure.
   const safetyBackupBuffer = serialize();
   const safetyInfo = await backupService.createBackup();
   const safetyFilename = safetyInfo.filename;
 
   // 2. Define temp file path to download content securely
-  const tempDownloadPath = path.join(backupService.BACKUP_DIR, 'temp_drive_download.db');
-  
+  const tempDownloadPath = path.join(backupService.BACKUP_DIR, `temp_drive_${Date.now()}.db`);
+
   try {
-    // 3. Stream download from Drive to temp file
-    logger.info(`Downloading file ID: ${driveFileId} from Drive...`);
+    // 3. Stream download from Drive
+    logger.info(`Downloading file ID: ${driveFileId} from Google Drive...`);
     const destStream = fs.createWriteStream(tempDownloadPath);
-    
+
     const driveRes = await drive.files.get(
       { fileId: driveFileId, alt: 'media' },
       { responseType: 'stream' }
@@ -287,17 +434,20 @@ async function restoreFromDrive(driveFileId) {
         .on('finish', resolve);
     });
 
-    logger.info('Google Drive backup file downloaded successfully to temp path.');
-
-    // 4. Replace active database with downloaded content. reloadDb owns the
-    // on-disk write (atomic rename + stale -wal/-shm cleanup), so we hand it the
-    // bytes rather than writing DB_PATH ourselves.
+    // 4. Validate SQLite buffer header
     const downloadedBuffer = fs.readFileSync(tempDownloadPath);
+    if (!backupService.isValidSqliteBuffer(downloadedBuffer)) {
+      throw new Error('Downloaded file from Google Drive is not a valid SQLite database.');
+    }
+
+    // 5. Flush WAL and reload database
+    backupService.checkpointDatabase();
     reloadDb(downloadedBuffer);
+    backupService.checkpointDatabase();
 
     // Clean up temp file
     if (fs.existsSync(tempDownloadPath)) {
-      fs.unlinkSync(tempDownloadPath);
+      try { fs.unlinkSync(tempDownloadPath); } catch (_) {}
     }
 
     logger.info('Google Drive restore completed successfully.');
@@ -308,20 +458,21 @@ async function restoreFromDrive(driveFileId) {
     };
   } catch (err) {
     logger.error('Google Drive restore failed. Reverting database to safety state...', err);
-    
-    // Clean up temp file
+
     if (fs.existsSync(tempDownloadPath)) {
-      try { fs.unlinkSync(tempDownloadPath); } catch (e) {}
+      try { fs.unlinkSync(tempDownloadPath); } catch (_) {}
     }
 
-    // Revert database to the pre-restore snapshot.
+    // Revert database to the pre-restore snapshot
     try {
+      backupService.checkpointDatabase();
       reloadDb(safetyBackupBuffer);
+      backupService.checkpointDatabase();
       logger.info('Successfully reverted database to local safety backup.');
     } catch (rollbackErr) {
       logger.error('CRITICAL: Rollback to safety backup failed during Drive restore recovery!', rollbackErr);
     }
-    
+
     throw new Error(`Drive restore failed: ${err.message}. Database has been kept safe.`);
   }
 }
@@ -331,8 +482,12 @@ module.exports = {
   handleCallback,
   disconnectDrive,
   getDriveStatus,
-  uploadBackupToDrive,
+  upsertDriveBackup,
+  uploadBackupToDrive: upsertDriveBackup, // alias for backwards compatibility
   listDriveBackups,
   restoreFromDrive,
+  computeDbHash,
+  isDatabaseDirty,
+  markDatabaseClean,
   TOKENS_PATH,
 };

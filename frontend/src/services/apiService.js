@@ -178,7 +178,8 @@ export const settingsApi = {
 export const driveApi = {
   getAuthUrl: () => apiClient.get('/api/drive/auth-url'),
   getStatus: () => apiClient.get('/api/drive/status'),
-  backup: () => apiClient.post('/api/drive/backup'),
+  backup: (force = true) => apiClient.post('/api/drive/backup', { force }),
+  autoBackup: (force = false) => apiClient.post('/api/drive/auto-backup', { force }),
   listBackups: () => apiClient.get('/api/drive/backups'),
   restore: (fileId) => apiClient.post('/api/drive/restore', { fileId }),
   disconnect: () => apiClient.post('/api/drive/disconnect'),
