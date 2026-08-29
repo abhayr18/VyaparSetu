@@ -52,18 +52,18 @@ function setSetting(key, value) {
 /**
  * Resolves OAuth 2.0 credentials from environment variables or settings table
  */
-function getOAuthConfig() {
+function getOAuthConfig(customRedirectUri) {
   const clientId = process.env.GOOGLE_CLIENT_ID || getSetting('google_client_id');
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || getSetting('google_client_secret');
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || getSetting('google_redirect_uri') || 'http://127.0.0.1:5000/api/drive/callback';
+  const redirectUri = customRedirectUri || process.env.GOOGLE_REDIRECT_URI || getSetting('google_redirect_uri') || 'http://127.0.0.1:5000/api/drive/callback';
   return { clientId, clientSecret, redirectUri };
 }
 
 /**
  * Instantiate configured OAuth2 client
  */
-function getOAuth2Client() {
-  const { clientId, clientSecret, redirectUri } = getOAuthConfig();
+function getOAuth2Client(customRedirectUri) {
+  const { clientId, clientSecret, redirectUri } = getOAuthConfig(customRedirectUri);
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
@@ -116,13 +116,13 @@ function loadTokens() {
 /**
  * Generates the authorization consent URL
  */
-function getAuthUrl() {
-  const { clientId, clientSecret } = getOAuthConfig();
+function getAuthUrl(customRedirectUri) {
+  const { clientId, clientSecret } = getOAuthConfig(customRedirectUri);
   if (!clientId || !clientSecret) {
     throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
   }
 
-  const client = getOAuth2Client();
+  const client = getOAuth2Client(customRedirectUri);
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
@@ -133,9 +133,9 @@ function getAuthUrl() {
 /**
  * Processes authorization code to retrieve and save tokens
  */
-async function handleCallback(code) {
+async function handleCallback(code, customRedirectUri) {
   if (!code) throw new Error('Authorization code required.');
-  const client = getOAuth2Client();
+  const client = getOAuth2Client(customRedirectUri);
   const { tokens } = await client.getToken(code);
   saveTokens(tokens);
   logger.info('Google Drive successfully authenticated and tokens stored.');

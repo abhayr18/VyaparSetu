@@ -11,7 +11,10 @@ const driveService = require('../services/googleDriveBackupService');
  */
 function getAuthUrl(req, res, next) {
   try {
-    const authUrl = driveService.getAuthUrl();
+    const host = req.get('host');
+    const protocol = req.protocol || 'http';
+    const dynamicRedirectUri = host ? `${protocol}://${host}/api/drive/callback` : null;
+    const authUrl = driveService.getAuthUrl(dynamicRedirectUri);
     res.status(200).json({
       success: true,
       authUrl,
@@ -35,7 +38,11 @@ async function handleCallback(req, res, next) {
       return res.redirect('/backup?drive_error=Authorization%20code%20missing');
     }
 
-    await driveService.handleCallback(code);
+    const host = req.get('host');
+    const protocol = req.protocol || 'http';
+    const dynamicRedirectUri = host ? `${protocol}://${host}/api/drive/callback` : null;
+
+    await driveService.handleCallback(code, dynamicRedirectUri);
     res.redirect('/backup?drive_connected=true');
   } catch (err) {
     res.redirect(`/backup?drive_error=${encodeURIComponent(err.message)}`);

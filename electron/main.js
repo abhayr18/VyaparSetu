@@ -197,8 +197,38 @@ if (!app.requestSingleInstanceLock()) {
     const { startServer } = require('../backend/server.js');
     // Binds loopback only — see the DEFAULT_HOST note in backend/server.js.
     const { port } = await startServer({ port: PREFERRED_PORTS });
+    process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/drive/callback`;
     log(`backend started on http://127.0.0.1:${port}`);
+
+    // If backend runs on a high port (e.g. 47821), start a port 5000 forwarder
+    // so Google OAuth callbacks hitting http://127.0.0.1:5000/api/drive/* are
+    // automatically routed to this running instance without ERR_CONNECTION_REFUSED.
+    startOAuthPortForwarder(port);
+
     return port;
+  }
+
+  function startOAuthPortForwarder(targetPort) {
+    if (targetPort === 5000) return;
+    try {
+      const forwarder = http.createServer((req, res) => {
+        if (req.url.startsWith('/api/drive/')) {
+          res.writeHead(302, { Location: `http://127.0.0.1:${targetPort}${req.url}` });
+          res.end();
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
+      forwarder.on('error', (err) => {
+        log(`OAuth port forwarder on 5000 skipped: ${err.message}`);
+      });
+      forwarder.listen(5000, '127.0.0.1', () => {
+        log(`OAuth port forwarder active: http://127.0.0.1:5000 -> ${targetPort}`);
+      });
+    } catch (err) {
+      log(`OAuth port forwarder error: ${err.message}`);
+    }
   }
 
   function createWindow(port) {
