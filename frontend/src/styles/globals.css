@@ -187,10 +187,9 @@ img { max-width: 100%; display: block; }
   width: 100%;
   max-width: 100%;
   height: auto;
-  max-height: 72px;
+  max-height: 68px;
   object-fit: contain;
   display: block;
-  border-radius: 12px;
   transition: transform 0.2s ease, filter 0.2s ease;
 }
 

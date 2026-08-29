@@ -5,7 +5,7 @@
 
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from '../hooks/useTranslation';
-import appLogo from '../assets/logo.jpg';
+import appLogo from '../assets/logo.png';
 
 // ─── Nav Icon SVGs ────────────────────────────────────────────────────────────
 const NavIcons = {
