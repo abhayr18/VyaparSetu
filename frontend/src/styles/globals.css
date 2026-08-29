@@ -30,12 +30,12 @@
   --color-citron:          #e8e359;
   --color-periwinkle:      #7997ff;
 
-  /* Canvas & Card Surfaces (DESIGN.md) */
+  /* Canvas & Card Surfaces (Light Herbal Green Cards on Wheat Cream Canvas) */
   --color-bg:              #e5dccd;        /* Wheat Cream canvas */
-  --color-surface:         #e5dccd;        /* Card surface matching Wheat Cream canvas with copper hairline */
-  --color-bg-card:         #e5dccd;
-  --color-bg-light:        #ded4c3;        /* Slightly deeper warm wheat for inset wells/bars */
-  --color-bg-hover:        #d4c7b2;
+  --color-surface:         #eaf3ec;        /* Very light fresh organic herbal sage green for cards */
+  --color-bg-card:         #eaf3ec;
+  --color-bg-light:        #dceade;        /* Soft subtle sage well for headers / chip bars */
+  --color-bg-hover:        #d2e4d5;
 
   /* Sidebar */
   --color-sidebar-bg:      #ded4c3;
@@ -61,9 +61,10 @@
   --color-info-bg:         #e9eefa;
 
   /* Borders & Hairlines */
-  --color-border:          rgba(171, 87, 0, 0.22);
-  --color-border-light:    rgba(171, 87, 0, 0.14);
+  --color-border:          rgba(33, 69, 52, 0.16);
+  --color-border-light:    rgba(33, 69, 52, 0.08);
   --color-border-copper:   rgba(171, 87, 0, 0.35);
+  --color-border-card:     #c2d9c6;        /* Soft herbal green card border */
 
   /* Sizing & Border Radius from DESIGN.md */
   --sidebar-width:         240px;
@@ -277,13 +278,14 @@ img { max-width: 100%; display: block; }
   left: var(--sidebar-width);
   right: 0;
   height: var(--topbar-height);
-  background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border-copper);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border-card);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
   z-index: 50;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
 }
 
 .topbar-left {
@@ -318,7 +320,7 @@ img { max-width: 100%; display: block; }
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius-pill); /* 31px pill */
   background: var(--color-bg-light);
   color: var(--color-text-secondary);
@@ -359,18 +361,19 @@ img { max-width: 100%; display: block; }
   margin-top: 4px;
 }
 
-/* ─── Cards — 20px radius on Wheat Cream canvas (DESIGN.md) ──── */
+/* ─── Cards — Light Herbal Green on Wheat Cream Canvas ──────── */
 .card {
-  background: var(--color-surface); /* #e5dccd Wheat Cream */
-  border: 1px solid var(--color-border-copper); /* 1px hairline Harvest Copper border */
+  background: var(--color-surface); /* #eaf3ec Light Herbal Green */
+  border: 1px solid var(--color-border-card); /* 1px hairline #c2d9c6 */
   border-radius: var(--border-radius); /* 20px */
   padding: 24px;
-  box-shadow: none; /* No drop shadows as per DESIGN.md */
-  transition: border-color 0.2s ease, background 0.2s ease;
+  box-shadow: 0 1px 5px rgba(33, 69, 52, 0.05);
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .card:hover {
-  border-color: var(--color-harvest-copper);
+  border-color: var(--color-forest-floor);
+  box-shadow: 0 4px 12px rgba(33, 69, 52, 0.08);
 }
 
 .card-grid {
@@ -503,7 +506,7 @@ img { max-width: 100%; display: block; }
   gap: 8px;
   padding: 16px 20px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   cursor: pointer;
   transition: all 0.18s ease;
@@ -511,14 +514,15 @@ img { max-width: 100%; display: block; }
   flex: 1;
   text-decoration: none;
   color: var(--color-text-secondary);
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
 }
 
 .quick-action-btn:hover {
-  border-color: var(--color-harvest-copper);
+  border-color: var(--color-forest-floor);
   background: var(--color-bg-light);
   color: var(--color-text-primary);
   transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(33, 69, 52, 0.08);
 }
 
 .quick-action-icon {
@@ -549,18 +553,19 @@ img { max-width: 100%; display: block; }
 
 .kpi-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   padding: 16px;
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  box-shadow: none;
-  transition: border-color 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
+  transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
 }
 
 .kpi-card:hover {
-  border-color: var(--color-harvest-copper);
+  border-color: var(--color-forest-floor);
+  box-shadow: 0 3px 8px rgba(33, 69, 52, 0.08);
   transform: translateY(-1px);
 }
 
@@ -747,7 +752,7 @@ img { max-width: 100%; display: block; }
 
 .stat-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   padding: 14px 18px;
   display: flex;
@@ -755,11 +760,14 @@ img { max-width: 100%; display: block; }
   gap: 12px;
   flex: 1;
   min-width: 130px;
-  box-shadow: none;
-  transition: border-color 0.2s ease;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.stat-card:hover { border-color: var(--color-harvest-copper); }
+.stat-card:hover {
+  border-color: var(--color-forest-floor);
+  box-shadow: 0 3px 8px rgba(33, 69, 52, 0.08);
+}
 
 .stat-icon { font-size: 1.4rem; display: flex; align-items: center; }
 
@@ -1227,19 +1235,20 @@ img { max-width: 100%; display: block; }
 
 .veg-card {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   padding: 16px;
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
   display: flex;
   flex-direction: column;
   gap: 7px;
-  transition: border-color 0.2s ease, transform 0.15s ease;
+  transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
   position: relative;
 }
 
 .veg-card:hover {
-  border-color: var(--color-harvest-copper);
+  border-color: var(--color-forest-floor);
+  box-shadow: 0 4px 10px rgba(33, 69, 52, 0.08);
   transform: translateY(-2px);
 }
 
@@ -1706,10 +1715,10 @@ img { max-width: 100%; display: block; }
 /* ─── Settings Sections ──────────────────────────────────────── */
 .settings-section {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
   margin-bottom: 20px;
 }
 
@@ -1718,7 +1727,7 @@ img { max-width: 100%; display: block; }
   align-items: center;
   gap: 10px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border-copper);
+  border-bottom: 1px solid var(--color-border-card);
   background: var(--color-bg-light);
 }
 
@@ -1746,10 +1755,10 @@ img { max-width: 100%; display: block; }
 /* ─── Backup Section Cards ───────────────────────────────────── */
 .backup-section {
   background: var(--color-surface);
-  border: 1px solid var(--color-border-copper);
+  border: 1px solid var(--color-border-card);
   border-radius: var(--border-radius);
   overflow: hidden;
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(33, 69, 52, 0.04);
   margin-bottom: 20px;
 }
 
@@ -1758,7 +1767,7 @@ img { max-width: 100%; display: block; }
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border-copper);
+  border-bottom: 1px solid var(--color-border-card);
   background: var(--color-bg-light);
 }
 
