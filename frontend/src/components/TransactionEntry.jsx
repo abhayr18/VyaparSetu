@@ -215,13 +215,13 @@ export default function TransactionEntry({
   }
 
   return (
-    <div className="card" style={{ padding: '1.25rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-        <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
+    <div className="card" style={{ padding: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 800, fontFamily: 'var(--font-display)' }}>
           {t('transactions.entryTitle')}
         </h3>
-        <span style={{ fontSize: '0.8rem', color: '#64748b', background: '#f1f5f9', padding: '3px 8px', borderRadius: '4px' }}>
-          ⌨️ Keyboard-First (Type → Enter → Save)
+        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', background: 'var(--color-bg-light)', padding: '4px 12px', borderRadius: 'var(--border-radius-pill)', border: '1px solid var(--color-border)', fontWeight: 600 }}>
+          ⌨️ Type → Enter → Save
         </span>
       </div>
 
@@ -387,11 +387,11 @@ export default function TransactionEntry({
         {/* Calculated Financial Summaries Panel & Action Bar */}
         <div
           style={{
-            marginTop: '1.25rem',
-            padding: '1rem 1.15rem',
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            borderRadius: '8px',
+            marginTop: '1.5rem',
+            padding: '1.15rem 1.25rem',
+            background: 'var(--color-bg-light)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--border-radius)',
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
@@ -403,52 +403,52 @@ export default function TransactionEntry({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))',
               gap: '0.75rem',
               flex: '1 1 520px'
             }}
           >
-            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', fontWeight: 500 }}>
+            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>
                 {t('transactions.baseAmount')}
               </span>
-              <strong style={{ fontSize: '1rem', color: '#334155' }}>
+              <strong style={{ fontSize: '1.05rem', color: 'var(--color-text-primary)' }}>
                 ₹{baseAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', fontWeight: 500 }}>
+            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-slate-bloom)', display: 'block', fontWeight: 600 }}>
                 {t('transactions.commission')} ({formatCommissionPercent(commissionRate)})
               </span>
-              <strong style={{ fontSize: '1rem', color: '#0284c7' }}>
+              <strong style={{ fontSize: '1.05rem', color: 'var(--color-slate-bloom)' }}>
                 ₹{commissionAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: '#f0fdf4', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
-              <span style={{ fontSize: '0.72rem', color: '#166534', display: 'block', fontWeight: 600 }}>
+            <div style={{ background: 'var(--color-success-bg)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid rgba(33, 69, 52, 0.25)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 700 }}>
                 {t('transactions.finalAmount')}
               </span>
-              <strong style={{ fontSize: '1.15rem', color: '#15803d', fontWeight: 800 }}>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--color-forest-floor)', fontWeight: 800 }}>
                 ₹{finalAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.72rem', color: '#15803d', display: 'block', fontWeight: 500 }}>
+            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 600 }}>
                 {t('billing.paid')}
               </span>
-              <strong style={{ fontSize: '1rem', color: '#15803d' }}>
+              <strong style={{ fontSize: '1.05rem', color: 'var(--color-forest-floor)' }}>
                 ₹{calculatedPaid.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.72rem', color: '#b91c1c', display: 'block', fontWeight: 500 }}>
+            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-error)', display: 'block', fontWeight: 600 }}>
                 {t('billing.remainingAmount')} (Udhar)
               </span>
-              <strong style={{ fontSize: '1rem', color: '#b91c1c', fontWeight: 700 }}>
+              <strong style={{ fontSize: '1.05rem', color: 'var(--color-error)', fontWeight: 700 }}>
                 ₹{calculatedRemaining.toFixed(2)}
               </strong>
             </div>
@@ -463,29 +463,29 @@ export default function TransactionEntry({
               disabled={loading}
               className="btn btn-primary"
               style={{
-                padding: '0.75rem 1.5rem',
-                fontSize: '0.95rem',
+                padding: '0.8rem 1.6rem',
+                fontSize: '0.96rem',
                 fontWeight: 700,
-                borderRadius: '6px',
+                borderRadius: 'var(--border-radius-pill)',
                 width: '100%',
-                minWidth: '200px',
+                minWidth: '210px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
                 whiteSpace: 'nowrap',
-                boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                boxShadow: '0 4px 12px rgba(33, 69, 52, 0.25)',
                 cursor: loading ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? (
                 <>
-                  <span className="spinner" style={{ width: 14, height: 14 }} />
+                  <span className="spinner" style={{ width: 14, height: 14, borderTopColor: '#ffffff' }} />
                   <span>{t('transactions.saving')}</span>
                 </>
               ) : (
                 <>
-                  <span style={{ fontSize: '1.05rem' }}>💾</span>
+                  <span style={{ fontSize: '1.1rem' }}>💾</span>
                   <span>{t('transactions.saveTransaction')}</span>
                 </>
               )}

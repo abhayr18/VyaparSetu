@@ -94,13 +94,13 @@ export default function CustomerDailyPurchase({
   }
 
   return (
-    <div className="card" style={{ padding: '1.25rem', marginTop: '1.25rem' }}>
+    <div className="card" style={{ padding: '1.5rem', marginTop: '1.5rem' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.25rem' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#0f172a', fontWeight: 700 }}>
+          <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 800, fontFamily: 'var(--font-display)' }}>
             📊 {t('transactions.historyTitle')}
           </h3>
-          <p style={{ margin: '2px 0 0 0', fontSize: '0.85rem', color: '#64748b' }}>
+          <p style={{ margin: '3px 0 0 0', fontSize: '0.88rem', color: 'var(--color-text-secondary)' }}>
             {t('transactions.subtitle')}
           </p>
         </div>
@@ -214,29 +214,29 @@ export default function CustomerDailyPurchase({
         <>
           {/* Summary KPI Cards Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-            <div className="card" style={{ padding: '0.75rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>{t('transactions.totalTransactions')}</span>
-              <strong style={{ fontSize: '1.2rem', color: '#0f172a' }}>{summary.total_transactions || 0}</strong>
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalTransactions')}</span>
+              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{summary.total_transactions || 0}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.75rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>{t('transactions.totalWeight')}</span>
-              <strong style={{ fontSize: '1.2rem', color: '#0f172a' }}>{summary.total_weight || 0} kg</strong>
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalWeight')}</span>
+              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{summary.total_weight || 0} kg</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.75rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>{t('transactions.totalBaseAmount')}</span>
-              <strong style={{ fontSize: '1.2rem', color: '#0f172a' }}>₹{Number(summary.total_base_amount || 0).toFixed(2)}</strong>
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalBaseAmount')}</span>
+              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>₹{Number(summary.total_base_amount || 0).toFixed(2)}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.75rem', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>{t('transactions.totalCommission')}</span>
-              <strong style={{ fontSize: '1.2rem', color: '#0284c7' }}>₹{Number(summary.total_commission || 0).toFixed(2)}</strong>
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-slate-bloom)', display: 'block', fontWeight: 600 }}>{t('transactions.totalCommission')}</span>
+              <strong style={{ fontSize: '1.25rem', color: 'var(--color-slate-bloom)' }}>₹{Number(summary.total_commission || 0).toFixed(2)}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.75rem', background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-              <span style={{ fontSize: '0.75rem', color: '#15803d', display: 'block' }}>{t('transactions.totalFinalAmount')}</span>
-              <strong style={{ fontSize: '1.2rem', color: '#16a34a' }}>₹{Number(summary.total_final_amount || 0).toFixed(2)}</strong>
+            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-success-bg)', border: '1px solid rgba(33, 69, 52, 0.25)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 700 }}>{t('transactions.totalFinalAmount')}</span>
+              <strong style={{ fontSize: '1.25rem', color: 'var(--color-forest-floor)', fontWeight: 800 }}>₹{Number(summary.total_final_amount || 0).toFixed(2)}</strong>
             </div>
 
             {/* Generate Bill CTA */}
@@ -250,13 +250,13 @@ export default function CustomerDailyPurchase({
                   width: '100%',
                   height: '100%',
                   minHeight: '56px',
-                  padding: '0.6rem 0.85rem',
+                  padding: '0.75rem 1rem',
                   fontSize: '0.92rem',
-                  fontWeight: 800,
-                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                  fontWeight: 700,
+                  background: 'var(--color-forest-floor)',
                   color: 'white',
-                  borderRadius: '6px',
-                  boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)',
+                  borderRadius: 'var(--border-radius-pill)',
+                  boxShadow: '0 4px 12px rgba(33, 69, 52, 0.25)',
                   whiteSpace: 'normal',
                   textAlign: 'center',
                   lineHeight: '1.25',
