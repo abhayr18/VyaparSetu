@@ -249,13 +249,21 @@ export default function CustomerDailyPurchase({
                 style={{
                   width: '100%',
                   height: '100%',
-                  minHeight: '60px',
-                  fontSize: '0.95rem',
+                  minHeight: '56px',
+                  padding: '0.6rem 0.85rem',
+                  fontSize: '0.92rem',
                   fontWeight: 800,
                   background: 'linear-gradient(135deg, #16a34a, #15803d)',
                   color: 'white',
                   borderRadius: '6px',
-                  boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)'
+                  boxShadow: '0 4px 6px -1px rgba(22, 163, 74, 0.3)',
+                  whiteSpace: 'normal',
+                  textAlign: 'center',
+                  lineHeight: '1.25',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
                 }}
               >
                 {billGenerating

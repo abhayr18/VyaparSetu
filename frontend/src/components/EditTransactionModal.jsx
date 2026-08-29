@@ -405,7 +405,7 @@ export default function EditTransactionModal({
                   {t('common.loading')}
                 </span>
               ) : (
-                `💾 Save Changes / दुरुस्त करा`
+                `💾 ${t('common.save')}`
               )}
             </button>
           </div>

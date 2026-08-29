@@ -384,66 +384,78 @@ export default function TransactionEntry({
           )}
         </div>
 
-        {/* Calculated Financial Summaries Panel (Read-only) */}
+        {/* Calculated Financial Summaries Panel & Action Bar */}
         <div
           style={{
             marginTop: '1.25rem',
-            padding: '0.85rem 1rem',
+            padding: '1rem 1.15rem',
             background: '#f8fafc',
             border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-            gap: '0.85rem',
-            alignItems: 'center'
+            borderRadius: '8px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem'
           }}
         >
-          <div>
-            <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
-              {t('transactions.baseAmount')}
-            </span>
-            <strong style={{ fontSize: '1.05rem', color: '#334155' }}>
-              ₹{baseAmount.toFixed(2)}
-            </strong>
+          {/* 5 Financial Metric Chips */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+              gap: '0.75rem',
+              flex: '1 1 520px'
+            }}
+          >
+            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', fontWeight: 500 }}>
+                {t('transactions.baseAmount')}
+              </span>
+              <strong style={{ fontSize: '1rem', color: '#334155' }}>
+                ₹{baseAmount.toFixed(2)}
+              </strong>
+            </div>
+
+            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block', fontWeight: 500 }}>
+                {t('transactions.commission')} ({formatCommissionPercent(commissionRate)})
+              </span>
+              <strong style={{ fontSize: '1rem', color: '#0284c7' }}>
+                ₹{commissionAmount.toFixed(2)}
+              </strong>
+            </div>
+
+            <div style={{ background: '#f0fdf4', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+              <span style={{ fontSize: '0.72rem', color: '#166534', display: 'block', fontWeight: 600 }}>
+                {t('transactions.finalAmount')}
+              </span>
+              <strong style={{ fontSize: '1.15rem', color: '#15803d', fontWeight: 800 }}>
+                ₹{finalAmount.toFixed(2)}
+              </strong>
+            </div>
+
+            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '0.72rem', color: '#15803d', display: 'block', fontWeight: 500 }}>
+                {t('billing.paid')}
+              </span>
+              <strong style={{ fontSize: '1rem', color: '#15803d' }}>
+                ₹{calculatedPaid.toFixed(2)}
+              </strong>
+            </div>
+
+            <div style={{ background: '#ffffff', padding: '0.55rem 0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <span style={{ fontSize: '0.72rem', color: '#b91c1c', display: 'block', fontWeight: 500 }}>
+                {t('billing.remainingAmount')} (Udhar)
+              </span>
+              <strong style={{ fontSize: '1rem', color: '#b91c1c', fontWeight: 700 }}>
+                ₹{calculatedRemaining.toFixed(2)}
+              </strong>
+            </div>
           </div>
 
-          <div>
-            <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
-              {t('transactions.commission')} ({formatCommissionPercent(commissionRate)})
-            </span>
-            <strong style={{ fontSize: '1.05rem', color: '#0284c7' }}>
-              ₹{commissionAmount.toFixed(2)}
-            </strong>
-          </div>
-
-          <div>
-            <span style={{ fontSize: '0.8rem', color: '#64748b', display: 'block' }}>
-              {t('transactions.finalAmount')}
-            </span>
-            <strong style={{ fontSize: '1.2rem', color: '#16a34a', fontWeight: 800 }}>
-              ₹{finalAmount.toFixed(2)}
-            </strong>
-          </div>
-
-          <div>
-            <span style={{ fontSize: '0.8rem', color: '#15803d', display: 'block' }}>
-              {t('billing.paid')}
-            </span>
-            <strong style={{ fontSize: '1.05rem', color: '#15803d' }}>
-              ₹{calculatedPaid.toFixed(2)}
-            </strong>
-          </div>
-
-          <div>
-            <span style={{ fontSize: '0.8rem', color: '#b91c1c', display: 'block' }}>
-              {t('billing.remainingAmount')} (Udhar)
-            </span>
-            <strong style={{ fontSize: '1.05rem', color: '#b91c1c', fontWeight: 700 }}>
-              ₹{calculatedRemaining.toFixed(2)}
-            </strong>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {/* Dedicated Save Button Action Area */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flex: '0 0 auto', minWidth: '220px' }}>
             <button
               ref={saveBtnRef}
               id="save-transaction-btn"
@@ -451,13 +463,32 @@ export default function TransactionEntry({
               disabled={loading}
               className="btn btn-primary"
               style={{
-                padding: '0.65rem 1.25rem',
+                padding: '0.75rem 1.5rem',
                 fontSize: '0.95rem',
                 fontWeight: 700,
-                width: '100%'
+                borderRadius: '6px',
+                width: '100%',
+                minWidth: '200px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 6px rgba(22, 163, 74, 0.25)',
+                cursor: loading ? 'not-allowed' : 'pointer'
               }}
             >
-              {loading ? t('transactions.saving') : `💾 ${t('transactions.saveTransaction')}`}
+              {loading ? (
+                <>
+                  <span className="spinner" style={{ width: 14, height: 14 }} />
+                  <span>{t('transactions.saving')}</span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: '1.05rem' }}>💾</span>
+                  <span>{t('transactions.saveTransaction')}</span>
+                </>
+              )}
             </button>
           </div>
         </div>
