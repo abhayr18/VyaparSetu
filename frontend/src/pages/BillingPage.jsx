@@ -222,13 +222,13 @@ export default function BillingPage() {
         style={{
           padding: '0.85rem 1.1rem',
           marginBottom: '1rem',
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: '8px',
+          background: 'var(--color-bg-light)',
+          border: '1px solid var(--color-border-copper)',
+          borderRadius: 'var(--border-radius)',
         }}
       >
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#334155', fontWeight: 600, fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-text-primary)', fontWeight: 600, fontSize: '0.85rem' }}>
             <CalendarIcon style={{ width: '18px', height: '18px', color: 'var(--color-primary)' }} />
             <span>{t('billing.dateFilter.customRange') || 'Filter by Date'}:</span>
           </div>
@@ -249,11 +249,11 @@ export default function BillingPage() {
                   type="button"
                   onClick={() => setDateFilterType(key)}
                   style={{
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    border: active ? '1px solid var(--color-primary)' : '1px solid #cbd5e1',
-                    background: active ? 'var(--color-primary)' : '#ffffff',
-                    color: active ? '#ffffff' : '#334155',
+                    padding: '5px 14px',
+                    borderRadius: 'var(--border-radius-pill)',
+                    border: active ? '1px solid var(--color-primary)' : '1px solid var(--color-border-copper)',
+                    background: active ? 'var(--color-primary)' : 'var(--color-surface)',
+                    color: active ? '#ffffff' : 'var(--color-text-secondary)',
                     fontSize: '0.8rem',
                     fontWeight: active ? 700 : 500,
                     cursor: 'pointer',

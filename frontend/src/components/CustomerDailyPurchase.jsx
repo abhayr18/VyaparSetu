@@ -146,7 +146,7 @@ export default function CustomerDailyPurchase({
       </div>
 
       {/* Customer & Date Selector Inputs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem', padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem', padding: '1.2rem', background: 'var(--color-bg-light)', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-copper)' }}>
         <div>
           <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
             {t('transactions.selectCustomer')}
@@ -205,7 +205,7 @@ export default function CustomerDailyPurchase({
       </div>
 
       {!activeCustomerId ? (
-        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b', background: '#f8fafc', borderRadius: '6px' }}>
+        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--color-text-muted)', background: 'var(--color-bg-light)', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border-copper)' }}>
           <p style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>
             👈 {t('transactions.promptSelectCustomer')}
           </p>

@@ -338,9 +338,9 @@ export default function EditTransactionModal({
             style={{
               marginTop: '16px',
               padding: '12px 16px',
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: '6px',
+              background: 'var(--color-bg-light)',
+              border: '1px solid var(--color-border-copper)',
+              borderRadius: 'var(--border-radius-sm)',
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
               gap: '10px',
@@ -348,46 +348,46 @@ export default function EditTransactionModal({
             }}
           >
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block' }}>
                 {t('transactions.baseAmount')}
               </span>
-              <strong style={{ fontSize: '0.95rem', color: '#334155' }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>
                 ₹{baseAmount.toFixed(2)}
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-slate-bloom)', display: 'block' }}>
                 {t('transactions.commission')} ({commRate}%)
               </span>
-              <strong style={{ fontSize: '0.95rem', color: '#0284c7' }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-slate-bloom)' }}>
                 ₹{commissionAmount.toFixed(2)}
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 700 }}>
                 {t('transactions.finalAmount')}
               </span>
-              <strong style={{ fontSize: '1.05rem', color: '#16a34a', fontWeight: 800 }}>
+              <strong style={{ fontSize: '1.05rem', color: 'var(--color-forest-floor)', fontWeight: 800 }}>
                 ₹{finalAmount.toFixed(2)}
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#15803d', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-forest-floor)', display: 'block' }}>
                 {t('billing.paid')}
               </span>
-              <strong style={{ fontSize: '0.95rem', color: '#15803d' }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-forest-floor)' }}>
                 ₹{calculatedPaid.toFixed(2)}
               </strong>
             </div>
 
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#b91c1c', display: 'block' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-error)', display: 'block' }}>
                 {t('billing.remainingAmount')} (Udhar)
               </span>
-              <strong style={{ fontSize: '0.95rem', color: '#b91c1c', fontWeight: 700 }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-error)', fontWeight: 700 }}>
                 ₹{calculatedRemaining.toFixed(2)}
               </strong>
             </div>
