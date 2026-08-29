@@ -9,13 +9,21 @@ import { GlobeIcon } from '../components/Icons';
 export default function Topbar({ pageTitle, pageSubtitle }) {
   const { language, toggleLanguage } = useTranslation();
 
+  const todayFormatted = new Date().toLocaleDateString(language === 'mr' ? 'mr-IN' : 'en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <span className="topbar-title">{pageTitle}</span>
-        {pageSubtitle && (
-          <span className="topbar-subtitle">{pageSubtitle}</span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+          <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>VyapaarSetu</span>
+          <span style={{ color: 'var(--color-smoke)' }}>/</span>
+          <span>{todayFormatted}</span>
+        </div>
       </div>
 
       <div className="topbar-right">

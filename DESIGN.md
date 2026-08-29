@@ -1,77 +1,59 @@
-# arte* — Style Reference
-> Golden hour harvest editorial — a cream canvas where sun-dappled forest photos meet oversized rounded display type, electric chartreuse logo, and warm copper text that feels printed rather than rendered.
+# Webflow — Style Reference
+> white studio, black ink, one blue mark — a designer's drafting table rendered as a web page.
 
 **Theme:** light
 
-arte* is a sunlit harvest editorial: a warm cream canvas (#e5dccd) hosts oversized display headlines in Parafina — a soft, slightly retro rounded sans at extreme sizes (70–173px) with crushed line-heights near 0.8–0.9 — while Poppins handles all secondary copy at a tight 1.4. The palette is farm-garden: burnt harvest copper (#ab5700) for primary text, a shocking chartreuse (#e8e359) for the logo and hero overlays, and a periwinkle (#7997ff) that acts as a cool counterweight for inline highlights. Imagery is the other half of the system — full-bleed golden-hour photography of forests, food, and faces, layered with display type rather than separated from it. Components are few and soft: pill buttons at 31px radius, 20px card radii, hairline borders, almost no shadows. The overall impression is a printed cookbook or farmers' market poster digitized — confident display type, earth-toned with one electric yellow accent, and the brand name itself ends in an asterisk that signals playful editorial mischief.
+Webflow presents a studio-grade design platform language: a stark white canvas, near-black type, and a single saturated blue that punctuates the interface with quiet authority. Headlines speak at monumental sizes (56–80px) in a custom geometric variable sans, carrying tight negative tracking that makes each character feel chiseled rather than typeset. The visual rhythm is generous — large vertical breathing room between sections, cards floating on soft 8px radii with barely-there shadows, and product imagery embedded in realistic browser chrome to demonstrate capability rather than describe it. Color discipline is extreme: the palette is almost entirely achromatic, with the brand blue (#146ef5) reserved for primary actions, active states, and link emphasis, and the entire chromatic spectrum compressed to just two more hues (a soft green and warm orange) that appear only in micro-illustration contexts.
 
 ## Tokens — Colors
 
 | Name | Value | Token | Role |
 |------|-------|-------|------|
-| Wheat Cream | `#e5dccd` | `--color-wheat-cream` | Page canvas, card surfaces, section backgrounds — the warm off-white that holds every screen |
-| Harvest Copper | `#ab5700` | `--color-harvest-copper` | Primary text, body copy, list borders, card borders, decorative strokes — the default ink color across all editorial content |
-| Citron Beam | `#e8e359` | `--color-citron-beam` | Logotype color, hero text overlays, accent borders, icon highlights — the electric chartreuse that makes the brand pop against forest greens and cream |
-| Morning Glory | `#7997ff` | `--color-morning-glory` | Inline text highlights, links, secondary icon accents, input focus — a cool periwinkle that cools the otherwise warm palette when it enters body copy |
-| Amber Glow | `#d99623` | `--color-amber-glow` | List borders, secondary heading accents, warm decorative strokes |
-| Forest Floor | `#214534` | `--color-forest-floor` | Button borders, body text on light accents, deep decorative strokes — a grounded dark green for contrast moments |
-| Deep Moss | `#103d26` | `--color-deep-moss` | Darkest accent, background fills for contrasted blocks, depth shadows |
-| Olive Branch | `#568037` | `--color-olive-branch` | List borders, tag accents, organic decorative strokes |
-| Slate Bloom | `#3d549c` | `--color-slate-bloom` | Heading borders, muted decorative strokes, cool-tone secondary |
-| Coral Petal | `#e99686` | `--color-coral-petal` | Soft fill washes, list surface tints, warm secondary backgrounds |
+| Webflow Blue | `#146ef5` | `--color-webflow-blue` | Blue supporting accent for decorative details and low-frequency emphasis. Do not promote it to the primary CTA color |
+| Indigo Ink | `#1366e2` | `--color-indigo-ink` | Blue supporting accent for decorative details and low-frequency emphasis. Do not promote it to the primary CTA color |
+| Mercury Tint | `#6ca7ff` | `--color-mercury-tint` | Soft blue for icon decorations, gradient transitions, and muted highlight washes within illustrations |
+| Mint Pulse | `#60ed76` | `--color-mint-pulse` | Green supporting accent for decorative details and low-frequency emphasis |
+| Apricot Glow | `#ffa666` | `--color-apricot-glow` | Decorative warm accent in inline illustrations and product mockup contexts |
+| Obsidian | `#080808` | `--color-obsidian` | Primary text, headings, icon strokes, dark surface fills — the near-black that carries the typographic voice |
+| Pure White | `#ffffff` | `--color-pure-white` | Page canvas, card surfaces, button text on dark fills, inverted text |
+| Slate | `#5a5a5a` | `--color-slate` | Secondary body text, icon secondary state, muted descriptions, footer copy |
+| Ash Border | `#d8d8d8` | `--color-ash-border` | Hairline borders on cards, dividers, input outlines, button strokes |
+| Smoke | `#bdbdbd` | `--color-smoke` | Subtle shadow base and disabled control fills |
+| Graphite | `#222222` | `--color-graphite` | Dark surface for inverted sections and modal overlays |
+| Onyx | `#171717` | `--color-onyx` | Deepest dark surface — footer bands and full-bleed dark sections |
+| Mist | `#f0f0f0` | `--color-mist` | Subtle background tint for alternating sections, card hover, and input fills |
+| Charcoal | `#292929` | `--color-charcoal` | Near-black accent surface, slightly lighter than Onyx for layered dark contexts |
 
 ## Tokens — Typography
 
-### Poppins — Body text, UI labels, navigation, buttons, list items, footer copy, input fields — a neutral geometric sans that stays quiet and functional at 12–16px. The 1.4 line-height with weight 400/500 gives body copy a slightly airy, readable feel without competing with the display headlines. · `--font-poppins`
-- **Substitute:** Inter, DM Sans, or Manrope at 400/500
-- **Weights:** 400, 500
-- **Sizes:** 12px, 13px, 16px
-- **Line height:** 1.40
-- **Role:** Body text, UI labels, navigation, buttons, list items, footer copy, input fields — a neutral geometric sans that stays quiet and functional at 12–16px. The 1.4 line-height with weight 400/500 gives body copy a slightly airy, readable feel without competing with the display headlines.
+### WF Visual Sans Variable — The sole sans family for the entire interface — navigation, body, headings, buttons, cards. A custom geometric variable typeface with widths that compress at display sizes. Weight 400 covers body and UI; 500–550 for subheads and labels; 600 reserved for the boldest display headlines. The variable axis enables optical sizing so display weights (56–80px) feel chiseled with tight tracking while body weights (14–16px) remain open and readable. · `--font-wf-visual-sans-variable`
+- **Substitute:** Inter, Satoshi, General Sans
+- **Weights:** 400, 500, 550, 600
+- **Sizes:** 10, 13, 14, 16, 20, 24, 32, 40, 56, 80
+- **Line height:** 1.0, 1.04, 1.2, 1.3, 1.4, 1.5, 1.6
+- **Letter spacing:** -0.01em at display sizes, +0.1em for uppercase eyebrow labels
+- **Role:** The sole sans family for the entire interface — navigation, body, headings, buttons, cards. A custom geometric variable typeface with widths that compress at display sizes. Weight 400 covers body and UI; 500–550 for subheads and labels; 600 reserved for the boldest display headlines. The variable axis enables optical sizing so display weights (56–80px) feel chiseled with tight tracking while body weights (14–16px) remain open and readable.
 
-### Parafina — Display and headings — a custom rounded retro display sans used at extreme sizes (up to 173px) with crushed line-heights (0.80–0.90). The weight-500 single-weight treatment at oversized scales is signature: the type feels playful, warm, and printed-poster rather than corporate. Appears in hero, section headlines, and the logotype itself. · `--font-parafina`
-- **Substitute:** Bricolage Grotesque, Cabinet Grotesk, or Familjen Grotesk at weight 500 with optical sizing
-- **Weights:** 500
-- **Sizes:** 20px, 30px, 56px, 70px, 104px, 173px
-- **Line height:** 0.80, 0.90, 1.00
-- **Role:** Display and headings — a custom rounded retro display sans used at extreme sizes (up to 173px) with crushed line-heights (0.80–0.90). The weight-500 single-weight treatment at oversized scales is signature: the type feels playful, warm, and printed-poster rather than corporate. Appears in hero, section headlines, and the logotype itself.
-
-### Arial — Arial — detected in extracted data but not described by AI · `--font-arial`
+### WF Visual Sans Mono — Monospaced companion for code snippets, terminal outputs, keyboard shortcuts, and developer-facing micro-copy. Rare on the marketing site but present in product demos. · `--font-wf-visual-sans-mono`
+- **Substitute:** JetBrains Mono, IBM Plex Mono
 - **Weights:** 400
-- **Sizes:** 13px
-- **Line height:** 1.2
-- **Role:** Arial — detected in extracted data but not described by AI
-
-### ExposureTrial — ExposureTrial — detected in extracted data but not described by AI · `--font-exposuretrial`
-- **Weights:** 500
-- **Sizes:** 56px
-- **Line height:** 0.9
-- **Role:** ExposureTrial — detected in extracted data but not described by AI
-
-### GTStandard-M — GTStandard-M — detected in extracted data but not described by AI · `--font-gtstandard-m`
-- **Weights:** 500
-- **Sizes:** 16px
-- **Line height:** 1.5
-- **Role:** GTStandard-M — detected in extracted data but not described by AI
-
-### ITC_Avant_Garde_Gothic_Medium — ITC_Avant_Garde_Gothic_Medium — detected in extracted data but not described by AI · `--font-itcavantgardegothicmedium`
-- **Weights:** 400
-- **Sizes:** 26px
-- **Line height:** 1.2
-- **Role:** ITC_Avant_Garde_Gothic_Medium — detected in extracted data but not described by AI
+- **Sizes:** 12, 16
+- **Line height:** 1.5, 1.6
+- **OpenType features:** `"ss02", "ss10", "zero"`
+- **Role:** Monospaced companion for code snippets, terminal outputs, keyboard shortcuts, and developer-facing micro-copy. Rare on the marketing site but present in product demos.
 
 ### Type Scale
 
 | Role | Size | Line Height | Letter Spacing | Token |
 |------|------|-------------|----------------|-------|
-| caption | 12px | 1.4 | — | `--text-caption` |
-| body | 16px | 1.4 | — | `--text-body` |
-| subheading | 20px | 1 | — | `--text-subheading` |
-| heading-sm | 30px | 0.9 | — | `--text-heading-sm` |
-| heading | 56px | 0.9 | — | `--text-heading` |
-| heading-lg | 70px | 0.85 | — | `--text-heading-lg` |
-| display | 104px | 0.85 | — | `--text-display` |
-| display-xl | 173px | 0.8 | — | `--text-display-xl` |
+| caption | 10px | 1.4 | — | `--text-caption` |
+| body-lg | 16px | 1.6 | — | `--text-body-lg` |
+| subheading | 20px | 1.3 | — | `--text-subheading` |
+| heading-sm | 24px | 1.3 | — | `--text-heading-sm` |
+| heading | 32px | 1.2 | — | `--text-heading` |
+| heading-lg | 40px | 1.04 | -0.4px | `--text-heading-lg` |
+| display | 56px | 1.04 | -0.56px | `--text-display` |
+| display-xl | 80px | 1 | -0.8px | `--text-display-xl` |
 
 ## Tokens — Spacing & Shapes
 
@@ -86,155 +68,180 @@ arte* is a sunlit harvest editorial: a warm cream canvas (#e5dccd) hosts oversiz
 | 4 | 4px | `--spacing-4` |
 | 8 | 8px | `--spacing-8` |
 | 12 | 12px | `--spacing-12` |
-| 20 | 20px | `--spacing-20` |
+| 16 | 16px | `--spacing-16` |
 | 24 | 24px | `--spacing-24` |
+| 32 | 32px | `--spacing-32` |
+| 36 | 36px | `--spacing-36` |
 | 40 | 40px | `--spacing-40` |
-| 56 | 56px | `--spacing-56` |
-| 64 | 64px | `--spacing-64` |
+| 48 | 48px | `--spacing-48` |
+| 72 | 72px | `--spacing-72` |
 | 80 | 80px | `--spacing-80` |
-| 100 | 100px | `--spacing-100` |
-| 140 | 140px | `--spacing-140` |
+| 88 | 88px | `--spacing-88` |
 
 ### Border Radius
 
 | Element | Value |
 |---------|-------|
-| tags | 9999px |
-| cards | 20px |
-| other | 64px |
-| buttons | 31px |
+| tags | 4px |
+| cards | 8px |
+| images | 8px |
+| inputs | 4px |
+| buttons | 4px |
+
+### Shadows
+
+| Name | Value | Token |
+|------|-------|-------|
+| lg | `rgba(0, 0, 0, 0.01) 0px 54px 22px 0px, rgba(0, 0, 0, 0.04...` | `--shadow-lg` |
+| xl | `rgba(0, 0, 0, 0.02) 0px 67px 27px 0px, rgba(0, 0, 0, 0.06...` | `--shadow-xl` |
+| xl-2 | `rgba(0, 0, 0, 0.01) 0px 148px 42px 0px, rgba(0, 0, 0, 0.0...` | `--shadow-xl-2` |
 
 ### Layout
 
 - **Page max-width:** 1200px
-- **Section gap:** 80-120px
+- **Section gap:** 80px
 - **Card padding:** 24px
-- **Element gap:** 24px
+- **Element gap:** 16px
 
 ## Components
 
-### Ghost Menu Button
-**Role:** Navigation trigger in the hero overlay
+### Primary Filled Button
+**Role:** Highest-emphasis action — used for free trial, demo requests, and sign-up flows
 
-Transparent background, 1px Citron Beam (#e8e359) border, Citron Beam text in Poppins 12–13px weight 500 uppercase, 31px border-radius (pill shape), 6px vertical / 24px horizontal padding. Floats over photographic hero with no background fill — the text and border alone define it.
+Background: #146ef5. Text: #ffffff, WF Visual Sans Variable 14px weight 500, letter-spacing normal. Padding: 12px 16px. Border-radius: 4px. No border. No shadow. The sharp 4px radius (not pill-shaped) is deliberate — it signals professional tool over consumer app. On hover, background deepens to #1366e2.
 
-### Hero Display Headline
-**Role:** First-screen brand statement overlaid on photography
+### Ghost/Text Button
+**Role:** Secondary action — 'Log in', 'Contact Sales', inline text links
 
-Parafina at 104–173px weight 500, line-height 0.80–0.85, Citron Beam (#e8e359) color. Sits directly over full-bleed nature photography with no text background or gradient — the color alone provides contrast against greens. The logotype 'arte*' itself is part of this treatment at the same scale.
+No background. Text: #080808, 14px weight 500. No border. No padding override. Underline appears on hover. For nav items, text color shifts to #146ef5 on active state.
 
-### Editorial Subheadline
-**Role:** Secondary hero text — the 'tagline' under the display
+### Announcement Banner
+**Role:** Top-of-page promotional strip for events, product launches, or campaigns
 
-Parafina at 20–30px weight 500, line-height 0.90–1.00, Citron Beam color. Centrally aligned, sits 24–40px below the display headline. Uses the same display font at a smaller scale rather than switching to Poppins — this keeps the hero purely in the display voice.
+Full-width band with background: #146ef5. Text: #ffffff, 13px weight 500, centered. Padding: 8px 16px. No border, no shadow. Closes via X icon on the right. Creates the first visual note of the page — blue ribbon on white.
 
-### Section Display Headline
-**Role:** Large editorial headline on cream sections
+### Top Navigation Bar
+**Role:** Persistent site navigation with logo, primary nav, auth, and CTA
 
-Parafina at 56–70px weight 500, line-height 0.85–0.90, Morning Glory (#7997ff) or Harvest Copper (#ab5700) color. Centered or left-aligned on the Wheat Cream canvas, with generous 80–120px top/bottom margin to create editorial breathing room. This is where the periwinkle blue enters the type system.
+Background: #ffffff. Height: ~56px. Left: Webflow wordmark in #146ef5. Center: nav links (Platform, Solutions, Resources, Enterprise, Pricing) in #080808, 14px weight 400, with a small chevron on items with sub-menus. Right: 'Log in' ghost link, 'Contact Sales' ghost link, 'Start for free' primary button. Sticky to top with no border on rest state; gains a 1px #d8d8d8 bottom border on scroll.
 
-### Body Paragraph Block
-**Role:** Long-form editorial copy in feature sections
+### Feature Card (Light)
+**Role:** Content cards in feature grids — 'AI site builder', 'Template', 'Blank site'
 
-Poppins 16px weight 400, line-height 1.40, Harvest Copper (#ab5700) as default text color. Maximum line length around 60–70 characters. Inline emphasis uses Morning Glory (#7997ff) color to highlight phrases like 'environment front-of-mind' without changing weight or style.
+Background: #ffffff. Border: 1px solid #d8d8d8. Border-radius: 8px. Padding: 24px. No shadow. Contains a title (16px weight 600), description (14px weight 400 #5a5a5a), and a small product preview thumbnail (border-radius 8px) in the top-right corner. Cards align in a 3-column grid with 16px gap.
 
-### Image-Text Editorial Block
-**Role:** Full-width lifestyle photo with text beneath
+### Split Feature Section
+**Role:** Two-column layout pairing descriptive text with a product visual
 
-Full-bleed or max-width image (rounded or sharp corners, generous sizing) followed by a body paragraph below with 40px gap. Image is treated as editorial illustration — people, food, nature — rather than product photography. Text block is left-aligned, max-width ~600px.
+Max-width 1200px container. Left column: eyebrow label (13px uppercase +0.1em tracking #5a5a5a), heading (32–40px weight 600 #080808), bullet list with arrow links. Right column: product screenshot or browser-frame mockup at full column width, 8px border-radius. Section gap: 80px vertical.
 
-### Text-Link CTA
-**Role:** Navigation to more content (e.g. 'MORE ON US')
+### Feature List Item
+**Role:** Expandable or linked feature descriptions with arrow affordance
 
-Poppins 12–13px weight 500 uppercase, Harvest Copper or Morning Glory color, 31px border-radius pill border, 6px vertical / 24px horizontal padding, 1px border. No fill — the pill is an outline only. Often preceded by a small dot or arrow icon in the same color.
+Horizontal flex row. Left: body text (16px weight 400 #080808). Right: right-arrow icon (→) in #5a5a5a. Bottom border: 1px solid #d8d8d8. Padding: 16px 0. On hover, arrow shifts right 4px and text color remains stable. Used in the 'Everything marketing teams love' section.
 
-### Card
-**Role:** Content cards on the cream canvas
+### Hero Section
+**Role:** Above-the-fold brand statement and primary conversion path
 
-20px border-radius, 1px Harvest Copper (#ab5700) border, 24px padding, Wheat Cream (#e5dccd) fill (same as canvas — the border defines the card). No shadows. Used sparingly — most content flows as editorial blocks rather than card grids.
+Full-bleed #ffffff background. Centered stack: eyebrow tag (optional), headline (56–80px weight 600 #080808, line-height 1.0, letter-spacing -0.01em), subtext (20px weight 400 #5a5a5a, max-width 560px). Below: a 3-card choice row ('How do you want to build?') with 16px gap. No background image; the hero is pure typography on white.
 
-### Pill Button
-**Role:** Interactive controls throughout
+### Browser-Frame Mockup
+**Role:** Realistic product screenshot wrapper — demonstrates the editor UI
 
-31px border-radius (nearly full pill), 6px vertical / 24px horizontal padding, Poppins 12–13px weight 500 uppercase. Available in ghost (transparent fill, colored border + text in Citron Beam or Harvest Copper) or filled (Citron Beam #e8e359 fill with dark text). The 31px radius — not a full 9999px pill — is distinctive; it gives a soft, friendly shape without becoming a full stadium.
+Outer container: 8px border-radius, multi-layer soft shadow (rgba 0,0,0,0.02 → 0.12 across 4 stops). Top bar: 28px tall, #f0f0f0 background, with three traffic-light dots (red/yellow/green) and a URL field. Content area: full product UI captured at 2x resolution. Used to show the Webflow editor wrapping the actual webflow.com page — a self-referential product demonstration.
 
-### Scroll Indicator
-**Role:** Subtle prompt below hero to scroll
+### Cookie Consent Banner
+**Role:** Fixed-bottom GDPR compliance overlay
 
-Small monospace or Poppins text '[scroll down]' in Citron Beam, centered, positioned at the bottom edge of the hero. Minimal, 12px, no animation implied — just quiet typographic signage.
+Fixed to bottom-left, max-width 380px. Background: #ffffff. Border: 1px solid #d8d8d8. Border-radius: 8px. Padding: 16px. Body text: 13px #080808. Two buttons stacked: 'Reject all' (ghost, #080808 text, 1px #d8d8d8 border) and 'Accept all' (filled #146ef5, white text). 'Manage Preferences' link in #146ef5 above buttons.
 
-### Inline Color Highlight
-**Role:** Emphasized phrases within body copy
+### Logo Strip
+**Role:** Social proof band showing enterprise customer logos
 
-A technique rather than a component: select phrases within Harvest Copper body text switch to Morning Glory (#7997ff) color while keeping the same Poppins 16px weight 400 — the color change alone draws the eye without bolding, italicizing, or underlining. This is how links and emphasis integrate naturally into editorial prose.
+Horizontal row of monochrome (grayscale) customer logos on #ffffff or #f0f0f0 background. Logos at consistent height (~24px), even spacing via flex justify-content: space-between. No logos are colored — all rendered in #5a5a5a or #080808 for uniform tonal weight.
+
+### Eyebrow Label
+**Role:** Small uppercase category label above section headings
+
+WF Visual Sans Variable, 13px, weight 500, letter-spacing +0.1em, text-transform uppercase, color #5a5a5a. Sits 16px above the heading it introduces. Functions as a quiet section marker.
+
+### New Tag Badge
+**Role:** Inline indicator marking a feature or option as recently released
+
+Background: #146ef5. Text: 'NEW' in #ffffff, 10px weight 600, uppercase, letter-spacing +0.1em. Padding: 2px 6px. Border-radius: 4px. Displayed inline next to the card or feature title it qualifies.
 
 ## Do's and Don'ts
 
 ### Do
-- Use Parafina (or Bricolage Grotesque substitute) at weight 500 for all display and heading text — never go above 500 or below 500, the single-weight treatment is signature
-- Apply Citron Beam (#e8e359) as the hero overlay text color against full-bleed nature photography — the chartreuse against forest green is the brand's most recognizable visual moment
-- Set display type at line-height 0.80–0.90 — the crushed leading is essential; never let display headlines breathe with 1.2+ line-height
-- Use Morning Glory (#7997ff) for inline text highlights within Harvest Copper body copy — color is the emphasis, not weight or style changes
-- Default all body and list text to Harvest Copper (#ab5700) — this is the brand's ink color, not black or gray
-- Apply 31px border-radius to all interactive elements (buttons, links, menu triggers) — not 9999px, not 8px; the 31px soft-pill is the system radius
-- Place full-bleed editorial photography as a surface layer with display type directly overlaid — never put text in a box on top of photos
+- Use #146ef5 exclusively for filled primary actions, active nav states, and link emphasis — it is the only color that should carry interactive weight.
+- Set headlines at 56–80px in WF Visual Sans Variable weight 600 with letter-spacing -0.01em; the tight tracking is what makes display type feel architectural rather than decorative.
+- Use 8px border-radius for cards, images, and large containers; reserve 4px for buttons, inputs, and tags. Never use fully rounded pill buttons (1440px appears only once and is anomalous).
+- Pair #080808 text on #ffffff for a 20:1 contrast ratio — the system is built for maximum legibility, not warmth.
+- Use 1px #d8d8d8 borders to define structure at rest; reach for shadow only on hover or for browser-frame mockups.
+- Set section vertical gaps at 80px and card padding at 24px; the 4px base unit compounds to create generous breathing room without empty waste.
+- Show the product through realistic browser chrome rather than abstract illustrations — the self-referential 'Webflow inside Webflow' demo is a signature device.
 
 ### Don't
-- Do not use Arial, Helvetica, or any system font for headings — Parafina at extreme sizes is the brand's primary identity
-- Do not use black (#000000) or dark gray for body text — Harvest Copper (#ab5700) is the default ink
-- Do not apply drop shadows, blurs, or elevation to cards or buttons — depth comes from photography and whitespace, not shadow
-- Do not use tight 12-column card grids for content — editorial sections flow as single-column blocks with large display type
-- Do not exceed 500 weight in Parafina — no bolding, no black weight; the display is always at one weight
-- Do not use blue or gray for the page background — Wheat Cream (#e5dccd) is the only canvas
-- Do not add gradient overlays, vignette effects, or text-background boxes on hero photography — Citron Beam type sits directly on the image
+- Don't introduce additional chromatic colors into the UI — green (#60ed76) and orange (#ffa666) are decorative only, confined to inline illustrations.
+- Don't use fully rounded pill buttons for primary actions; the 4px radius signals professional tool and must not soften to 9999px.
+- Don't apply shadows to resting cards; the system defines structure with borders and uses shadow only as interactive feedback.
+- Don't set display headlines below 40px or use weight 400 for hero copy; the monumentality of 56–80px weight 600 is the brand's typographic signature.
+- Don't mix serif or display fonts into the system — WF Visual Sans Variable is the only typeface allowed for interface copy.
+- Don't use more than one font size in a single heading block; the scale steps cleanly and breaks in hierarchy should follow the type scale, not arbitrary sizes.
+- Don't place the brand blue on dark surfaces for hover or active states; use #146ef5 on light surfaces only, and use white or #146ef2 for emphasis on dark backgrounds.
 
 ## Surfaces
 
 | Level | Name | Value | Purpose |
 |-------|------|-------|---------|
-| 0 | Wheat Cream Canvas | `#e5dccd` | Default page background — warm off-white that receives all editorial content |
-| 1 | Photographic Full-Bleed | `#1a3a1a` | Hero and feature sections use full-bleed photography as the surface itself; type overlays directly |
-| 2 | Card Surface | `#e5dccd` | Cards sit on the same cream canvas, distinguished by 20px radius and hairline Harvest Copper borders |
+| 0 | Canvas | `#ffffff` | Primary page background for all light sections |
+| 1 | Tinted | `#f0f0f0` | Alternating section bands and subtle card differentiation |
+| 2 | Card | `#ffffff` | Elevated content cards on tinted or canvas backgrounds |
+| 3 | Inverted | `#080808` | Dark mode callouts, footer, or feature sections |
 
 ## Elevation
 
-No shadows. The design system deliberately avoids drop shadows, blurs, and elevation stacks. Depth is created through full-bleed photography, generous whitespace, and 1px hairline borders in Harvest Copper. Surfaces are flat — the cream canvas is the only surface, and cards are defined by their outline, not by floating above the page.
+- **Card hover state:** `rgba(0, 0, 0, 0.01) 0px 54px 22px 0px, rgba(0, 0, 0, 0.04) 0px 30px 18px 0px, rgba(0, 0, 0, 0.08) 0px 13px 13px 0px, rgba(0, 0, 0, 0.09) 0px 3px 7px 0px`
+- **Browser-frame mockup:** `rgba(0, 0, 0, 0.02) 0px 67px 27px 0px, rgba(0, 0, 0, 0.06) 0px 38px 23px 0px, rgba(0, 0, 0, 0.1) 0px 17px 17px 0px, rgba(0, 0, 0, 0.12) 0px 4px 9px 0px`
+- **Floating CTA / sticky element:** `rgba(0, 0, 0, 0.01) 0px 148px 42px 0px, rgba(0, 0, 0, 0.04) 0px 95px 38px 0px, rgba(0, 0, 0, 0.15) 0px 53px 32px 0px, rgba(0, 0, 0, 0.26) 0px 24px 24px 0px, rgba(0, 0, 0, 0.29) 0px 6px 13px 0px`
 
 ## Imagery
 
-Full-bleed golden-hour lifestyle photography is central to the visual identity. Imagery includes: sun-dappled forest canopies with light streaming through leaves (hero), overhead and angled shots of people gathered around dining tables with colorful food, and warm-toned portraits of diverse groups. Photography is high-key, warm-saturated, and naturalistic — no studio product shots, no stock-photo flatness. Images are treated as surfaces, not illustrations: they span edge-to-edge with display type overlaid directly, sometimes with the image bleeding under the next section. No icon system beyond small accent dots and arrows; no illustrations, no abstract graphics, no 3D renders. The photography IS the visual system alongside the display type.
+Photography and abstract imagery are largely absent from the core pages. Instead, Webflow leads with realistic product mockups wrapped in browser chrome (the 'Webflow inside Webflow' self-demo is the most distinctive visual device). Inline illustrations use a flat, geometric style with a constrained palette of #146ef5, #6ca7ff, #60ed76, and #ffa666 — never photographic, never 3D. Customer logos appear as monochrome grayscale strips. Icons are stroke-based, 1.5–2px weight, and rendered in #080808 or contextual color. The visual space is overwhelmingly text-and-UI dominant; imagery serves to demonstrate product capability rather than create atmosphere.
 
 ## Layout
 
-Full-bleed hero with overlaid centered display type, then transitions to a centered single-column editorial flow on the Wheat Cream canvas. Sections are separated by generous 80–120px vertical gaps rather than dividers or alternating background bands. Below the hero, content follows an image-then-text or text-then-image pattern: large display headline, generous breathing room, a full-width or large-format photograph, then a left-aligned body paragraph below. No sidebar navigation, no card grids, no multi-column feature matrices. Navigation is minimal: a single ghost 'MENU' button in the top-right corner of the hero. The overall page rhythm is: loud (full-bleed photo + huge type) → quiet (cream canvas + centered headline) → warm (photo + editorial body text) → quiet, repeating. Page max-width is approximately 1200px for text and image blocks, though hero photography breaks this to full viewport width.
+Page model is max-width 1200px centered, with full-bleed bands for the announcement bar and alternating section backgrounds. The hero is a centered text stack on pure white with no background image, followed by a 3-column card row. Below the fold, the layout alternates between 2-column split sections (text-left, product-visual-right) and full-width centered text blocks. Section transitions use 80px vertical gaps with no dividers — the rhythm is carried by whitespace alone. Navigation is a single sticky top bar; no sidebar or mega-menu structures. The grid system is 12-column at desktop, collapsing to single-column stacks on mobile.
 
 ## Agent Prompt Guide
 
-**Quick Color Reference**
-- text: #ab5700 (Harvest Copper)
-- background: #e5dccd (Wheat Cream)
-- border: #ab5700 (Harvest Copper, 1px hairline)
-- accent: #e8e359 (Citron Beam)
-- secondary accent: #7997ff (Morning Glory)
-- primary action: #e8e359 (filled action)
+Quick Color Reference:
+- text: #080808
+- background: #ffffff
+- border: #d8d8d8
+- accent: #146ef5
+- muted text: #5a5a5a
+- primary action: no distinct CTA color
 
-**Example Component Prompts:**
-1. **Hero Section**: Full-bleed forest canopy photograph as background. Overlaid centered display type in Parafina (or Bricolage Grotesque substitute) weight 500, 120px, line-height 0.85, color #e8e359, reading 'arte*'. Below it, a 24px gap, then subheadline at 28px Parafina weight 500, line-height 1.0, also #e8e359. Top-right: ghost 'MENU' pill button — transparent fill, 1px #e8e359 border, 31px radius, 6px 24px padding, Poppins 13px weight 500 uppercase #e8e359 text.
+Example Component Prompts:
 
-2. **Section Headline**: Centered on Wheat Cream (#e5dccd) canvas. Parafina 64px weight 500, line-height 0.90, color #7997ff. 80px top padding, 80px bottom padding, max-width 800px centered.
+1. Create a hero section: white (#ffffff) background, centered max-width 1200px. Headline 'Build your website' at 56px WF Visual Sans Variable weight 600, #080808, line-height 1.04, letter-spacing -0.56px. Subtext at 20px weight 400, #5a5a5a, max-width 560px. Below: 3-column card row with 16px gap, each card 8px radius, 1px #d8d8d8 border, 24px padding.
 
-3. **Editorial Image-Text Block**: Full-width photograph (people at a table, 1200px max-width, no border-radius or 20px if contained). 40px gap below. Body paragraph: Poppins 16px weight 400, line-height 1.40, color #ab5700, max-width 620px, left-aligned. One phrase within the paragraph switches to #7997ff color for emphasis.
+2. Create a navigation bar: white background, 56px height, flex row. Left: logo wordmark in #146ef5. Center: nav links in #080808 14px weight 400 with 16px gap. Right: 'Log in' ghost link, 'Start free' filled button (#146ef5 background, white text, 4px radius, 12px 16px padding). Sticky to top.
 
-4. **Ghost Pill Link Button**: Transparent background, 1px Harvest Copper (#ab5700) border, 31px border-radius, 6px vertical / 24px horizontal padding, Poppins 13px weight 500 uppercase #ab5700 text. Preceded by a small 8px dot in the same color.
+3. Create a feature card: white background, 1px #d8d8d8 border, 8px radius, 24px padding. Title at 16px weight 600 #080808. Description at 14px weight 400 #5a5a5a. Top-right: thumbnail image at 8px radius. No shadow at rest.
 
-5. **Card on Cream Canvas**: 20px border-radius, 1px #ab5700 border, 24px padding, #e5dccd fill. Poppins 16px weight 400 #ab5700 body text. No shadow, no fill change — the border alone defines the card edge against the same-colored canvas.
+4. Create a split feature section: max-width 1200px, two columns 50/50 with 48px gap. Left column: eyebrow label (13px uppercase +0.1em tracking #5a5a5a), heading (32px weight 600 #080808), bullet list with right-arrow icons in #5a5a5a. Right column: browser-frame mockup with soft multi-layer shadow, 8px radius.
+
+5. Create a browser-frame mockup: outer container 8px radius, multi-layer soft shadow. Top bar 28px tall #f0f0f0 background with three colored dots (red/yellow/green circles 8px each) and a centered URL field at 12px WF Visual Sans Mono. Content area fills remaining height with the product UI screenshot.
 
 ## Similar Brands
 
-- **Oatly** — Same warm cream canvas with oversized playful display type and full-bleed lifestyle photography; both use a single bold accent color against earth tones and rely on editorial poster-style typography rather than UI chrome
-- **Yolélé** — Full-bleed nature and food photography with large centered display headlines overlaid, warm earth-tone palette, and minimal ghost-pill navigation buttons
-- **Sweetgreen** — Farm-to-table brand language with warm cream surfaces, lifestyle photography as the primary visual element, and minimal UI components — though arte* leans more editorial and less grid-based
-- **Farmacy** — Warm botanical brand palette with cream backgrounds, organic rounded display type, and a single bright accent color (chartreuse in arte*, green in Farmacy) used against natural photography
+- **Linear** — Same near-monochrome palette with a single vivid accent, monumental display headlines with tight tracking, and borderless cards that trust whitespace and hairline borders for structure
+- **Vercel** — Shared commitment to pure white canvases, display-weight geometric sans headings, and the use of realistic product/browser mockups as the primary visual device instead of stock photography
+- **Framer** — Same designer-tool sensibility — flat surfaces, minimal elevation, 8px card radii, and a single blue accent for interactive states
+- **Notion** — Comparable restrained typographic system with generous section gaps, achromatic backgrounds, and color used as functional punctuation rather than decoration
+- **Stripe** — Identical 1200px max-width centered layout model, dramatic display sizes (56–80px), and the philosophy that one saturated accent against a monochrome system creates stronger brand recognition than multi-color palettes
 
 ## Quick Start
 
@@ -243,82 +250,95 @@ Full-bleed hero with overlaid centered display type, then transitions to a cente
 ```css
 :root {
   /* Colors */
-  --color-wheat-cream: #e5dccd;
-  --color-harvest-copper: #ab5700;
-  --color-citron-beam: #e8e359;
-  --color-morning-glory: #7997ff;
-  --color-amber-glow: #d99623;
-  --color-forest-floor: #214534;
-  --color-deep-moss: #103d26;
-  --color-olive-branch: #568037;
-  --color-slate-bloom: #3d549c;
-  --color-coral-petal: #e99686;
+  --color-webflow-blue: #146ef5;
+  --color-indigo-ink: #1366e2;
+  --color-mercury-tint: #6ca7ff;
+  --color-mint-pulse: #60ed76;
+  --color-apricot-glow: #ffa666;
+  --color-obsidian: #080808;
+  --color-pure-white: #ffffff;
+  --color-slate: #5a5a5a;
+  --color-ash-border: #d8d8d8;
+  --color-smoke: #bdbdbd;
+  --color-graphite: #222222;
+  --color-onyx: #171717;
+  --color-mist: #f0f0f0;
+  --color-charcoal: #292929;
 
   /* Typography — Font Families */
-  --font-poppins: 'Poppins', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-parafina: 'Parafina', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-arial: 'Arial', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-exposuretrial: 'ExposureTrial', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-gtstandard-m: 'GTStandard-M', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-itcavantgardegothicmedium: 'ITC_Avant_Garde_Gothic_Medium', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-wf-visual-sans-variable: 'WF Visual Sans Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-wf-visual-sans-mono: 'WF Visual Sans Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Typography — Scale */
-  --text-caption: 12px;
+  --text-caption: 10px;
   --leading-caption: 1.4;
-  --text-body: 16px;
-  --leading-body: 1.4;
+  --text-body-lg: 16px;
+  --leading-body-lg: 1.6;
   --text-subheading: 20px;
-  --leading-subheading: 1;
-  --text-heading-sm: 30px;
-  --leading-heading-sm: 0.9;
-  --text-heading: 56px;
-  --leading-heading: 0.9;
-  --text-heading-lg: 70px;
-  --leading-heading-lg: 0.85;
-  --text-display: 104px;
-  --leading-display: 0.85;
-  --text-display-xl: 173px;
-  --leading-display-xl: 0.8;
+  --leading-subheading: 1.3;
+  --text-heading-sm: 24px;
+  --leading-heading-sm: 1.3;
+  --text-heading: 32px;
+  --leading-heading: 1.2;
+  --text-heading-lg: 40px;
+  --leading-heading-lg: 1.04;
+  --tracking-heading-lg: -0.4px;
+  --text-display: 56px;
+  --leading-display: 1.04;
+  --tracking-display: -0.56px;
+  --text-display-xl: 80px;
+  --leading-display-xl: 1;
+  --tracking-display-xl: -0.8px;
 
   /* Typography — Weights */
   --font-weight-regular: 400;
   --font-weight-medium: 500;
+  --font-weight-w550: 550;
+  --font-weight-semibold: 600;
 
   /* Spacing */
   --spacing-unit: 4px;
   --spacing-4: 4px;
   --spacing-8: 8px;
   --spacing-12: 12px;
-  --spacing-20: 20px;
+  --spacing-16: 16px;
   --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-36: 36px;
   --spacing-40: 40px;
-  --spacing-56: 56px;
-  --spacing-64: 64px;
+  --spacing-48: 48px;
+  --spacing-72: 72px;
   --spacing-80: 80px;
-  --spacing-100: 100px;
-  --spacing-140: 140px;
+  --spacing-88: 88px;
 
   /* Layout */
   --page-max-width: 1200px;
-  --section-gap: 80-120px;
+  --section-gap: 80px;
   --card-padding: 24px;
-  --element-gap: 24px;
+  --element-gap: 16px;
 
   /* Border Radius */
-  --radius-2xl: 20px;
-  --radius-3xl: 31px;
-  --radius-full: 64px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-full: 1440px;
 
   /* Named Radii */
-  --radius-tags: 9999px;
-  --radius-cards: 20px;
-  --radius-other: 64px;
-  --radius-buttons: 31px;
+  --radius-tags: 4px;
+  --radius-cards: 8px;
+  --radius-images: 8px;
+  --radius-inputs: 4px;
+  --radius-buttons: 4px;
+
+  /* Shadows */
+  --shadow-lg: rgba(0, 0, 0, 0.01) 0px 54px 22px 0px, rgba(0, 0, 0, 0.04) 0px 30px 18px 0px, rgba(0, 0, 0, 0.08) 0px 13px 13px 0px, rgba(0, 0, 0, 0.09) 0px 3px 7px 0px;
+  --shadow-xl: rgba(0, 0, 0, 0.02) 0px 67px 27px 0px, rgba(0, 0, 0, 0.06) 0px 38px 23px 0px, rgba(0, 0, 0, 0.1) 0px 17px 17px 0px, rgba(0, 0, 0, 0.12) 0px 4px 9px 0px;
+  --shadow-xl-2: rgba(0, 0, 0, 0.01) 0px 148px 42px 0px, rgba(0, 0, 0, 0.04) 0px 95px 38px 0px, rgba(0, 0, 0, 0.15) 0px 53px 32px 0px, rgba(0, 0, 0, 0.26) 0px 24px 24px 0px, rgba(0, 0, 0, 0.29) 0px 6px 13px 0px;
 
   /* Surfaces */
-  --surface-wheat-cream-canvas: #e5dccd;
-  --surface-photographic-full-bleed: #1a3a1a;
-  --surface-card-surface: #e5dccd;
+  --surface-canvas: #ffffff;
+  --surface-tinted: #f0f0f0;
+  --surface-card: #ffffff;
+  --surface-inverted: #080808;
 }
 ```
 
@@ -327,59 +347,68 @@ Full-bleed hero with overlaid centered display type, then transitions to a cente
 ```css
 @theme {
   /* Colors */
-  --color-wheat-cream: #e5dccd;
-  --color-harvest-copper: #ab5700;
-  --color-citron-beam: #e8e359;
-  --color-morning-glory: #7997ff;
-  --color-amber-glow: #d99623;
-  --color-forest-floor: #214534;
-  --color-deep-moss: #103d26;
-  --color-olive-branch: #568037;
-  --color-slate-bloom: #3d549c;
-  --color-coral-petal: #e99686;
+  --color-webflow-blue: #146ef5;
+  --color-indigo-ink: #1366e2;
+  --color-mercury-tint: #6ca7ff;
+  --color-mint-pulse: #60ed76;
+  --color-apricot-glow: #ffa666;
+  --color-obsidian: #080808;
+  --color-pure-white: #ffffff;
+  --color-slate: #5a5a5a;
+  --color-ash-border: #d8d8d8;
+  --color-smoke: #bdbdbd;
+  --color-graphite: #222222;
+  --color-onyx: #171717;
+  --color-mist: #f0f0f0;
+  --color-charcoal: #292929;
 
   /* Typography */
-  --font-poppins: 'Poppins', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-parafina: 'Parafina', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-arial: 'Arial', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-exposuretrial: 'ExposureTrial', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-gtstandard-m: 'GTStandard-M', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-itcavantgardegothicmedium: 'ITC_Avant_Garde_Gothic_Medium', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-wf-visual-sans-variable: 'WF Visual Sans Variable', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-wf-visual-sans-mono: 'WF Visual Sans Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Typography — Scale */
-  --text-caption: 12px;
+  --text-caption: 10px;
   --leading-caption: 1.4;
-  --text-body: 16px;
-  --leading-body: 1.4;
+  --text-body-lg: 16px;
+  --leading-body-lg: 1.6;
   --text-subheading: 20px;
-  --leading-subheading: 1;
-  --text-heading-sm: 30px;
-  --leading-heading-sm: 0.9;
-  --text-heading: 56px;
-  --leading-heading: 0.9;
-  --text-heading-lg: 70px;
-  --leading-heading-lg: 0.85;
-  --text-display: 104px;
-  --leading-display: 0.85;
-  --text-display-xl: 173px;
-  --leading-display-xl: 0.8;
+  --leading-subheading: 1.3;
+  --text-heading-sm: 24px;
+  --leading-heading-sm: 1.3;
+  --text-heading: 32px;
+  --leading-heading: 1.2;
+  --text-heading-lg: 40px;
+  --leading-heading-lg: 1.04;
+  --tracking-heading-lg: -0.4px;
+  --text-display: 56px;
+  --leading-display: 1.04;
+  --tracking-display: -0.56px;
+  --text-display-xl: 80px;
+  --leading-display-xl: 1;
+  --tracking-display-xl: -0.8px;
 
   /* Spacing */
   --spacing-4: 4px;
   --spacing-8: 8px;
   --spacing-12: 12px;
-  --spacing-20: 20px;
+  --spacing-16: 16px;
   --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-36: 36px;
   --spacing-40: 40px;
-  --spacing-56: 56px;
-  --spacing-64: 64px;
+  --spacing-48: 48px;
+  --spacing-72: 72px;
   --spacing-80: 80px;
-  --spacing-100: 100px;
-  --spacing-140: 140px;
+  --spacing-88: 88px;
 
   /* Border Radius */
-  --radius-2xl: 20px;
-  --radius-3xl: 31px;
-  --radius-full: 64px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-full: 1440px;
+
+  /* Shadows */
+  --shadow-lg: rgba(0, 0, 0, 0.01) 0px 54px 22px 0px, rgba(0, 0, 0, 0.04) 0px 30px 18px 0px, rgba(0, 0, 0, 0.08) 0px 13px 13px 0px, rgba(0, 0, 0, 0.09) 0px 3px 7px 0px;
+  --shadow-xl: rgba(0, 0, 0, 0.02) 0px 67px 27px 0px, rgba(0, 0, 0, 0.06) 0px 38px 23px 0px, rgba(0, 0, 0, 0.1) 0px 17px 17px 0px, rgba(0, 0, 0, 0.12) 0px 4px 9px 0px;
+  --shadow-xl-2: rgba(0, 0, 0, 0.01) 0px 148px 42px 0px, rgba(0, 0, 0, 0.04) 0px 95px 38px 0px, rgba(0, 0, 0, 0.15) 0px 53px 32px 0px, rgba(0, 0, 0, 0.26) 0px 24px 24px 0px, rgba(0, 0, 0, 0.29) 0px 6px 13px 0px;
 }
 ```
