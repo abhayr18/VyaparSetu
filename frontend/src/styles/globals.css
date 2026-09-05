@@ -28,6 +28,9 @@
   --color-primary-dark:     #0f52ba;
   --color-primary-bg:       #edf5ff;
   
+  --color-forest-floor:     #15803d;        /* Deep Mandi Emerald Green */
+  --color-slate-bloom:      #4338ca;        /* Rich Commission Indigo */
+
   --color-accent:           #146ef5;
   --color-accent-hover:     #1366e2;
 
@@ -129,26 +132,47 @@ button { cursor: pointer; font-family: inherit; }
 img { max-width: 100%; display: block; }
 
 /* ─── Layout ─────────────────────────────────────────────────── */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 .app-layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   background-color: var(--color-bg);
 }
 
 .main-content {
   flex: 1;
+  min-width: 0;
+  width: calc(100vw - var(--sidebar-width));
+  max-width: calc(100vw - var(--sidebar-width));
   margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
   transition: margin-left 0.3s ease;
   background-color: var(--color-bg);
+  overflow-x: hidden;
 }
 
 .page-content {
   flex: 1;
-  padding: 24px 32px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  padding: 20px 24px;
   margin-top: var(--topbar-height);
+  box-sizing: border-box;
 }
 
 /* ─── Sidebar — Webflow Studio White ─────────────────────────── */
@@ -284,8 +308,10 @@ img { max-width: 100%; display: block; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
+  padding: 0 24px;
   z-index: 50;
+  box-sizing: border-box;
+  max-width: calc(100vw - var(--sidebar-width));
 }
 
 .topbar-left {
@@ -1071,7 +1097,8 @@ img { max-width: 100%; display: block; }
 
 .required-star { color: var(--color-error); margin-left: 2px; }
 
-.form-input {
+.form-input,
+.input-field {
   width: 100%;
   padding: 9px 12px;
   border: 1px solid var(--color-border);
@@ -1084,14 +1111,29 @@ img { max-width: 100%; display: block; }
   outline: none;
 }
 
-.form-input:focus {
+.form-input:focus,
+.input-field:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(20, 110, 245, 0.15);
 }
 
-.form-input.input-error {
-  border-color: var(--color-error);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+.form-input.input-error,
+.input-field.input-error,
+.input-error {
+  border-color: var(--color-error) !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15) !important;
+}
+
+.table-container {
+  overflow-x: auto;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
 .form-textarea {
@@ -1878,3 +1920,105 @@ img { max-width: 100%; display: block; }
   border-radius: 4px;
   flex-shrink: 0;
 }
+
+/* ─── Keyboard Shortcut Badges & Bottom Dock ───────────────────────────── */
+.nav-shortcut-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05);
+  letter-spacing: 0.02em;
+}
+
+.nav-item.active .nav-shortcut-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.mandi-shortcuts-dock {
+  position: fixed;
+  bottom: 0;
+  left: var(--sidebar-width, 240px);
+  right: 0;
+  background: #ffffff;
+  border-top: 1px solid var(--color-border-light, #e2e8f0);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.04);
+  padding: 6px 16px;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: calc(100vw - var(--sidebar-width, 240px));
+}
+
+.shortcuts-dock-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow-x: auto;
+  width: 100%;
+  scrollbar-width: none;
+}
+.shortcuts-dock-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.dock-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-secondary, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.dock-keys-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dock-key-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: #334155;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.dock-key-chip:hover {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #047857;
+  transform: translateY(-1px);
+}
+
+.dock-kbd {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  font-weight: 800;
+  background: #1e293b;
+  color: #ffffff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  line-height: 1.2;
+}
+
+.dock-label {
+  font-weight: 500;
+}
+

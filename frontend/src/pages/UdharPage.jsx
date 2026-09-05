@@ -149,7 +149,7 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
           <div className="form-group">
             <label className="form-label">{t('credit.note')}</label>
             <input type="text" className="form-input" value={note}
-              onChange={e => setNote(e.target.value)} placeholder="e.g. Cleared pending dues" disabled={!customerId} />
+              onChange={e => setNote(e.target.value)} placeholder={t('credit.notePlaceholder')} disabled={!customerId} />
           </div>
 
           <div className="modal-actions">
@@ -248,7 +248,7 @@ export default function UdharPage() {
           </div>
           <div className="kpi-content">
             <div className="kpi-value">{customers.length}</div>
-            <div className="kpi-label">Customers with Udhar</div>
+            <div className="kpi-label">{t('credit.customersWithBalance') || 'Customers with Udhar'}</div>
           </div>
         </div>
       </div>

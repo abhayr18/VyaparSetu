@@ -79,7 +79,9 @@
     "error": "काहीतरी चुकले. पुन्हा प्रयत्न करा.",
     "close": "बंद करा",
     "all": "सर्व",
-    "print": "प्रिंट"
+    "print": "प्रिंट",
+    "shortcuts": "शॉर्टकट्स",
+    "viewAll": "सर्व पहा"
   },
   "activation": {
     "title": "व्यापारसेतू सक्रिय करा",
@@ -127,7 +129,8 @@
     "mobileExists": "हा मोबाईल नंबर आधीच नोंदणीकृत आहे.",
     "mobileInvalid": "मोबाईल नंबर १० अंकी असणे आवश्यक आहे.",
     "nameRequired": "ग्राहकाचे नाव आवश्यक आहे.",
-    "mobileRequired": "मोबाईल नंबर आवश्यक आहे."
+    "mobileRequired": "मोबाईल नंबर आवश्यक आहे.",
+    "viewHistory": "खरेदी इतिहास पहा"
   },
   "vegetables": {
     "title": "भाजीपाला व्यवस्थापन",
@@ -161,6 +164,9 @@
     "rateRequired": "दर आवश्यक आहे.",
     "rateInvalid": "दर ० किंवा त्यापेक्षा जास्त असणे आवश्यक आहे.",
     "nameExists": "हे भाजीपाल्याचे नाव आधीच अस्तित्वात आहे.",
+    "avgRate": "सरासरी दर / एकक",
+    "totalVegetables": "एकूण भाजीपाला",
+    "keywords": "पर्यायी नावे (कीवर्ड्स)",
     "units": {
       "kg": "किलो",
       "piece": "नग",
@@ -293,7 +299,10 @@
     "downloadPDF": "पीडीएफ डाउनलोड करा",
     "downloading": "डाऊनलोड होत आहे...",
     "hamali": "हमाली / मापाई",
-    "transport": "वाहतूक"
+    "transport": "वाहतूक",
+    "dateRequired": "कृपया वैध बिल तारीख निवडा.",
+    "paymentTypeRequired": "कृपया पेमेंट स्थिती निवडा.",
+    "notesPlaceholder": "काही विशेष टीप किंवा तपशील (पर्यायी)..."
   },
   "credit": {
     "title": "उधार / क्रेडिट व्यवस्थापन",
@@ -329,7 +338,10 @@
     "selectPaymentMode": "प्रकार निवडा",
     "modeCash": "रोख (Cash)",
     "modeUPI": "युपीआय (UPI)",
-    "modeOther": "इतर (Other)"
+    "modeOther": "इतर (Other)",
+    "selectCustomerHint": "ग्राहकाचे नाव किंवा मोबाईल नंबर शोधा",
+    "customersWithBalance": "उधार शिल्लक असलेले ग्राहक",
+    "notePlaceholder": "उदा. मागील बाकी जमा केली"
   },
   "reports": {
     "title": "व्यवसाय अहवाल",
@@ -359,7 +371,24 @@
     "cashCollection": "रोख वसुली (Cash)",
     "upiCollection": "युपीआय वसुली (UPI)",
     "creditSales": "उधार दिलेली विक्री",
-    "noData": "निवडलेल्या कालावधीसाठी रेकॉर्ड आढळले नाही."
+    "noData": "निवडलेल्या कालावधीसाठी रेकॉर्ड आढळले नाही.",
+    "thPurchases": "एकूण खरेदी (₹)",
+    "thPaid": "जमा रक्कम (₹)",
+    "thOutstanding": "बाकी उधारी (₹)",
+    "thVolumeSold": "विक्री प्रमाण",
+    "thUnit": "एकक",
+    "thTotalRevenue": "एकूण महसूल (₹)",
+    "thInvoicesCount": "बिलांची संख्या",
+    "thAvgRate": "सरासरी दर (₹)",
+    "thDateTime": "दिनांक व वेळ",
+    "thType": "प्रकार",
+    "thAmount": "रक्कम (₹)",
+    "thMode": "पद्धत",
+    "thBalanceAfter": "शिल्लक (₹)",
+    "thBillRef": "बिल संदर्भ",
+    "noCustomersFound": "कोणतेही ग्राहक सापडले नाहीत",
+    "noVegetableSales": "या कालावधीत कोणतीही भाजीपाला विक्री झाली नाही",
+    "noLedgerEntries": "कोणत्याही नोंदी आढळल्या नाहीत"
   },
   "backup": {
     "title": "बॅकअप व पुनर्स्थापना",
@@ -391,11 +420,13 @@
     "disconnected": "कनेक्ट नाही",
     "driveStatus": "Google Drive स्थिती",
     "confirmRestoreDrive": "चेतावणी: यामुळे Google Drive बॅकअप वरून डेटाबेस पुनर्संचयित केला जाईल. आपला सध्याचा डेटाबेस ओव्हरराईट होईल. एक लोकल सुरक्षित (safety) बॅकअप आधी तयार केला जाईल. आपण पुढे जाऊ इच्छिता?",
-    "lastDriveBackup": "शेवटचा Drive बॅकअप"
+    "lastDriveBackup": "शेवटचा Drive बॅकअप",
+    "offlineWarning": "ऑफलाइन मोड: स्थानिक बॅकअप या संगणकावर सुरक्षितपणे जतन केले जातात."
   },
   "settings": {
     "title": "सेटिंग्ज",
     "subtitle": "अ‍ॅपचे नियम, दुकानाची माहिती आणि बिलिंग स्वरूप व्यवस्थापित करा",
+    "backupReminder": "दैनिक बॅकअप सूचना: आपला व्यवसाय डेटा सुरक्षित ठेवण्यासाठी नियमित बॅकअप घ्या.",
     "businessProfile": "व्यवसाय व दुकान तपशील (Shop Profile)",
     "businessName": "दुकान / व्यवसायाचे नाव",
     "businessNamePlaceholder": "उदा. बळीराजा व्हेजिटेबल",
@@ -481,6 +512,10 @@
     "rateRequired": "वैध दर टाका",
     "noTransactions": "निवडलेल्या तारखेसाठी कोणतेही व्यवहार आढळले नाहीत.",
     "noCustomerSelected": "कृपया दैनंदिन खरेदी इतिहास पाहण्यासाठी ग्राहक निवडा.",
+    "promptSelectCustomer": "खरेदी इतिहास पाहण्यासाठी कृपया ग्राहक निवडा.",
+    "weightPlaceholder": "वजन टाका (उदा. 10.5)",
+    "ratePlaceholder": "दर टाका (उदा. 35)",
+    "paidPlaceholder": "जमा रक्कम टाका (उदा. 500)",
     "deleteConfirmTitle": "व्यवहार हटवा",
     "deleteConfirmMsg": "तुम्हाला हा व्यवहार हटवायचा आहे का?",
     "deleteSuccess": "व्यवहार यशस्वीरित्या हटवला.",
@@ -490,6 +525,8 @@
     "generateBill": "आजचे बिल बनवा",
     "generatePeriodBill": "कालावधीचे बिल बनवा",
     "billGeneratedSuccess": "आजचे बिल यशस्वीरित्या बनवले",
+    "datewiseStatement": "तारीखवार खरेदी अहवाल",
+    "viewStatementDesc": "तारीखवार भाजीपाला खरेदी अहवाल पहा, डाऊनलोड करा व WhatsApp वर पाठवा",
     "pending": {
       "title": "बिल बाकी असलेले ग्राहक",
       "subtitle": "यांच्या नोंदींचे बिल झालेले नाही. नोंदी खाली पाहण्यासाठी ग्राहकावर क्लिक करा.",

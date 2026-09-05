@@ -510,14 +510,14 @@ export default function ReportsPage() {
                       <th className="table-th">{t('customers.name')}</th>
                       <th className="table-th">{t('customers.mobile')}</th>
                       <th className="table-th">{t('customers.address')}</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Purchases (₹)</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Paid (₹)</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Outstanding Udhar (₹)</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thPurchases')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thPaid')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thOutstanding')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {customers.length === 0 ? (
-                      <tr><td colSpan={6} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No customers found</td></tr>
+                      <tr><td colSpan={6} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('reports.noCustomersFound')}</td></tr>
                     ) : (
                       customers.map((c) => (
                         <tr className="table-row" key={c.id}>
@@ -552,16 +552,16 @@ export default function ReportsPage() {
                   <thead>
                     <tr>
                       <th className="table-th">{t('vegetables.name')}</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Volume Sold</th>
-                      <th className="table-th">Unit</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Total Revenue (₹)</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Invoices Count</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Avg Rate (₹)</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thVolumeSold')}</th>
+                      <th className="table-th">{t('reports.thUnit')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thTotalRevenue')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thInvoicesCount')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thAvgRate')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {vegSales.length === 0 ? (
-                      <tr><td colSpan={6} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No vegetable sales in this period</td></tr>
+                      <tr><td colSpan={6} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('reports.noVegetableSales')}</td></tr>
                     ) : (
                       vegSales.map((v) => (
                         <tr className="table-row" key={v.vegetable_id || v.vegetable_name}>
@@ -591,26 +591,26 @@ export default function ReportsPage() {
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th className="table-th">Date & Time</th>
+                      <th className="table-th">{t('reports.thDateTime')}</th>
                       <th className="table-th">{t('billing.customer')}</th>
-                      <th className="table-th">Type</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Amount (₹)</th>
-                      <th className="table-th">Mode</th>
-                      <th className="table-th" style={{ textAlign: 'right' }}>Balance After (₹)</th>
-                      <th className="table-th">Bill Ref</th>
+                      <th className="table-th">{t('reports.thType')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thAmount')}</th>
+                      <th className="table-th">{t('reports.thMode')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('reports.thBalanceAfter')}</th>
+                      <th className="table-th">{t('reports.thBillRef')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ledger.length === 0 ? (
-                      <tr><td colSpan={7} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No ledger entries found</td></tr>
+                      <tr><td colSpan={7} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('reports.noLedgerEntries')}</td></tr>
                     ) : (
                       ledger.map((r) => (
                         <tr className="table-row" key={r.id}>
-                          <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString('en-IN')}</td>
+                          <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString(language === 'mr' ? 'mr-IN' : 'en-IN')}</td>
                           <td className="table-cell" style={{ fontWeight: 600 }}>{r.customer_name}</td>
                           <td className="table-cell">
                             <span className={`badge badge-${r.transaction_type === 'PAYMENT_RECEIVED' ? 'success' : 'warning'}`}>
-                              {r.transaction_type === 'PAYMENT_RECEIVED' ? 'Payment Received' : r.transaction_type === 'CREDIT_ADDED' ? 'Credit Added' : r.transaction_type}
+                              {r.transaction_type === 'PAYMENT_RECEIVED' ? (t('credit.typePaymentReceived') || 'Payment Received') : r.transaction_type === 'CREDIT_ADDED' ? (t('credit.typeCreditAdded') || 'Credit Added') : r.transaction_type}
                             </span>
                           </td>
                           <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700, color: r.transaction_type === 'PAYMENT_RECEIVED' ? 'var(--color-success)' : 'var(--color-error)' }}>

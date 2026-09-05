@@ -231,7 +231,7 @@ export default function VegetablesPage() {
           </div>
           <div className="kpi-content">
             <div className="kpi-value" style={{ fontSize: '1.25rem' }}>₹{avgRate}</div>
-            <div className="kpi-label">Avg. Rate / Unit</div>
+            <div className="kpi-label">{t('vegetables.avgRate') || 'Avg. Rate / Unit'}</div>
           </div>
         </div>
       </div>

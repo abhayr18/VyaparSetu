@@ -17,6 +17,7 @@ import DeleteConfirmModal from './DeleteConfirmModal';
 import TodayBillModal from './TodayBillModal';
 import EditTransactionModal from './EditTransactionModal';
 import BilledBadge from './BilledBadge';
+import { billsApi } from '../services/apiService';
 import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
 import { isBilled } from '../utils/billDisplay';
 
@@ -50,10 +51,38 @@ export default function CustomerDailyPurchase({
   const [generatedBill, setGeneratedBill] = useState(null);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [billGenerating, setBillGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState('');
 
   const activeCustomer = customers.find((c) => c.id === activeCustomerId);
   const summary = dailyData.summary || {};
   const transactions = dailyData.transactions || [];
+
+  const unbilledTransactions = transactions.filter((t) => !isBilled(t));
+  const allBilled = transactions.length > 0 && unbilledTransactions.length === 0;
+  const existingBillId = allBilled ? transactions.find((t) => t.bill_id)?.bill_id : null;
+
+  /**
+   * Open the bill in modal for immediate viewing, PDF download, and WhatsApp sharing.
+   */
+  async function openBillModal(billId) {
+    if (!billId) return;
+    setBillGenerating(true);
+    setGenerateError('');
+    try {
+      const res = await billsApi.getById(billId);
+      if (res?.success && res.data) {
+        setGeneratedBill(res.data);
+        setIsBillModalOpen(true);
+      } else {
+        openBillInArchive(billId);
+      }
+    } catch (err) {
+      console.error('Failed to load bill modal:', err);
+      openBillInArchive(billId);
+    } finally {
+      setBillGenerating(false);
+    }
+  }
 
   /**
    * Open the bill an entry was consolidated into, in the archive that owns it.
@@ -72,22 +101,57 @@ export default function CustomerDailyPurchase({
   async function handleGenerateBillClick() {
     if (!activeCustomerId) return;
     setBillGenerating(true);
+    setGenerateError('');
     try {
-      let res;
-      if (dateFilterType === 'range' && onGenerateStatement) {
-        // Range reports are generated on-the-fly without saving to DB/Invoices
-        res = await onGenerateStatement(activeCustomerId, { startDate, endDate });
-      } else {
-        // Single day bills are consolidated and saved as invoices in DB
-        res = await onGenerateBill(activeCustomerId, billPeriod || { date: selectedDate });
-      }
+      const period = billPeriod || (dateFilterType === 'range' ? { startDate, endDate } : { date: selectedDate });
+      const res = await onGenerateBill(activeCustomerId, period);
 
       if (res?.success && res.data) {
         setGeneratedBill(res.data);
         setIsBillModalOpen(true);
+      } else if (res?.error) {
+        setGenerateError(res.error);
       }
     } catch (err) {
-      console.error('Failed to generate bill or statement:', err);
+      console.error('Failed to generate bill:', err);
+      setGenerateError(err.message || 'Failed to generate bill');
+    } finally {
+      setBillGenerating(false);
+    }
+  }
+
+  /**
+   * Generates a datewise itemized vegetable history report & statement
+   * that can be viewed, downloaded as PDF, or shared directly via WhatsApp.
+   */
+  async function handleGenerateStatementClick() {
+    if (!activeCustomerId) return;
+    setBillGenerating(true);
+    setGenerateError('');
+    try {
+      let rangePayload;
+      if (dateFilterType === 'range') {
+        rangePayload = { startDate, endDate };
+      } else if (dateFilterType === 'specific') {
+        rangePayload = { startDate: selectedDate, endDate: selectedDate };
+      } else if (dateFilterType === 'yesterday') {
+        const y = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+        rangePayload = { startDate: y, endDate: y };
+      } else {
+        const todayStr = new Date().toISOString().split('T')[0];
+        rangePayload = { startDate: todayStr, endDate: todayStr };
+      }
+
+      const res = await onGenerateStatement(activeCustomerId, rangePayload);
+      if (res?.success && res.data) {
+        setGeneratedBill(res.data);
+        setIsBillModalOpen(true);
+      } else if (res?.error) {
+        setGenerateError(res.error);
+      }
+    } catch (err) {
+      console.error('Failed to generate statement:', err);
+      setGenerateError(err.message || 'Failed to generate statement');
     } finally {
       setBillGenerating(false);
     }
@@ -105,43 +169,72 @@ export default function CustomerDailyPurchase({
           </p>
         </div>
 
-        {/* Date Filter Selector Buttons */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Action & Date Filter Selector Buttons */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Quick Datewise Statement Button */}
           <button
             type="button"
-            className={`btn ${dateFilterType === 'today' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => onChangeDateFilterType('today')}
-            style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }}
+            id="quick-datewise-statement-btn"
+            onClick={handleGenerateStatementClick}
+            disabled={!activeCustomerId || billGenerating || transactions.length === 0}
+            title={t('transactions.viewStatementDesc') || 'तारीखवार खरेदी अहवाल पहा, डाऊनलोड करा व WhatsApp वर पाठवा'}
+            style={{
+              fontSize: '0.82rem',
+              padding: '0.42rem 0.85rem',
+              borderRadius: 'var(--border-radius-pill)',
+              border: '1.5px solid #2563eb',
+              background: (!activeCustomerId || billGenerating || transactions.length === 0) ? '#f1f5f9' : '#eff6ff',
+              color: (!activeCustomerId || billGenerating || transactions.length === 0) ? '#94a3b8' : '#1d4ed8',
+              fontWeight: 700,
+              cursor: (!activeCustomerId || billGenerating || transactions.length === 0) ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'all 0.15s ease',
+              boxShadow: (!activeCustomerId || billGenerating || transactions.length === 0) ? 'none' : '0 2px 6px rgba(37, 99, 235, 0.15)'
+            }}
           >
-            {t('transactions.dateFilter.today')}
+            <span>📑</span>
+            <span>{t('transactions.datewiseStatement') || 'तारीखवार खरेदी अहवाल'}</span>
           </button>
 
-          <button
-            type="button"
-            className={`btn ${dateFilterType === 'yesterday' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => onChangeDateFilterType('yesterday')}
-            style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }}
-          >
-            {t('transactions.dateFilter.yesterday')}
-          </button>
+          <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: 'var(--border-radius-pill)' }}>
+            <button
+              type="button"
+              className={`btn ${dateFilterType === 'today' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => onChangeDateFilterType('today')}
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', border: 'none' }}
+            >
+              {t('transactions.dateFilter.today')}
+            </button>
 
-          <button
-            type="button"
-            className={`btn ${dateFilterType === 'specific' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => onChangeDateFilterType('specific')}
-            style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }}
-          >
-            {t('transactions.dateFilter.specificDate')}
-          </button>
+            <button
+              type="button"
+              className={`btn ${dateFilterType === 'yesterday' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => onChangeDateFilterType('yesterday')}
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', border: 'none' }}
+            >
+              {t('transactions.dateFilter.yesterday')}
+            </button>
 
-          <button
-            type="button"
-            className={`btn ${dateFilterType === 'range' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => onChangeDateFilterType('range')}
-            style={{ fontSize: '0.85rem', padding: '0.4rem 0.85rem' }}
-          >
-            {t('transactions.dateFilter.dateRange')}
-          </button>
+            <button
+              type="button"
+              className={`btn ${dateFilterType === 'specific' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => onChangeDateFilterType('specific')}
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', border: 'none' }}
+            >
+              {t('transactions.dateFilter.specificDate')}
+            </button>
+
+            <button
+              type="button"
+              className={`btn ${dateFilterType === 'range' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => onChangeDateFilterType('range')}
+              style={{ fontSize: '0.82rem', padding: '0.35rem 0.75rem', border: 'none' }}
+            >
+              {t('transactions.dateFilter.dateRange')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -161,11 +254,14 @@ export default function CustomerDailyPurchase({
 
         {dateFilterType === 'specific' && (
           <div>
-            <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+            <label htmlFor="history-specific-date" className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
               {t('transactions.dateFilter.specificDate')}
             </label>
             <input
+              id="history-specific-date"
+              name="selectedDate"
               type="date"
+              title={t('transactions.dateFilter.specificDate')}
               className="input-field"
               value={selectedDate}
               onChange={(e) => onChangeSelectedDate(e.target.value)}
@@ -177,11 +273,14 @@ export default function CustomerDailyPurchase({
         {dateFilterType === 'range' && (
           <>
             <div>
-              <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+              <label htmlFor="history-start-date" className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
                 {t('billing.dateFilter.startDate')}
               </label>
               <input
+                id="history-start-date"
+                name="startDate"
                 type="date"
+                title={t('billing.dateFilter.startDate')}
                 className="input-field"
                 value={startDate}
                 onChange={(e) => onChangeStartDate(e.target.value)}
@@ -189,11 +288,14 @@ export default function CustomerDailyPurchase({
               />
             </div>
             <div>
-              <label className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
+              <label htmlFor="history-end-date" className="form-label" style={{ fontWeight: 600, fontSize: '0.85rem' }}>
                 {t('billing.dateFilter.endDate')}
               </label>
               <input
+                id="history-end-date"
+                name="endDate"
                 type="date"
+                title={t('billing.dateFilter.endDate')}
                 className="input-field"
                 value={endDate}
                 onChange={(e) => onChangeEndDate(e.target.value)}
@@ -213,65 +315,137 @@ export default function CustomerDailyPurchase({
       ) : (
         <>
           {/* Summary KPI Cards Grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem', width: '100%' }}>
+            <div className="card" style={{ padding: '0.85rem 0.9rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalTransactions')}</span>
-              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{summary.total_transactions || 0}</strong>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--color-text-primary)' }}>{summary.total_transactions || 0}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+            <div className="card" style={{ padding: '0.85rem 0.9rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalWeight')}</span>
-              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{summary.total_weight || 0} kg</strong>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--color-text-primary)' }}>{summary.total_weight || 0} kg</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+            <div className="card" style={{ padding: '0.85rem 0.9rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
               <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>{t('transactions.totalBaseAmount')}</span>
-              <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>₹{Number(summary.total_base_amount || 0).toFixed(2)}</strong>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--color-text-primary)' }}>₹{Number(summary.total_base_amount || 0).toFixed(2)}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-slate-bloom)', display: 'block', fontWeight: 600 }}>{t('transactions.totalCommission')}</span>
-              <strong style={{ fontSize: '1.25rem', color: 'var(--color-slate-bloom)' }}>₹{Number(summary.total_commission || 0).toFixed(2)}</strong>
+            <div className="card" style={{ padding: '0.85rem 0.9rem', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: '#4338ca', display: 'block', fontWeight: 600 }}>{t('transactions.totalCommission')}</span>
+              <strong style={{ fontSize: '1.2rem', color: '#4338ca' }}>₹{Number(summary.total_commission || 0).toFixed(2)}</strong>
             </div>
 
-            <div className="card" style={{ padding: '0.85rem 1rem', background: 'var(--color-success-bg)', border: '1px solid rgba(33, 69, 52, 0.25)', borderRadius: 'var(--border-radius-sm)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 700 }}>{t('transactions.totalFinalAmount')}</span>
-              <strong style={{ fontSize: '1.25rem', color: 'var(--color-forest-floor)', fontWeight: 800 }}>₹{Number(summary.total_final_amount || 0).toFixed(2)}</strong>
+            <div className="card" style={{ padding: '0.85rem 0.9rem', background: 'var(--color-success-bg)', border: '1px solid #86efac', borderRadius: 'var(--border-radius-sm)' }}>
+              <span style={{ fontSize: '0.72rem', color: '#15803d', display: 'block', fontWeight: 700 }}>{t('transactions.totalFinalAmount')}</span>
+              <strong style={{ fontSize: '1.2rem', color: '#15803d', fontWeight: 800 }}>₹{Number(summary.total_final_amount || 0).toFixed(2)}</strong>
             </div>
 
-            {/* Generate Bill CTA */}
+            {/* Generate Bill CTA / View & WhatsApp Share Bill CTA */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleGenerateBillClick}
-                disabled={billGenerating || transactions.length === 0}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  minHeight: '56px',
-                  padding: '0.75rem 1rem',
-                  fontSize: '0.92rem',
-                  fontWeight: 700,
-                  background: 'var(--color-forest-floor)',
-                  color: 'white',
-                  borderRadius: 'var(--border-radius-pill)',
-                  boxShadow: '0 4px 12px rgba(33, 69, 52, 0.25)',
-                  whiteSpace: 'normal',
-                  textAlign: 'center',
-                  lineHeight: '1.25',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-              >
-                {billGenerating
-                  ? t('common.loading')
-                  : `📄 ${dateFilterType === 'range' ? t('transactions.generatePeriodBill') : t('transactions.generateBill')}`}
-              </button>
+              {allBilled && existingBillId ? (
+                <button
+                  type="button"
+                  id="view-existing-bill-btn"
+                  onClick={() => openBillModal(existingBillId)}
+                  title="Click to open full bill and share on WhatsApp"
+                  style={{
+                    width: '100%',
+                    minHeight: '56px',
+                    padding: '0.65rem 0.85rem',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    background: '#15803d',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 'var(--border-radius-pill)',
+                    boxShadow: '0 4px 14px rgba(21, 128, 61, 0.35)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '2px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '1.15rem' }}>📱</span>
+                    <span>{t('billing.shareWhatsApp') || 'WhatsApp वर पाठवा'}</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: '#bbf7d0', fontWeight: 600 }}>
+                    ✓ बिल तयार आहे (#{existingBillId}) • पहा / शेअर करा
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  id="generate-todays-bill-btn"
+                  onClick={handleGenerateBillClick}
+                  disabled={billGenerating || transactions.length === 0}
+                  style={{
+                    width: '100%',
+                    minHeight: '56px',
+                    padding: '0.75rem 1rem',
+                    fontSize: '0.92rem',
+                    fontWeight: 700,
+                    background: (billGenerating || transactions.length === 0) ? '#cbd5e1' : '#15803d',
+                    color: (billGenerating || transactions.length === 0) ? '#64748b' : '#ffffff',
+                    border: 'none',
+                    borderRadius: 'var(--border-radius-pill)',
+                    boxShadow: (billGenerating || transactions.length === 0) ? 'none' : '0 4px 14px rgba(21, 128, 61, 0.35)',
+                    whiteSpace: 'normal',
+                    textAlign: 'center',
+                    lineHeight: '1.25',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    cursor: (billGenerating || transactions.length === 0) ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {billGenerating ? (
+                    <>
+                      <span className="spinner" style={{ width: 14, height: 14, borderTopColor: '#ffffff' }} />
+                      <span>{t('common.loading')}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: '1.1rem' }}>📄</span>
+                      <span>
+                        {dateFilterType === 'range'
+                          ? (t('transactions.generatePeriodBill') || 'कालावधीचे बिल बनवा')
+                          : (t('transactions.generateBill') || 'आजचे बिल बनवा')}
+                      </span>
+                      {unbilledTransactions.length > 0 && (
+                        <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.25)', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>
+                          {unbilledTransactions.length}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
+
+          {/* Inline Error Message Banner if generation failed */}
+          {generateError && (
+            <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: '6px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontWeight: 600 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>⚠️</span>
+                <span>{generateError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGenerateError('')}
+                style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: '1rem', padding: '0 4px' }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Transactions History Table */}
           {historyLoading ? (
@@ -283,20 +457,20 @@ export default function CustomerDailyPurchase({
               {t('transactions.noTransactions')}
             </div>
           ) : (
-            <div className="table-container" style={{ overflowX: 'auto' }}>
-              <table className="table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="table-container" style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
+              <table className="table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                 <thead>
-                  <tr style={{ background: '#f1f5f9', textAlign: 'left', fontSize: '0.85rem', color: '#475569' }}>
-                    <th style={{ padding: '0.75rem 1rem' }}>Tariqh / Date</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('billing.vegetable')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.weight')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.rate')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.baseAmount')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.commission')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.finalAmount')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('billing.paymentStatus')}</th>
-                    <th style={{ padding: '0.75rem 1rem' }}>{t('transactions.billStatus')}</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>{t('common.actions')}</th>
+                  <tr style={{ background: '#f1f5f9', textAlign: 'left', fontSize: '0.82rem', color: '#475569' }}>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('billing.date') || 'Date'}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('billing.vegetable')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.weight')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.rate')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.baseAmount')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.commission')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.finalAmount')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('billing.paymentStatus')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem' }}>{t('transactions.billStatus')}</th>
+                    <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -349,7 +523,7 @@ export default function CustomerDailyPurchase({
                           billId={tx.bill_id}
                           billNumber={tx.bill_number}
                           id={`history-bill-${tx.id}`}
-                          onOpenBill={openBillInArchive}
+                          onOpenBill={openBillModal}
                         />
                       </td>
                       <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>

@@ -98,8 +98,8 @@ export default function DayBookPage() {
     });
   }, [date, isMarathi]);
 
-  const cellStyle = { padding: '0.55rem 0.9rem', borderBottom: '1px solid #e2e8f0', fontSize: '0.88rem' };
-  const headStyle = { padding: '0.6rem 0.9rem', fontSize: '0.8rem', color: '#475569', fontWeight: 700, whiteSpace: 'nowrap' };
+  const cellStyle = { padding: '10px 14px', borderBottom: '1px solid var(--color-border-light)', fontSize: '0.88rem', color: 'var(--color-text-primary)' };
+  const headStyle = { padding: '10px 14px', fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 700, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.04em' };
 
   return (
     <div className="page-container" id="daybook-page" style={{ animation: 'pageIn 0.2s ease' }}>

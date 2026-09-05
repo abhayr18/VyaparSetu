@@ -97,9 +97,9 @@ function CustomerRow({ customer, onEdit, onDelete, onHistory, t }) {
           <button
             className="btn-icon"
             onClick={() => onHistory(customer)}
-            title="View Full History"
+            title={t('customers.viewHistory') || 'View History'}
             id={`history-btn-${customer.id}`}
-            style={{ background: 'var(--color-primary-light)' }}
+            style={{ background: 'var(--color-primary-bg)', borderColor: '#bfdbfe' }}
           >
             <HistoryIcon style={{ color: 'var(--color-primary)' }} />
           </button>

@@ -77,16 +77,16 @@ const NavIcons = {
 };
 
 const NAV_ITEMS = [
-  { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard'    },
-  { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions' },
-  { key: 'daybook',      to: '/daybook',      icon: NavIcons.DayBook,      label: 'nav.daybook'      },
-  { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing'      },
-  { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar'        },
-  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
-  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
-  { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports'      },
-  { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup'       },
-  { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings'     },
+  { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard' },
+  { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions', shortcut: 'F1' },
+  { key: 'daybook',      to: '/daybook',      icon: NavIcons.DayBook,      label: 'nav.daybook',      shortcut: 'F4' },
+  { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing',      shortcut: 'F2' },
+  { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar',        shortcut: 'F3' },
+  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers',    shortcut: 'F6' },
+  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables',   shortcut: 'F7' },
+  { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports',      shortcut: 'F8' },
+  { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup' },
+  { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings' },
 ];
 
 
@@ -109,7 +109,7 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-section-label">Menu</div>
-        {NAV_ITEMS.map(({ key, to, icon: Icon, label }) => (
+        {NAV_ITEMS.map(({ key, to, icon: Icon, label, shortcut }) => (
           <NavLink
             key={key}
             to={to}
@@ -118,7 +118,10 @@ export default function Sidebar() {
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
             <Icon />
-            <span>{t(label)}</span>
+            <span style={{ flex: 1 }}>{t(label)}</span>
+            {shortcut && (
+              <span className="nav-shortcut-badge">{shortcut}</span>
+            )}
           </NavLink>
         ))}
       </nav>

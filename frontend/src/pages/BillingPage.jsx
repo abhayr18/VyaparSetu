@@ -129,7 +129,7 @@ export default function BillingPage() {
 
   // ─── Computed stats ────────────────────────────────────────────────────────
   const totalAmount   = bills.reduce((s, b) => s + Number(b.final_amount || 0), 0);
-  const paidAmount    = bills.filter(b => b.payment_status === 'Paid').reduce((s, b) => s + Number(b.final_amount || 0), 0);
+  const paidAmount    = bills.reduce((s, b) => s + (b.payment_status === 'Paid' ? Number(b.final_amount || 0) : Number(b.paid_amount || 0)), 0);
   const pendingAmount = bills.reduce((s, b) => s + Number(b.remaining_amount || 0), 0);
 
   // ─── Filter counts ─────────────────────────────────────────────────────────

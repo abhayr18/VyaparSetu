@@ -43,3 +43,6 @@ tools/licenses.json
 *.pem
 backend/database/license.json
 license.json
+
+# Tooling
+gstack/

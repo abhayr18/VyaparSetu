@@ -16,9 +16,15 @@ const fs = require('fs');
 const http = require('http');
 const dotenv = require('dotenv');
 
-// Load environment variables (.env) from root and backend
-dotenv.config({ path: path.join(__dirname, '../.env') });
-dotenv.config({ path: path.join(__dirname, '../backend/.env') });
+// Load environment variables (.env) from root and backend in dev mode only.
+// In a packaged app, force NODE_ENV=production and ensure bypass flags cannot persist.
+if (!app.isPackaged) {
+  dotenv.config({ path: path.join(__dirname, '../.env') });
+  dotenv.config({ path: path.join(__dirname, '../backend/.env') });
+} else {
+  process.env.NODE_ENV = 'production';
+  delete process.env.LICENSE_DEV_BYPASS;
+}
 
 
 // Expose open-external handler for Google OAuth & system browser opening
@@ -178,7 +184,12 @@ if (!app.requestSingleInstanceLock()) {
    */
   async function startBackend() {
     const userData = app.getPath('userData'); // %APPDATA%/VyapaarSetu
-    process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+    if (app.isPackaged) {
+      process.env.NODE_ENV = 'production';
+      delete process.env.LICENSE_DEV_BYPASS;
+    } else {
+      process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+    }
     process.env.DB_PATH = path.join(userData, 'data', 'vyapaarsetu.db');
     process.env.BACKUP_DIR = path.join(userData, 'backups');
     process.env.DRIVE_TOKENS_PATH = path.join(userData, 'drive_tokens.json');

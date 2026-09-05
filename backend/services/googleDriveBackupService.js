@@ -165,14 +165,33 @@ function computeDbHash() {
 }
 
 /**
+ * Checks whether the local database has any actual customer/transaction/billing data
+ */
+function hasLocalBusinessData() {
+  try {
+    const custRow = execGet('SELECT COUNT(*) as count FROM customers WHERE is_deleted = 0');
+    const txRow = execGet('SELECT COUNT(*) as count FROM transactions');
+    const billRow = execGet('SELECT COUNT(*) as count FROM bills');
+    const custCount = custRow?.count || 0;
+    const txCount = txRow?.count || 0;
+    const billCount = billRow?.count || 0;
+    return (custCount + txCount + billCount) > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Determines if database has un-synced changes
  */
 function isDatabaseDirty() {
   const isDirtyFlag = getSetting('db_dirty') === '1';
   const lastSyncedHash = getSetting('last_synced_hash');
 
+  // On a brand-new installation where no sync has occurred yet:
   if (!lastSyncedHash) {
-    return fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).size > 0;
+    // Only mark dirty if actual business records or changes have occurred locally
+    return isDirtyFlag || hasLocalBusinessData();
   }
   if (!isDirtyFlag) return false;
 
@@ -272,6 +291,15 @@ async function upsertDriveBackup(force = false) {
       },
       skipped: true,
       reason: 'identical_hash',
+    };
+  }
+
+  // Safety guard: if auto-backup runs on a brand new PC with an empty database,
+  // do not overwrite existing cloud backup
+  if (!force && !lastSyncedHash && !hasLocalBusinessData()) {
+    return {
+      skipped: true,
+      reason: 'empty_local_database_safeguard',
     };
   }
 
@@ -444,6 +472,13 @@ async function restoreFromDrive(driveFileId) {
     backupService.checkpointDatabase();
     reloadDb(downloadedBuffer);
     backupService.checkpointDatabase();
+
+    // 6. Record sync metadata in the newly restored database
+    const restoredHash = computeDbHash();
+    setSetting('drive_backup_file_id', driveFileId);
+    setSetting('last_synced_hash', restoredHash);
+    setSetting('last_cloud_sync', new Date().toISOString());
+    setSetting('db_dirty', '0');
 
     // Clean up temp file
     if (fs.existsSync(tempDownloadPath)) {

@@ -166,6 +166,8 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
           {/* WhatsApp sharing */}
           <button
             type="button"
+            id="modal-share-whatsapp-btn"
+            title={t('billing.shareWhatsApp') || 'WhatsApp वर पाठवा'}
             className="btn"
             onClick={handleWhatsAppShare}
             disabled={isProcessing}
@@ -186,7 +188,7 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
               </>
             ) : (
               <>
-                <SendIcon /> {t('billing.shareWhatsApp')}
+                <SendIcon /> {t('billing.shareWhatsApp') || 'WhatsApp'}
               </>
             )}
           </button>
@@ -194,6 +196,8 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
           {/* PDF export */}
           <button
             type="button"
+            id="modal-download-pdf-btn"
+            title={t('billing.downloadPDF') || 'PDF डाऊनलोड करा'}
             className="btn"
             onClick={handleDownloadPDF}
             disabled={isProcessing}
@@ -214,7 +218,7 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
               </>
             ) : (
               <>
-                <FileIcon /> {t('billing.downloadPDF')}
+                <FileIcon /> {t('billing.downloadPDF') || 'PDF'}
               </>
             )}
           </button>
@@ -222,6 +226,8 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
           {/* Browser printing */}
           <button
             type="button"
+            id="modal-print-btn"
+            title={t('billing.print') || 'प्रिंट करा'}
             className="btn btn-primary"
             onClick={handlePrint}
             disabled={isProcessing}

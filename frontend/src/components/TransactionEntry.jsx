@@ -41,13 +41,53 @@ export default function TransactionEntry({
   const [paidInput, setPaidInput] = useState('');
   const [errors, setErrors] = useState({});
 
-  // Element Refs for Auto Focus Navigation
+  // Element Refs for Auto Focus & Arrow Navigation
   const customerRef = useRef(null);
   const vegetableRef = useRef(null);
   const weightRef = useRef(null);
   const rateRef = useRef(null);
+  const paymentTypeRef = useRef(null);
+  const paymentModeRef = useRef(null);
   const paidInputRef = useRef(null);
   const saveBtnRef = useRef(null);
+
+  // Field focus helpers
+  function focusCustomer() {
+    customerRef.current?.focus();
+    customerRef.current?.select?.();
+  }
+
+  function focusVegetable() {
+    vegetableRef.current?.focus();
+    vegetableRef.current?.select?.();
+  }
+
+  function focusWeight() {
+    weightRef.current?.focus();
+    weightRef.current?.select?.();
+  }
+
+  function focusRate() {
+    rateRef.current?.focus();
+    rateRef.current?.select?.();
+  }
+
+  function focusPaymentType() {
+    paymentTypeRef.current?.focus();
+  }
+
+  function focusPaymentMode() {
+    paymentModeRef.current?.focus();
+  }
+
+  function focusPaidInput() {
+    paidInputRef.current?.focus();
+    paidInputRef.current?.select?.();
+  }
+
+  function focusSaveBtn() {
+    saveBtnRef.current?.focus();
+  }
 
   // Auto focus Customer input on component mount
   useEffect(() => {
@@ -96,11 +136,12 @@ export default function TransactionEntry({
       // If vegetable is already selected from a previous entry, jump straight to weight input!
       if (selectedVegetable) {
         setTimeout(() => {
-          weightRef.current?.focus();
-          weightRef.current?.select();
+          focusWeight();
         }, 50);
       } else {
-        setTimeout(() => vegetableRef.current?.focus(), 50);
+        setTimeout(() => {
+          focusVegetable();
+        }, 50);
       }
     }
   }
@@ -112,8 +153,7 @@ export default function TransactionEntry({
       setRate(veg.rate != null ? String(veg.rate) : '');
       setErrors((prev) => ({ ...prev, vegetable: null }));
       setTimeout(() => {
-        weightRef.current?.focus();
-        weightRef.current?.select();
+        focusWeight();
       }, 50);
     }
   }
@@ -171,19 +211,24 @@ export default function TransactionEntry({
 
       // Return focus directly to Customer input for the next buyer
       setTimeout(() => {
-        customerRef.current?.focus();
+        focusCustomer();
       }, 50);
     }
   }
 
   // KeyDown Navigation Logic
   function handleWeightKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusVegetable();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusRate();
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       if (numWeight > 0) {
         setErrors((prev) => ({ ...prev, weight: null }));
-        rateRef.current?.focus();
-        rateRef.current?.select();
+        focusRate();
       } else {
         setErrors((prev) => ({ ...prev, weight: t('transactions.weightRequired') }));
       }
@@ -191,13 +236,18 @@ export default function TransactionEntry({
   }
 
   function handleRateKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusWeight();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusPaymentType();
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       if (!isNaN(numRate) && numRate >= 0) {
         setErrors((prev) => ({ ...prev, rate: null }));
         if (paymentType === 'Partial') {
-          paidInputRef.current?.focus();
-          paidInputRef.current?.select();
+          focusPaidInput();
         } else {
           handleSubmit();
         }
@@ -207,21 +257,85 @@ export default function TransactionEntry({
     }
   }
 
+  function handlePaymentTypeKeyDown(e) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      focusRate();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (paymentType !== 'Credit') {
+        focusPaymentMode();
+      } else {
+        focusSaveBtn();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (paymentType === 'Partial') {
+        focusPaidInput();
+      } else {
+        focusSaveBtn();
+      }
+    }
+  }
+
+  function handlePaymentModeKeyDown(e) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      focusPaymentType();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (paymentType === 'Partial') {
+        focusPaidInput();
+      } else {
+        focusSaveBtn();
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (paymentType === 'Partial') {
+        focusPaidInput();
+      } else {
+        focusSaveBtn();
+      }
+    }
+  }
+
   function handlePaidKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusPaymentMode();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusSaveBtn();
+    } else if (e.key === 'Enter') {
       e.preventDefault();
       handleSubmit();
     }
   }
 
+  function handleSaveBtnKeyDown(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (paymentType === 'Partial') {
+        focusPaidInput();
+      } else if (paymentType !== 'Credit') {
+        focusPaymentMode();
+      } else {
+        focusPaymentType();
+      }
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusCustomer();
+    }
+  }
+
   return (
     <div className="card" style={{ padding: '1.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '8px' }}>
         <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 800, fontFamily: 'var(--font-display)' }}>
           {t('transactions.entryTitle')}
         </h3>
         <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', background: 'var(--color-bg-light)', padding: '4px 12px', borderRadius: 'var(--border-radius-pill)', border: '1px solid var(--color-border)', fontWeight: 600 }}>
-          ⌨️ Type → Enter → Save
+          ⌨️ ← → ↑ ↓ Arrow Keys / Enter to navigate
         </span>
       </div>
 
@@ -235,9 +349,17 @@ export default function TransactionEntry({
             <CustomerAutocomplete
               ref={customerRef}
               id="customer-input"
+              name="customer"
               customers={customers}
               selectedCustomer={selectedCustomer}
               onSelectCustomer={handleSelectCustomer}
+              onNavigateNext={() => {
+                if (selectedVegetable) {
+                  focusWeight();
+                } else {
+                  focusVegetable();
+                }
+              }}
               placeholder={t('transactions.selectCustomer')}
               hasError={!!errors.customer}
             />
@@ -256,9 +378,12 @@ export default function TransactionEntry({
             <VegetableAutocomplete
               ref={vegetableRef}
               id="vegetable-input"
+              name="vegetable"
               vegetables={vegetables}
               selectedVegetable={selectedVegetable}
               onSelectVegetable={handleSelectVegetable}
+              onNavigateNext={() => focusWeight()}
+              onNavigatePrev={() => focusCustomer()}
               placeholder={t('transactions.selectVegetable')}
               hasError={!!errors.vegetable}
             />
@@ -277,12 +402,15 @@ export default function TransactionEntry({
             <input
               ref={weightRef}
               id="weight-input"
+              name="weight"
               type="number"
               step="any"
               min="0.01"
               className={`input-field ${errors.weight ? 'input-error' : ''}`}
-              placeholder="e.g. 10"
+              placeholder={t('transactions.weightPlaceholder') || 'उदा. 10.5 kg'}
+              title={t('transactions.weight')}
               value={weight}
+              onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 setWeight(e.target.value);
                 setErrors((prev) => ({ ...prev, weight: null }));
@@ -305,12 +433,15 @@ export default function TransactionEntry({
             <input
               ref={rateRef}
               id="rate-input"
+              name="rate"
               type="number"
               step="any"
               min="0"
               className={`input-field ${errors.rate ? 'input-error' : ''}`}
-              placeholder="e.g. 30"
+              placeholder={t('transactions.ratePlaceholder') || 'उदा. 35 ₹/kg'}
+              title={t('transactions.rate')}
               value={rate}
+              onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 setRate(e.target.value);
                 setErrors((prev) => ({ ...prev, rate: null }));
@@ -327,13 +458,18 @@ export default function TransactionEntry({
 
           {/* Payment Type Selector (Credit, Paid, Partial) */}
           <div>
-            <label className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+            <label htmlFor="payment-type-select" className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
               5. {t('billing.paymentStatus')}
             </label>
             <select
+              ref={paymentTypeRef}
+              id="payment-type-select"
+              name="paymentType"
+              title={t('billing.paymentStatus')}
               className="input-field"
               value={paymentType}
               onChange={(e) => setPaymentType(e.target.value)}
+              onKeyDown={handlePaymentTypeKeyDown}
               style={{ fontSize: '0.95rem', padding: '0.65rem 0.85rem', fontWeight: 600 }}
             >
               <option value="Credit">🔴 {t('billing.statusCredit')}</option>
@@ -345,13 +481,18 @@ export default function TransactionEntry({
           {/* Payment Mode Selector (Cash, UPI, Other) */}
           {paymentType !== 'Credit' && (
             <div>
-              <label className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+              <label htmlFor="payment-mode-select" className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
                 {t('credit.paymentMode')}
               </label>
               <select
+                ref={paymentModeRef}
+                id="payment-mode-select"
+                name="paymentMode"
+                title={t('credit.paymentMode')}
                 className="input-field"
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value)}
+                onKeyDown={handlePaymentModeKeyDown}
                 style={{ fontSize: '0.95rem', padding: '0.65rem 0.85rem' }}
               >
                 <option value="Cash">💵 {t('billing.paymentTypeCash')}</option>
@@ -364,18 +505,22 @@ export default function TransactionEntry({
           {/* Paid Amount Input (Shown when Partial is selected) */}
           {paymentType === 'Partial' && (
             <div>
-              <label className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+              <label htmlFor="paid-input" className="form-label" style={{ fontWeight: 600, marginBottom: '4px', display: 'block' }}>
                 {t('billing.paid')} (₹)
               </label>
               <input
                 ref={paidInputRef}
+                id="paid-input"
+                name="paidAmount"
                 type="number"
                 step="any"
                 min="0"
                 max={finalAmount}
                 className="input-field"
-                placeholder="Enter paid amount"
+                placeholder={t('transactions.paidPlaceholder') || 'उदा. 500 ₹'}
+                title={t('billing.paid')}
                 value={paidInput}
+                onFocus={(e) => e.target.select()}
                 onChange={(e) => setPaidInput(e.target.value)}
                 onKeyDown={handlePaidKeyDown}
                 style={{ fontSize: '1rem', padding: '0.65rem 0.85rem' }}
@@ -388,104 +533,107 @@ export default function TransactionEntry({
         <div
           style={{
             marginTop: '1.5rem',
-            padding: '1.15rem 1.25rem',
+            padding: '1.25rem',
             background: 'var(--color-bg-light)',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--border-radius)',
             display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem'
+            flexDirection: 'column',
+            gap: '1.25rem'
           }}
         >
-          {/* 5 Financial Metric Chips */}
+          {/* 5 Financial Metric Chips - Evenly Distributed Grid */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))',
-              gap: '0.75rem',
-              flex: '1 1 520px'
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: '0.85rem',
+              width: '100%'
             }}
           >
-            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600 }}>
+            {/* 1. Base Amount */}
+            <div style={{ background: 'var(--color-surface)', padding: '0.75rem 1rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: 'var(--color-text-muted)', display: 'block', fontWeight: 600, marginBottom: '4px' }}>
                 {t('transactions.baseAmount')}
               </span>
-              <strong style={{ fontSize: '1.05rem', color: 'var(--color-text-primary)' }}>
+              <strong style={{ fontSize: '1.15rem', color: 'var(--color-text-primary)' }}>
                 ₹{baseAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-slate-bloom)', display: 'block', fontWeight: 600 }}>
+            {/* 2. Commission */}
+            <div style={{ background: 'var(--color-surface)', padding: '0.75rem 1rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: '#4338ca', display: 'block', fontWeight: 600, marginBottom: '4px' }}>
                 {t('transactions.commission')} ({formatCommissionPercent(commissionRate)})
               </span>
-              <strong style={{ fontSize: '1.05rem', color: 'var(--color-slate-bloom)' }}>
+              <strong style={{ fontSize: '1.15rem', color: '#4338ca' }}>
                 ₹{commissionAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: 'var(--color-success-bg)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid rgba(33, 69, 52, 0.25)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 700 }}>
+            {/* 3. Final Amount */}
+            <div style={{ background: 'var(--color-success-bg)', padding: '0.75rem 1rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid #86efac', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: '#15803d', display: 'block', fontWeight: 700, marginBottom: '4px' }}>
                 {t('transactions.finalAmount')}
               </span>
-              <strong style={{ fontSize: '1.2rem', color: 'var(--color-forest-floor)', fontWeight: 800 }}>
+              <strong style={{ fontSize: '1.25rem', color: '#15803d', fontWeight: 800 }}>
                 ₹{finalAmount.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-forest-floor)', display: 'block', fontWeight: 600 }}>
+            {/* 4. Paid Amount */}
+            <div style={{ background: 'var(--color-surface)', padding: '0.75rem 1rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: '#15803d', display: 'block', fontWeight: 600, marginBottom: '4px' }}>
                 {t('billing.paid')}
               </span>
-              <strong style={{ fontSize: '1.05rem', color: 'var(--color-forest-floor)' }}>
+              <strong style={{ fontSize: '1.15rem', color: '#15803d' }}>
                 ₹{calculatedPaid.toFixed(2)}
               </strong>
             </div>
 
-            <div style={{ background: 'var(--color-surface)', padding: '0.6rem 0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--color-border)' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--color-error)', display: 'block', fontWeight: 600 }}>
+            {/* 5. Remaining Udhar */}
+            <div style={{ background: calculatedRemaining > 0 ? '#fef2f2' : 'var(--color-surface)', padding: '0.75rem 1rem', borderRadius: 'var(--border-radius-sm)', border: calculatedRemaining > 0 ? '1px solid #fca5a5' : '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span style={{ fontSize: '0.74rem', color: '#dc2626', display: 'block', fontWeight: 700, marginBottom: '4px' }}>
                 {t('billing.remainingAmount')} (Udhar)
               </span>
-              <strong style={{ fontSize: '1.05rem', color: 'var(--color-error)', fontWeight: 700 }}>
+              <strong style={{ fontSize: '1.2rem', color: '#dc2626', fontWeight: 800 }}>
                 ₹{calculatedRemaining.toFixed(2)}
               </strong>
             </div>
           </div>
 
-          {/* Dedicated Save Button Action Area */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flex: '0 0 auto', minWidth: '220px' }}>
+          {/* Action Row - Save Button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', borderTop: '1px solid var(--color-border-light)', paddingTop: '1rem' }}>
             <button
               ref={saveBtnRef}
               id="save-transaction-btn"
               type="submit"
               disabled={loading}
+              onKeyDown={handleSaveBtnKeyDown}
               className="btn btn-primary"
               style={{
-                padding: '0.8rem 1.6rem',
-                fontSize: '0.96rem',
+                padding: '0.85rem 2.2rem',
+                fontSize: '1rem',
                 fontWeight: 700,
                 borderRadius: 'var(--border-radius-pill)',
-                width: '100%',
-                minWidth: '210px',
+                minWidth: '240px',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
                 whiteSpace: 'nowrap',
-                boxShadow: '0 4px 12px rgba(33, 69, 52, 0.25)',
+                boxShadow: '0 4px 14px rgba(20, 110, 245, 0.3)',
                 cursor: loading ? 'not-allowed' : 'pointer'
               }}
             >
               {loading ? (
                 <>
-                  <span className="spinner" style={{ width: 14, height: 14, borderTopColor: '#ffffff' }} />
-                  <span>{t('transactions.saving')}</span>
+                  <span className="spinner" style={{ width: 16, height: 16, borderTopColor: '#ffffff' }} />
+                  <span>{t('transactions.saving')}...</span>
                 </>
               ) : (
                 <>
-                  <span style={{ fontSize: '1.1rem' }}>💾</span>
+                  <span style={{ fontSize: '1.15rem' }}>💾</span>
                   <span>{t('transactions.saveTransaction')}</span>
                 </>
               )}

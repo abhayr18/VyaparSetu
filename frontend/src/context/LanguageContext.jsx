@@ -67,8 +67,21 @@ export function LanguageProvider({ children }) {
    * @returns {string}
    */
   const t = useCallback((key, vars) => {
-    const translations = TRANSLATIONS[language] || TRANSLATIONS.en;
-    const text = resolvePath(translations, key) ?? key;
+    const activeTranslations = TRANSLATIONS[language] || TRANSLATIONS.en;
+    let text = resolvePath(activeTranslations, key);
+    
+    // Fallback to English if missing in selected language
+    if (text === null || text === undefined) {
+      text = resolvePath(TRANSLATIONS.en, key);
+    }
+
+    // If still missing, format into clean readable string rather than raw dot-notated key
+    if (text === null || text === undefined) {
+      const lastKey = key.split('.').pop() || key;
+      // Convert camelCase or dot to Title Case words
+      text = lastKey.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()).trim();
+    }
+
     if (!vars || typeof text !== 'string') return text;
     return text.replace(/\{\{(\w+)\}\}/g, (match, name) =>
       Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match
