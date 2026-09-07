@@ -49,13 +49,26 @@ function setSetting(key, value) {
   }
 }
 
+const DEFAULT_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const DEFAULT_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const DEFAULT_REDIRECT_URI = 'http://127.0.0.1:5000/api/drive/callback';
+
 /**
- * Resolves OAuth 2.0 credentials from environment variables or settings table
+ * Resolves OAuth 2.0 credentials from environment variables, settings table, or built-in defaults
  */
 function getOAuthConfig(customRedirectUri) {
-  const clientId = process.env.GOOGLE_CLIENT_ID || getSetting('google_client_id');
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || getSetting('google_client_secret');
-  const redirectUri = customRedirectUri || process.env.GOOGLE_REDIRECT_URI || getSetting('google_redirect_uri') || 'http://127.0.0.1:5000/api/drive/callback';
+  const envClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const dbClientId = getSetting('google_client_id')?.trim();
+  const clientId = envClientId || dbClientId || DEFAULT_CLIENT_ID;
+
+  const envClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const dbClientSecret = getSetting('google_client_secret')?.trim();
+  const clientSecret = envClientSecret || dbClientSecret || DEFAULT_CLIENT_SECRET;
+
+  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI?.trim();
+  const dbRedirectUri = getSetting('google_redirect_uri')?.trim();
+  const redirectUri = envRedirectUri || customRedirectUri || dbRedirectUri || DEFAULT_REDIRECT_URI;
+
   return { clientId, clientSecret, redirectUri };
 }
 
@@ -119,14 +132,16 @@ function loadTokens() {
 function getAuthUrl(customRedirectUri) {
   const { clientId, clientSecret } = getOAuthConfig(customRedirectUri);
   if (!clientId || !clientSecret) {
-    throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.');
+    throw new Error('Google OAuth credentials not configured. Please enter your Google Client ID and Client Secret in Settings before connecting.');
   }
 
   const client = getOAuth2Client(customRedirectUri);
   return client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
-    scope: ['https://www.googleapis.com/auth/drive.file'],
+    scope: [
+      'https://www.googleapis.com/auth/drive.file',
+    ],
   });
 }
 
@@ -221,6 +236,8 @@ async function getDriveStatus() {
   const lastSync = getSetting('last_cloud_sync');
   const lastChange = getSetting('last_data_change');
   const lastHash = getSetting('last_synced_hash');
+  const { clientId, clientSecret, redirectUri } = getOAuthConfig();
+  const hasCredentials = Boolean(clientId && clientSecret);
 
   return {
     connected: isConnected,
@@ -228,6 +245,9 @@ async function getDriveStatus() {
     lastSync,
     lastChange,
     lastHash,
+    hasCredentials,
+    clientId: clientId ? `${clientId.slice(0, 8)}...` : '',
+    redirectUri,
   };
 }
 

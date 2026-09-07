@@ -16,8 +16,16 @@ import { useState, useEffect } from 'react';
 import MarathiInput from './MarathiInput';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertIcon } from './Icons';
+import { getLocalDateString } from '../utils/dates';
 
-const EMPTY_FORM = { name: '', mobile: '', address: '', notes: '', opening_balance: '' };
+const EMPTY_FORM = {
+  name: '',
+  mobile: '',
+  address: '',
+  notes: '',
+  opening_balance: '',
+  opening_balance_date: '',
+};
 
 export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
   const { t } = useTranslation();
@@ -40,8 +48,9 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
             // Never prefilled on an edit: this field opens a ledger, it does not
             // display one. What the customer owes now lives in their passbook.
             opening_balance: '',
+            opening_balance_date: getLocalDateString(),
           }
-        : EMPTY_FORM
+        : { ...EMPTY_FORM, opening_balance_date: getLocalDateString() }
       );
       setErrors({});
       setApiError('');
@@ -53,9 +62,10 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
   // ─── Client-side validation ────────────────────────────────────────────────
   function validate() {
     const errs = {};
-    if (!form.name.trim())   errs.name   = t('customers.nameRequired');
-    if (!form.mobile.trim()) errs.mobile = t('customers.mobileRequired');
-    else if (!/^\d{10}$/.test(form.mobile.trim())) errs.mobile = t('customers.mobileInvalid');
+    if (!form.name.trim()) errs.name = t('customers.nameRequired');
+    if (form.mobile.trim() && !/^\d{10}$/.test(form.mobile.trim())) {
+      errs.mobile = t('customers.mobileInvalid');
+    }
 
     // Blank is the normal case — most customers start at zero. Anything typed has to
     // be a real amount, because it becomes debt the moment it is saved.
@@ -97,6 +107,9 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     const opening = form.opening_balance.trim();
     if (!isEdit && opening !== '') {
       payload.opening_balance = opening;
+      if (form.opening_balance_date) {
+        payload.opening_balance_date = form.opening_balance_date;
+      }
     }
 
     const result = await onSubmit(payload);
@@ -155,7 +168,7 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
           {/* ── Mobile ───────────────────────────────────────────────────── */}
           <div className="form-group">
             <label className="form-label" htmlFor="customer-mobile">
-              {t('customers.mobile')} <span className="required-star">*</span>
+              {t('customers.mobile')}
             </label>
             <input
               id="customer-mobile"
@@ -208,25 +221,43 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
               goes straight onto their ledger as an opening entry — no bill is
               fabricated, so sales and commission reports stay truthful. */}
           {!isEdit && (
-            <div className="form-group">
-              <label className="form-label" htmlFor="customer-opening-balance">
-                {t('customers.openingBalance')}
-              </label>
-              <input
-                id="customer-opening-balance"
-                name="opening_balance"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                className={`form-input${errors.opening_balance ? ' input-error' : ''}`}
-                placeholder="0.00"
-                value={form.opening_balance}
-                onChange={handleChange}
-              />
-              {errors.opening_balance
-                ? <span className="field-error">{errors.opening_balance}</span>
-                : <span className="field-hint">{t('customers.openingBalanceHint')}</span>}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14, marginBottom: 16 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" htmlFor="customer-opening-balance">
+                  {t('customers.openingBalance')}
+                </label>
+                <input
+                  id="customer-opening-balance"
+                  name="opening_balance"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  className={`form-input${errors.opening_balance ? ' input-error' : ''}`}
+                  placeholder="0.00"
+                  value={form.opening_balance}
+                  onChange={handleChange}
+                />
+                {errors.opening_balance
+                  ? <span className="field-error">{errors.opening_balance}</span>
+                  : <span className="field-hint">{t('customers.openingBalanceHint')}</span>}
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" htmlFor="customer-opening-balance-date">
+                  {t('customers.openingBalanceDate')}
+                </label>
+                <input
+                  id="customer-opening-balance-date"
+                  name="opening_balance_date"
+                  type="date"
+                  max={getLocalDateString()}
+                  className="form-input"
+                  value={form.opening_balance_date || getLocalDateString()}
+                  onChange={handleChange}
+                />
+                <span className="field-hint">{t('customers.openingBalanceDateHint')}</span>
+              </div>
             </div>
           )}
 

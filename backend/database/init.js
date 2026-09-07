@@ -68,7 +68,7 @@ function createBaselineSchema(db) {
     CREATE TABLE IF NOT EXISTS customers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       name           TEXT    NOT NULL,
-      mobile         TEXT    NOT NULL UNIQUE,
+      mobile         TEXT    DEFAULT '',
       address        TEXT    DEFAULT '',
       notes          TEXT    DEFAULT '',
       credit_balance INTEGER DEFAULT 0,
@@ -246,7 +246,9 @@ function seedSettings(db) {
     ['drive_backup_file_id', '', 'Canonical Google Drive backup file ID'],
     ['google_client_id', '', 'Google OAuth 2.0 Client ID'],
     ['google_client_secret', '', 'Google OAuth 2.0 Client Secret'],
-    ['google_redirect_uri', '', 'Google OAuth 2.0 Redirect URI'],
+    ['google_redirect_uri', 'http://127.0.0.1:5000/api/drive/callback', 'Google OAuth 2.0 Redirect URI'],
+    ['custom_backup_folder', '', 'User-configured cloud sync / external backup directory path'],
+    ['auto_backup_enabled', '1', 'Flag indicating whether automatic backup sync is enabled (1 or 0)'],
   ];
 
   const insert = db.prepare(

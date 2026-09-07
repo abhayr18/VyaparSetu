@@ -159,6 +159,12 @@ export const backupApi = {
   restoreBackup: (filename) => apiClient.post('/api/backup/restore', { filename }),
   getLastBackupStatus: () => apiClient.get('/api/backup/status'),
   getInternetStatus: () => apiClient.get('/api/backup/internet-status'),
+  getConfig: () => apiClient.get('/api/backup/config'),
+  saveConfig: (data) => apiClient.post('/api/backup/config', data),
+  performAutoSync: () => apiClient.post('/api/backup/auto-sync'),
+  exportBackupUrl: () => `${BASE_URL}/api/backup/export`,
+  downloadBackupUrl: (filename) => `${BASE_URL}/api/backup/download/${encodeURIComponent(filename)}`,
+  importBackup: (fileData, filename) => apiClient.post('/api/backup/import', { fileData, filename }),
 };
 
 // ─── Dashboard API ───────────────────────────────────────────────────────────

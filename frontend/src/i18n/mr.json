@@ -117,6 +117,8 @@
     "openingBalance": "सुरुवातीची उधारी (₹)",
     "openingBalanceHint": "वहीत आधीपासून असलेली बाकी. थेट उधारीत जमा होते — बिल तयार होत नाही.",
     "openingBalanceInvalid": "सुरुवातीची उधारी शून्य किंवा त्याहून जास्त आकडा असावी.",
+    "openingBalanceDate": "सुरुवातीच्या बाकीची तारीख",
+    "openingBalanceDateHint": "ज्या दिवशी ही उधारी वहीतून आणली ती तारीख (बाय डीफॉल्ट आजची तारीख).",
     "creditBalance": "उधार शिल्लक",
     "createdAt": "नोंदणी केली",
     "deleteConfirmTitle": "ग्राहक हटवा",
@@ -421,7 +423,12 @@
     "driveStatus": "Google Drive स्थिती",
     "confirmRestoreDrive": "चेतावणी: यामुळे Google Drive बॅकअप वरून डेटाबेस पुनर्संचयित केला जाईल. आपला सध्याचा डेटाबेस ओव्हरराईट होईल. एक लोकल सुरक्षित (safety) बॅकअप आधी तयार केला जाईल. आपण पुढे जाऊ इच्छिता?",
     "lastDriveBackup": "शेवटचा Drive बॅकअप",
-    "offlineWarning": "ऑफलाइन मोड: स्थानिक बॅकअप या संगणकावर सुरक्षितपणे जतन केले जातात."
+    "offlineWarning": "ऑफलाइन मोड: स्थानिक बॅकअप या संगणकावर सुरक्षितपणे जतन केले जातात.",
+    "exportBackup": "बॅकअप फाईल सेव्ह करा (.db)",
+    "importBackup": "बॅकअप फाईल लोड करा (.db)",
+    "download": "डाउनलोड",
+    "confirmImport": "चेतावणी: बाहेरील डेटाबेस फाईल लोड केल्याने सध्याचा डेटाबेस बदलला जाईल. त्याआधी सुरक्षित (safety) बॅकअप घेतला जाईल. आपण पुढे जाऊ इच्छिता?",
+    "importSuccess": "डेटाबेस फाईल यशस्वीरित्या लोड व पुनर्संचयित करण्यात आली."
   },
   "settings": {
     "title": "सेटिंग्ज",
@@ -473,7 +480,18 @@
     "addCategoryPlaceholder": "नवीन वर्गवारी टाका (उदा. फळभाज्या, मसाले)...",
     "addCategoryBtn": "+ वर्गवारी जोडा",
     "unitExists": "हे एकक आधीच यादीत समाविष्ट आहे.",
-    "categoryExists": "ही वर्गवारी आधीच यादीत समाविष्ट आहे."
+    "categoryExists": "ही वर्गवारी आधीच यादीत समाविष्ट आहे.",
+    "googleDriveOAuth": "गुगल ड्राईव्ह क्लाउड बॅकअप व ऑथ सेटिंग्ज",
+    "googleDriveDesc": "स्वयंचलित क्लाउड बॅकअपसाठी तुमची Google Cloud OAuth 2.0 क्रेडेन्शियल्स प्रविष्ट करा.",
+    "googleClientId": "Google OAuth Client ID",
+    "googleClientIdHelp": "Google Cloud Console मधून मिळालेला Web Application Client ID.",
+    "googleClientSecret": "Google OAuth Client Secret",
+    "googleClientSecretHelp": "तुमच्या Google Cloud OAuth क्लायंटचा सिक्रेट की.",
+    "googleRedirectUri": "अधिकृत Redirect URI",
+    "googleRedirectUriHelp": "Google Cloud Console मधील Authorized Redirect URI सोबत जुळणारे असावे.",
+    "howToSetupGoogle": "Google Cloud क्रेडेन्शियल्स कसे तयार करावे (३ सोप्या पायऱ्या)",
+    "configureCredentials": "क्रेडेन्शियल्स सेट करा",
+    "credentialsNotConfigured": "Google OAuth क्रेडेन्शियल्स अजून सेट केलेली नाहीत. जोडणीसाठी Client ID व Secret टाका."
   },
   "transactions": {
     "title": "व्यवहार व्यवस्थापन",

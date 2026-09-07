@@ -24,7 +24,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
    * @param {string} url
    * @returns {Promise<{ success: boolean, error?: string }>}
    */
-  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  /**
+   * Opens native Windows folder picker dialog to select backup folder
+   * @returns {Promise<{ canceled: boolean, filePaths: string[] }>}
+   */
+  selectFolder: () => ipcRenderer.invoke('select-backup-folder'),
+
+  /**
+   * Opens the specified folder path in Windows File Explorer
+   * @param {string} folderPath
+   * @returns {Promise<{ success: boolean, error?: string }>}
+   */
+  openFolder: (folderPath) => ipcRenderer.invoke('open-backup-folder', folderPath),
 
   isElectron: true,
 });

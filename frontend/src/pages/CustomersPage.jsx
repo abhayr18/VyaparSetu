@@ -71,9 +71,13 @@ function CustomerRow({ customer, onEdit, onDelete, onHistory, t }) {
 
       {/* Mobile */}
       <td className="table-cell">
-        <a href={`tel:${customer.mobile}`} className="mobile-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-          <PhoneIcon /> {customer.mobile}
-        </a>
+        {customer.mobile ? (
+          <a href={`tel:${customer.mobile}`} className="mobile-link" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <PhoneIcon /> {customer.mobile}
+          </a>
+        ) : (
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>—</span>
+        )}
       </td>
 
       {/* Credit Balance */}

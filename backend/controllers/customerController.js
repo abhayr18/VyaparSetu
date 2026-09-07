@@ -53,8 +53,8 @@ function getById(req, res, next) {
  */
 function create(req, res, next) {
   try {
-    const { name, mobile, address, notes } = req.body;
-    const customer = customerService.createCustomer({ name, mobile, address, notes });
+    const { name, mobile, address, notes, opening_balance, opening_balance_date } = req.body;
+    const customer = customerService.createCustomer({ name, mobile, address, notes, opening_balance, opening_balance_date });
     res.status(201).json({ success: true, data: customer, message: 'Customer created successfully.' });
   } catch (err) {
     next(err);

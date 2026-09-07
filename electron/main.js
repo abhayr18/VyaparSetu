@@ -27,13 +27,33 @@ if (!app.isPackaged) {
 }
 
 
-// Expose open-external handler for Google OAuth & system browser opening
+// Expose open-external handler for system browser opening
 ipcMain.handle('open-external', async (_, url) => {
   if (url && (url.startsWith('https://') || url.startsWith('http://'))) {
     shell.openExternal(url);
     return { success: true };
   }
   return { success: false, error: 'Invalid URL' };
+});
+
+// Expose native folder selection dialog
+ipcMain.handle('select-backup-folder', async (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = await dialog.showOpenDialog(win || null, {
+    title: 'Select Backup / Cloud Sync Folder',
+    properties: ['openDirectory', 'createDirectory'],
+    buttonLabel: 'Select Folder',
+  });
+  return result;
+});
+
+// Expose opening folder in Windows File Explorer
+ipcMain.handle('open-backup-folder', async (_, folderPath) => {
+  if (folderPath && fs.existsSync(folderPath)) {
+    await shell.openPath(folderPath);
+    return { success: true };
+  }
+  return { success: false, error: 'Folder does not exist.' };
 });
 
 /**
@@ -54,10 +74,9 @@ function checkOnline() {
 }
 
 /**
- * Starts the change-triggered auto cloud backup runner.
+ * Starts the change-triggered auto cloud & folder backup runner.
  * Runs every 15 seconds:
- *   - Checks if db_dirty === 1
- *   - If dirty & online & Drive connected: flushes WAL and upserts backup
+ *   - Checks dirty triggers and auto-syncs to configured local & cloud folders
  */
 function setupAutoCloudBackup(port) {
   let isSyncing = false;
@@ -66,16 +85,13 @@ function setupAutoCloudBackup(port) {
     if (isSyncing) return; // Prevent overlapping runs
 
     try {
-      const online = await checkOnline();
-      if (!online) return; // Offline: gracefully wait
-
       isSyncing = true;
       const res = await new Promise((resolve, reject) => {
         const req = http.request(
           {
             hostname: '127.0.0.1',
             port,
-            path: '/api/drive/auto-backup',
+            path: '/api/backup/auto-sync',
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': 0 },
           },
@@ -93,7 +109,7 @@ function setupAutoCloudBackup(port) {
         try {
           const data = JSON.parse(res.body);
           if (data.success && !data.skipped) {
-            log(`[AutoBackup] ✓ Data changes detected & synced to Drive (${data.data?.file?.size} bytes)`);
+            log(`[AutoBackup] ✓ Data changes detected & synced to backup destinations (${data.data?.filename})`);
           }
         } catch (_) {}
       }
@@ -159,7 +175,7 @@ registerWhatsAppShareHandler();
 // app was opened. A stable port keeps those preferences. The list is a short ladder
 // rather than one number so another program holding the port is a fallback, not a
 // failure; these are high and uncommon enough that in practice the first one wins.
-const PREFERRED_PORTS = [47821, 47822, 47823, 47824, 47825];
+const PREFERRED_PORTS = [5000, 47821, 47822, 47823, 47824, 47825];
 
 // Single-instance: a second launch reveals the running window rather than
 // starting a second server against the same database file.
@@ -208,7 +224,7 @@ if (!app.requestSingleInstanceLock()) {
     const { startServer } = require('../backend/server.js');
     // Binds loopback only — see the DEFAULT_HOST note in backend/server.js.
     const { port } = await startServer({ port: PREFERRED_PORTS });
-    process.env.GOOGLE_REDIRECT_URI = `http://127.0.0.1:${port}/api/drive/callback`;
+    process.env.GOOGLE_REDIRECT_URI = 'http://localhost:5000/api/drive/callback';
     log(`backend started on http://127.0.0.1:${port}`);
 
     // If backend runs on a high port (e.g. 47821), start a port 5000 forwarder

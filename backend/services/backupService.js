@@ -1,14 +1,17 @@
 /**
- * Local Backup Service
- * Handles WAL-safe SQLite snapshots, backup history listing,
- * buffer verification, and fail-safe transactional restorations.
+ * Local & Cloud Auto-Backup Service
+ * Handles WAL-safe SQLite snapshots, cloud folder auto-detection (Google Drive, OneDrive),
+ * custom destination mirroring, backup history listing, buffer verification,
+ * and fail-safe transactional restorations.
  */
 
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const dns = require('dns').promises;
-const { DB_PATH, reloadDb, serialize, backupTo, checkpoint } = require('../database/db');
+const crypto = require('crypto');
+const os = require('os');
+const { DB_PATH, reloadDb, serialize, backupTo, checkpoint, execGet, execRun } = require('../database/db');
 const logger = require('../utils/logger');
 
 // Repo-root backups/ by default; the packaged app overrides this to a writable
@@ -18,9 +21,143 @@ const BACKUP_DIR = process.env.BACKUP_DIR
   ? path.resolve(process.env.BACKUP_DIR)
   : path.resolve(__dirname, '../../backups');
 
-// Ensure backups directory exists
+// Ensure default backups directory exists
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+/**
+ * Reads setting value from SQLite settings table
+ */
+function getSetting(key) {
+  try {
+    const row = execGet('SELECT value FROM settings WHERE key = ?', [key]);
+    return row ? row.value : null;
+  } catch (err) {
+    logger.warn(`Could not read setting '${key}': ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Writes setting value to SQLite settings table
+ */
+function setSetting(key, value) {
+  try {
+    execRun(`
+      INSERT INTO settings(key, value) VALUES(?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = ?
+    `, [key, value, value]);
+  } catch (err) {
+    logger.warn(`Could not set setting '${key}': ${err.message}`);
+  }
+}
+
+/**
+ * Scans standard Windows drive letters and user profile paths for Google Drive & OneDrive
+ * @returns {Array<{ provider: string, path: string, exists: boolean }>}
+ */
+function detectCloudFolders() {
+  const userProfile = process.env.USERPROFILE || os.homedir();
+  const candidates = [];
+
+  // 1. Scan drive letters (G:, F:, H:, I:, D:, E:) for Google Drive for Desktop
+  const driveLetters = ['G', 'F', 'H', 'I', 'D', 'E'];
+  for (const letter of driveLetters) {
+    const root = `${letter}:\\`;
+    const myDrive = path.join(root, 'My Drive');
+    const googleDrive = path.join(root, 'Google Drive');
+    if (fs.existsSync(myDrive)) {
+      candidates.push({
+        provider: `Google Drive (${letter}: Drive)`,
+        path: path.join(myDrive, 'VyapaarSetu_Backups'),
+        exists: true,
+      });
+      break;
+    } else if (fs.existsSync(googleDrive)) {
+      candidates.push({
+        provider: `Google Drive (${letter}: Drive)`,
+        path: path.join(googleDrive, 'VyapaarSetu_Backups'),
+        exists: true,
+      });
+      break;
+    }
+  }
+
+  // 2. Scan User Profile for Google Drive
+  const userGooglePaths = [
+    path.join(userProfile, 'Google Drive'),
+    path.join(userProfile, 'My Drive'),
+    path.join(userProfile, 'GoogleDrive'),
+  ];
+  for (const ugp of userGooglePaths) {
+    if (fs.existsSync(ugp)) {
+      candidates.push({
+        provider: 'Google Drive',
+        path: path.join(ugp, 'VyapaarSetu_Backups'),
+        exists: true,
+      });
+      break;
+    }
+  }
+
+  // 3. Scan Microsoft OneDrive
+  const oneDriveEnv = process.env.OneDrive || process.env.OneDriveCommercial;
+  if (oneDriveEnv && fs.existsSync(oneDriveEnv)) {
+    candidates.push({ provider: 'Microsoft OneDrive', path: path.join(oneDriveEnv, 'VyapaarSetu_Backups'), exists: true });
+  } else {
+    const oneDriveUser = path.join(userProfile, 'OneDrive');
+    if (fs.existsSync(oneDriveUser)) {
+      candidates.push({ provider: 'Microsoft OneDrive', path: path.join(oneDriveUser, 'VyapaarSetu_Backups'), exists: true });
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Retrieves the current auto-backup configuration
+ */
+function getBackupConfig() {
+  const customDir = getSetting('custom_backup_folder')?.trim() || '';
+  const autoBackupEnabled = getSetting('auto_backup_enabled') !== '0';
+  const lastAutoBackup = getSetting('last_cloud_sync') || getSetting('last_backup_sync') || null;
+  const isDirty = getSetting('db_dirty') === '1';
+  const detected = detectCloudFolders();
+
+  const activeDir = (customDir && fs.existsSync(customDir)) ? customDir : BACKUP_DIR;
+
+  return {
+    defaultDir: BACKUP_DIR,
+    customDir,
+    activeDir,
+    autoBackupEnabled,
+    detectedCloudPaths: detected,
+    lastAutoBackup,
+    isDirty,
+  };
+}
+
+/**
+ * Saves the auto-backup directory configuration
+ */
+function saveBackupConfig({ customDir, autoBackupEnabled }) {
+  if (customDir !== undefined) {
+    const trimmed = (customDir || '').trim();
+    if (trimmed) {
+      // Ensure target directory exists
+      if (!fs.existsSync(trimmed)) {
+        fs.mkdirSync(trimmed, { recursive: true });
+      }
+    }
+    setSetting('custom_backup_folder', trimmed);
+  }
+
+  if (autoBackupEnabled !== undefined) {
+    setSetting('auto_backup_enabled', autoBackupEnabled ? '1' : '0');
+  }
+
+  return getBackupConfig();
 }
 
 /**
@@ -60,6 +197,35 @@ function generateBackupFilename(date = new Date()) {
 }
 
 /**
+ * Cleans up old historical snapshots in a target folder, retaining the latest N backups
+ */
+function rotateBackups(folderPath, maxKeep = 30) {
+  try {
+    if (!fs.existsSync(folderPath)) return;
+    const files = fs.readdirSync(folderPath)
+      .filter((f) => f.startsWith('backup-') && (f.endsWith('.db') || f.endsWith('.sqlite')))
+      .map((f) => ({
+        name: f,
+        fullPath: path.join(folderPath, f),
+        mtime: fs.statSync(path.join(folderPath, f)).mtimeMs,
+      }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (files.length > maxKeep) {
+      const toDelete = files.slice(maxKeep);
+      for (const item of toDelete) {
+        try {
+          fs.unlinkSync(item.fullPath);
+          logger.info(`Rotated old backup: ${item.name}`);
+        } catch (_) {}
+      }
+    }
+  } catch (err) {
+    logger.warn(`Backup rotation warning for ${folderPath}: ${err.message}`);
+  }
+}
+
+/**
  * Creates a local backup of the current SQLite database.
  * @returns {Promise<object>} Metadata of the created backup
  */
@@ -81,10 +247,6 @@ async function createBackup() {
     return createBackup();
   }
 
-  // Online backup API rather than a byte copy of DB_PATH. Under WAL the most
-  // recent commits live in the -wal sidecar, so fs.readFileSync(DB_PATH) would
-  // capture a stale database missing the latest sales. backup() folds the WAL in
-  // and writes one self-contained file.
   try {
     await backupTo(destPath);
   } catch (err) {
@@ -94,7 +256,31 @@ async function createBackup() {
   }
   logger.info(`Backup created successfully at: ${destPath}`);
 
+  // Maintain canonical latest file
+  const latestLocal = path.join(BACKUP_DIR, 'vyapaarsetu-latest.db');
+  try { fs.copyFileSync(destPath, latestLocal); } catch (_) {}
+
+  // Mirror to custom cloud folder if configured
+  const customDir = getSetting('custom_backup_folder')?.trim();
+  if (customDir && fs.existsSync(customDir) && path.resolve(customDir) !== path.resolve(BACKUP_DIR)) {
+    try {
+      const customDest = path.join(customDir, filename);
+      const customLatest = path.join(customDir, 'vyapaarsetu-latest.db');
+      fs.copyFileSync(destPath, customDest);
+      fs.copyFileSync(destPath, customLatest);
+      rotateBackups(customDir, 30);
+      logger.info(`Mirrored backup to custom folder: ${customDest}`);
+    } catch (mirrorErr) {
+      logger.warn(`Could not mirror backup to custom folder: ${mirrorErr.message}`);
+    }
+  }
+
+  rotateBackups(BACKUP_DIR, 30);
+
   const stats = fs.statSync(destPath);
+  setSetting('last_cloud_sync', new Date().toISOString());
+  setSetting('db_dirty', '0');
+
   return {
     filename,
     size: stats.size,
@@ -103,39 +289,70 @@ async function createBackup() {
 }
 
 /**
- * Lists all backups in the history folder.
- * @returns {Promise<Array>} List of backup metadata
+ * Executes automatic background sync to local and cloud/custom destinations
  */
-async function listBackups() {
-  if (!fs.existsSync(BACKUP_DIR)) {
-    return [];
+async function performAutoSync() {
+  const isEnabled = getSetting('auto_backup_enabled') !== '0';
+  if (!isEnabled) {
+    return { success: true, skipped: true, reason: 'Auto-backup disabled by user' };
   }
 
-  const files = fs.readdirSync(BACKUP_DIR);
-  const backups = files
-    .filter((file) => file.startsWith('backup-') && (file.endsWith('.db') || file.endsWith('.sqlite')))
-    .map((file) => {
-      const filePath = path.join(BACKUP_DIR, file);
-      const stats = fs.statSync(filePath);
-      return {
-        filename: file,
-        size: stats.size,
-        createdAt: stats.mtime.toISOString(),
-      };
-    });
-
-  // Sort backups by creation time descending (newest first)
-  return backups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const result = await createBackup();
+  logger.info(`[AutoSync] ✓ Backup snapshot successfully created (${result.filename})`);
+  return {
+    success: true,
+    data: result,
+  };
 }
 
 /**
- * Restores the database from a backup file in the backups folder.
- * Creates a safety backup of the current state before overwriting.
- * If the restore fails, it reverts to the safety backup.
+ * Lists all backups from the default and custom history folders.
+ * @returns {Promise<Array>} List of backup metadata
+ */
+async function listBackups() {
+  const seen = new Map();
+
+  const scanFolder = (folderPath, isCustom = false) => {
+    if (!fs.existsSync(folderPath)) return;
+    try {
+      const files = fs.readdirSync(folderPath);
+      for (const file of files) {
+        if (file.startsWith('backup-') && (file.endsWith('.db') || file.endsWith('.sqlite'))) {
+          const filePath = path.join(folderPath, file);
+          try {
+            const stats = fs.statSync(filePath);
+            if (!seen.has(file) || isCustom) {
+              seen.set(file, {
+                filename: file,
+                size: stats.size,
+                createdAt: stats.mtime.toISOString(),
+                location: isCustom ? 'Cloud / Custom Folder' : 'Local App Storage',
+                filePath,
+              });
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  };
+
+  scanFolder(BACKUP_DIR, false);
+
+  const customDir = getSetting('custom_backup_folder')?.trim();
+  if (customDir && fs.existsSync(customDir) && path.resolve(customDir) !== path.resolve(BACKUP_DIR)) {
+    scanFolder(customDir, true);
+  }
+
+  return Array.from(seen.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Restores the database from a backup file.
+ * Checks default folder and custom cloud folder.
+ * Creates a safety backup of current state before overwriting.
  * @param {string} filename The backup file name to restore from
  */
 async function restoreBackup(filename) {
-  // Path traversal guard
   if (!filename || typeof filename !== 'string') {
     throw new Error('Invalid backup filename.');
   }
@@ -144,12 +361,15 @@ async function restoreBackup(filename) {
     throw new Error('Access denied: Invalid backup filename format.');
   }
 
-  const targetPath = path.join(BACKUP_DIR, filename);
-  
-  // Verify the target file resolves inside the backups directory
-  const relative = path.relative(BACKUP_DIR, targetPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('Access denied: Restoring files outside backup folder is forbidden.');
+  let targetPath = path.join(BACKUP_DIR, filename);
+  if (!fs.existsSync(targetPath)) {
+    const customDir = getSetting('custom_backup_folder')?.trim();
+    if (customDir && fs.existsSync(customDir)) {
+      const customCandidate = path.join(customDir, filename);
+      if (fs.existsSync(customCandidate)) {
+        targetPath = customCandidate;
+      }
+    }
   }
 
   if (!fs.existsSync(targetPath)) {
@@ -187,7 +407,6 @@ async function restoreBackup(filename) {
   } catch (err) {
     logger.error('Database restore failed. Attempting fail-safe rollback to safety backup...', err);
     try {
-      // Revert to the pre-restore snapshot.
       reloadDb(safetyBackupBuffer);
       checkpointDatabase();
       logger.info('Database successfully reverted to safety state.');
@@ -199,7 +418,7 @@ async function restoreBackup(filename) {
 }
 
 /**
- * Returns metadata of the latest local backup file.
+ * Returns metadata of the latest backup file.
  * @returns {Promise<object|null>} Latest backup info or null if none
  */
 async function getLatestBackupStatus() {
@@ -219,7 +438,6 @@ function checkInternetStatus() {
     });
     req.setTimeout(3500, () => {
       req.destroy();
-      // fallback to DNS lookup if generate_204 times out
       dns.lookup('google.com')
         .then(() => resolve(true))
         .catch(() => resolve(false));
@@ -232,14 +450,119 @@ function checkInternetStatus() {
   });
 }
 
+/**
+ * Restores the database from a raw Buffer (e.g. uploaded/imported .db file).
+ */
+async function restoreFromBuffer(buffer, originalName = 'imported.db') {
+  if (!buffer || !Buffer.isBuffer(buffer)) {
+    throw new Error('Invalid database file data provided.');
+  }
+
+  if (!isValidSqliteBuffer(buffer)) {
+    throw new Error('Uploaded file is not a valid SQLite database format.');
+  }
+
+  if (!fs.existsSync(DB_PATH)) {
+    throw new Error('Current database file not found. Cannot perform safety backup.');
+  }
+
+  // 1. Create a safety backup first
+  logger.info('Creating safety backup prior to database import...');
+  const safetyBackupBuffer = serialize();
+  const safetyInfo = await createBackup();
+  const safetyFilename = safetyInfo.filename;
+  logger.info(`Safety backup created at name: ${safetyFilename}`);
+
+  // 2. Save the imported file to the backup directory for record-keeping
+  const importedFilename = generateBackupFilename(new Date()).replace('backup-', 'backup-imported-');
+  const importedDestPath = path.join(BACKUP_DIR, importedFilename);
+  try {
+    fs.writeFileSync(importedDestPath, buffer);
+  } catch (saveErr) {
+    logger.warn(`Could not save imported copy to BACKUP_DIR: ${saveErr.message}`);
+  }
+
+  try {
+    // 3. Flush WAL & reload DB
+    checkpointDatabase();
+    logger.info(`Starting restore from imported buffer (${buffer.length} bytes)...`);
+    reloadDb(buffer);
+    checkpointDatabase();
+    logger.info('Database restored successfully from imported file.');
+    return {
+      success: true,
+      restoredFile: importedFilename,
+      originalName,
+      safetyBackup: safetyFilename,
+    };
+  } catch (err) {
+    logger.error('Database restore from buffer failed. Attempting fail-safe rollback to safety backup...', err);
+    try {
+      reloadDb(safetyBackupBuffer);
+      checkpointDatabase();
+      logger.info('Database successfully reverted to safety state.');
+    } catch (rollbackErr) {
+      logger.error('CRITICAL: Rollback to safety backup failed!', rollbackErr);
+    }
+    throw new Error(`Restore failed: ${err.message}. Database has been kept safe.`);
+  }
+}
+
+/**
+ * Gets absolute path for a specific backup file.
+ */
+function getBackupFilePath(filename) {
+  if (!filename || typeof filename !== 'string') {
+    throw new Error('Invalid backup filename.');
+  }
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+    throw new Error('Access denied: Invalid backup filename format.');
+  }
+  let targetPath = path.join(BACKUP_DIR, filename);
+  if (!fs.existsSync(targetPath)) {
+    const customDir = getSetting('custom_backup_folder')?.trim();
+    if (customDir && fs.existsSync(customDir)) {
+      const candidate = path.join(customDir, filename);
+      if (fs.existsSync(candidate)) {
+        targetPath = candidate;
+      }
+    }
+  }
+
+  if (!fs.existsSync(targetPath)) {
+    throw new Error(`Backup file ${filename} does not exist.`);
+  }
+  return targetPath;
+}
+
+/**
+ * Creates a fresh snapshot and returns its absolute path for instant export.
+ */
+async function exportCurrentSnapshot() {
+  const backupInfo = await createBackup();
+  const filePath = path.join(BACKUP_DIR, backupInfo.filename);
+  return {
+    filePath,
+    filename: backupInfo.filename,
+    size: backupInfo.size,
+  };
+}
+
 module.exports = {
   createBackup,
   listBackups,
   restoreBackup,
+  restoreFromBuffer,
+  getBackupFilePath,
+  exportCurrentSnapshot,
   getLatestBackupStatus,
   checkInternetStatus,
   isValidSqliteBuffer,
   checkpointDatabase,
   generateBackupFilename,
+  detectCloudFolders,
+  getBackupConfig,
+  saveBackupConfig,
+  performAutoSync,
   BACKUP_DIR,
 };

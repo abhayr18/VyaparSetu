@@ -232,7 +232,7 @@ export function creditBalance(ctx, customerId) {
 /** All credit_transactions rows for a customer, oldest first. */
 export function ledgerRows(ctx, customerId) {
   const res = ctx.raw.exec(
-    `SELECT id, transaction_type, amount, balance_after_transaction, note, bill_id
+    `SELECT id, transaction_type, amount, balance_after_transaction, note, bill_id, created_at
      FROM credit_transactions WHERE customer_id = ? ORDER BY id ASC`,
     [customerId]
   );

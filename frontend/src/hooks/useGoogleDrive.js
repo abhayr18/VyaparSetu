@@ -6,6 +6,7 @@ export default function useGoogleDrive() {
   const [isDirty, setIsDirty] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const [lastChange, setLastChange] = useState(null);
+  const [hasCredentials, setHasCredentials] = useState(true);
   const [driveBackups, setDriveBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -19,6 +20,7 @@ export default function useGoogleDrive() {
         setIsDirty(!!res.data.isDirty);
         setLastSync(res.data.lastSync || null);
         setLastChange(res.data.lastChange || null);
+        setHasCredentials(res.data.hasCredentials !== false);
         return res.data.connected;
       }
     } catch (err) {
@@ -51,6 +53,25 @@ export default function useGoogleDrive() {
         } else {
           window.location.href = res.authUrl;
         }
+
+        // Auto-poll status every 2 seconds for up to 2 minutes so UI activates immediately upon browser completion
+        let attempts = 0;
+        const maxAttempts = 60;
+        const poller = setInterval(async () => {
+          attempts += 1;
+          try {
+            const isConnected = await fetchStatus();
+            if (isConnected) {
+              clearInterval(poller);
+              await fetchDriveBackups();
+              setSuccess('Connected to Google Drive successfully!');
+            } else if (attempts >= maxAttempts) {
+              clearInterval(poller);
+            }
+          } catch (_) {
+            if (attempts >= maxAttempts) clearInterval(poller);
+          }
+        }, 2000);
       } else {
         throw new Error('Could not retrieve authentication URL.');
       }
@@ -59,7 +80,7 @@ export default function useGoogleDrive() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchStatus, fetchDriveBackups]);
 
   const disconnectDrive = useCallback(async () => {
     setLoading(true);
@@ -169,6 +190,7 @@ export default function useGoogleDrive() {
     isDirty,
     lastSync,
     lastChange,
+    hasCredentials,
     driveBackups,
     loading,
     error,

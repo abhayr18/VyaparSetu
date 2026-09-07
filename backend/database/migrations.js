@@ -552,6 +552,35 @@ const MIGRATIONS = [
       addColumnIfMissing(db, 'vegetables', 'category', "TEXT DEFAULT 'General'");
     },
   },
+
+  {
+    version: 11,
+    name: 'customers-optional-mobile-number',
+    up(db) {
+      db.exec(`
+        CREATE TABLE customers_migration_11 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          name           TEXT    NOT NULL,
+          mobile         TEXT    DEFAULT '',
+          address        TEXT    DEFAULT '',
+          notes          TEXT    DEFAULT '',
+          credit_balance INTEGER DEFAULT 0,
+          is_deleted     INTEGER DEFAULT 0,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO customers_migration_11 (id, name, mobile, address, notes, credit_balance, is_deleted, created_at, updated_at)
+          SELECT id, name, COALESCE(mobile, ''), COALESCE(address, ''), COALESCE(notes, ''), credit_balance, is_deleted, created_at, updated_at
+          FROM customers;
+        DROP TABLE customers;
+        ALTER TABLE customers_migration_11 RENAME TO customers;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_mobile_unique 
+          ON customers(mobile) 
+          WHERE mobile IS NOT NULL AND mobile != '' AND is_deleted = 0;
+      `);
+      logger.info('  ~ customers table migrated to allow optional mobile numbers');
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

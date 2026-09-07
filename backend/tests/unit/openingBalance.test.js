@@ -325,4 +325,22 @@ describe('adding a customer who already owes money', () => {
     expect(creditBalance(ctx, first.id)).toBe(0);
     expect(ledgerRows(ctx, first.id)).toHaveLength(2);
   });
+
+  it('records the opening balance with the specified custom date', async () => {
+    const ctx = await freshDb();
+    const customerService = ctx.requireApp('services/customerService.js');
+
+    const customer = customerService.createCustomer({
+      name: 'Old Khata Customer',
+      mobile: '9876500099',
+      opening_balance: 4500,
+      opening_balance_date: '2026-07-15',
+    });
+
+    const rows = ledgerRows(ctx, customer.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].transaction_type).toBe('OPENING_BALANCE');
+    expect(rows[0].amount).toBe(4500);
+    expect(rows[0].created_at).toMatch(/^2026-07-15/);
+  });
 });

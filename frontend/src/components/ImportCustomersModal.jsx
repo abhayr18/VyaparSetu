@@ -111,6 +111,7 @@ export default function ImportCustomersModal({
           address: item.address,
           notes: item.notes,
           opening_balance: item.opening_balance,
+          opening_balance_date: item.opening_balance_date,
         })),
         updateExisting,
       });
@@ -331,9 +332,16 @@ export default function ImportCustomersModal({
                         <td style={{ padding: '6px 10px', color: 'var(--color-text-muted)' }}>{item.address || '—'}</td>
                         <td style={{ padding: '6px 10px' }}>
                           {item.opening_balance > 0 ? (
-                            <span style={{ color: 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
-                              ₹{Number(item.opening_balance).toFixed(2)}
-                            </span>
+                            <div>
+                              <span style={{ color: 'var(--color-danger, #ef4444)', fontWeight: 600 }}>
+                                ₹{Number(item.opening_balance).toFixed(2)}
+                              </span>
+                              {item.opening_balance_date && (
+                                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
+                                  {item.opening_balance_date}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             '₹0'
                           )}

@@ -271,8 +271,26 @@ function hasOpeningBalance(customerId) {
  * Stored signed, like recordAdjustment, so a customer who was in credit (the shop
  * owed *them*) can be opened with a negative figure.
  */
-function recordOpeningBalance({ customer_id, amount, note }) {
+function formatOpeningBalanceDate(inputDate) {
+  if (!inputDate) return null;
+  const str = String(inputDate).trim();
+  if (!str) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const d = new Date(`${str}T12:00:00`);
+    if (!isNaN(d.getTime())) {
+      return d.toISOString().replace('T', ' ').slice(0, 19);
+    }
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().replace('T', ' ').slice(0, 19);
+  }
+  return null;
+}
+
+function recordOpeningBalance({ customer_id, amount, note, date, created_at }) {
   const signedPaise = toPaise(amount);
+  const formattedDate = formatOpeningBalanceDate(date || created_at);
 
   return transaction(() => {
     execRun(
@@ -284,11 +302,19 @@ function recordOpeningBalance({ customer_id, amount, note }) {
     const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
     const balanceAfter = balanceRow[0]?.credit_balance || 0;
 
-    execRun(
-      `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
-       VALUES (?, 'OPENING_BALANCE', ?, 'Other', ?, ?)`,
-      [customer_id, signedPaise, note || 'Opening balance', balanceAfter]
-    );
+    if (formattedDate) {
+      execRun(
+        `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction, created_at)
+         VALUES (?, 'OPENING_BALANCE', ?, 'Other', ?, ?, ?)`,
+        [customer_id, signedPaise, note || 'Opening balance', balanceAfter, formattedDate]
+      );
+    } else {
+      execRun(
+        `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
+         VALUES (?, 'OPENING_BALANCE', ?, 'Other', ?, ?)`,
+        [customer_id, signedPaise, note || 'Opening balance', balanceAfter]
+      );
+    }
 
     return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
   });

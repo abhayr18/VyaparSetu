@@ -132,5 +132,28 @@ describe('Bulk Import', () => {
       expect(res.created).toBe(1);
       expect(res.errors).toHaveLength(2);
     });
+
+    it('records custom opening balance date during customer bulk import', async () => {
+      const ctx = await freshDb();
+
+      const items = [
+        {
+          name: 'दिनेश माने',
+          mobile: '9876543299',
+          opening_balance: 3200,
+          opening_balance_date: '2026-06-20',
+        },
+      ];
+
+      const res = ctx.customerService.bulkImportCustomers(items);
+      expect(res.created).toBe(1);
+
+      const dinesh = ctx.customerService.searchCustomers('9876543299')[0];
+      const ledger = ctx.customerService.getCustomerLedger(dinesh.id);
+      expect(ledger.transactions).toHaveLength(1);
+      expect(ledger.transactions[0].transaction_type).toBe('OPENING_BALANCE');
+      expect(ledger.transactions[0].amount).toBe(3200);
+      expect(ledger.transactions[0].created_at).toMatch(/^2026-06-20/);
+    });
   });
 });

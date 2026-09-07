@@ -101,6 +101,20 @@ const CUSTOMER_HEADER_MAP = {
     'उधारीशिल्लक',
     'शिल्लक',
   ],
+  opening_balance_date: [
+    'openingbalancedate',
+    'balancedate',
+    'openingdate',
+    'date',
+    'udhardate',
+    'आरंभीचीतारीख',
+    'बाकीतारीख',
+    'उधारीतारीख',
+    'आरंभीचीबाकीतारीख',
+    'सुरुवातीच्याबाकीचीतारीख',
+    'तारीख',
+    'दिनांक',
+  ],
 };
 
 function matchField(rawHeader, headerMap) {
@@ -253,12 +267,13 @@ export function generateCustomersSampleTemplate() {
       'मोबाईल (Mobile Number - 10 Digits)',
       'पत्ता (Address)',
       'आरंभीची उधारी (Opening Balance ₹)',
+      'आरंभीची तारीख (Opening Date YYYY-MM-DD)',
       'टिप्पणी (Notes)',
     ],
-    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 1500, 'नियमित हॉटेल ग्राहक'],
-    ['सुरेश जाधव', '9876543211', 'मार्केट यार्ड, पुणे', 0, 'रोख व उधारी'],
-    ['गणेश शिंदे', '9876543212', 'कोथरूड', 500, ''],
-    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 2400, 'आठवड्यातून एकदा हिशोब'],
+    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 1500, '2026-08-01', 'नियमित हॉटेल ग्राहक'],
+    ['सुरेश जाधव', '9876543211', 'मार्केट यार्ड, पुणे', 0, '', 'रोख व उधारी'],
+    ['गणेश शिंदे', '9876543212', 'कोथरूड', 500, '2026-08-15', ''],
+    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 2400, '2026-08-10', 'आठवड्यातून एकदा हिशोब'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -267,6 +282,7 @@ export function generateCustomersSampleTemplate() {
     { wch: 28 },
     { wch: 26 },
     { wch: 26 },
+    { wch: 30 },
     { wch: 24 },
   ];
 
@@ -395,10 +411,60 @@ export async function parseVegetablesExcelFile(file, existingVegetables = []) {
 }
 
 /**
- * Parse an uploaded Excel/CSV file into customer records with row-by-row validation.
+ * Parse a raw date value from an Excel cell into YYYY-MM-DD.
+ */
+export function parseExcelDate(rawVal) {
+  if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
+    return null;
+  }
+  if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
+    const y = rawVal.getFullYear();
+    const m = String(rawVal.getMonth() + 1).padStart(2, '0');
+    const d = String(rawVal.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  // Excel serial date number
+  if (typeof rawVal === 'number' && rawVal > 0) {
+    const d = new Date(Math.round((rawVal - 25569) * 86400 * 1000));
+    if (!isNaN(d.getTime())) {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+  }
+  const str = String(rawVal).trim();
+  // YYYY-MM-DD or YYYY/MM/DD
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(str)) {
+    const parts = str.split(/[-/]/);
+    const y = parts[0];
+    const m = parts[1].padStart(2, '0');
+    const d = parts[2].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  // DD-MM-YYYY or DD/MM/YYYY
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(str)) {
+    const parts = str.split(/[-/]/);
+    const d = parts[0].padStart(2, '0');
+    const m = parts[1].padStart(2, '0');
+    const y = parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return null;
+}
+
+/**
+ * Parse uploaded Excel file for Customer Import.
  * @param {File} file
  * @param {Array} existingCustomers
- * @returns {Promise<{ items: Array, summary: { total: number, valid: number, invalid: number, duplicates: number } }>}
+ * @returns {Promise<{ items: Array, summary: Object }>}
  */
 export async function parseCustomersExcelFile(file, existingCustomers = []) {
   const buffer = await readFileAsArrayBuffer(file);
@@ -430,7 +496,14 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
   if (fieldMapping.mobile === undefined) fieldMapping.mobile = 1;
   if (fieldMapping.address === undefined) fieldMapping.address = 2;
   if (fieldMapping.opening_balance === undefined) fieldMapping.opening_balance = 3;
-  if (fieldMapping.notes === undefined) fieldMapping.notes = 4;
+  if (fieldMapping.notes === undefined) {
+    // If opening_balance_date was mapped to col 4, notes could be col 5
+    if (fieldMapping.opening_balance_date === 4) {
+      fieldMapping.notes = 5;
+    } else {
+      fieldMapping.notes = 4;
+    }
+  }
 
   const existingMobilesMap = new Set(
     existingCustomers.map((c) => String(c.mobile || '').trim())
@@ -456,6 +529,8 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
     const rawAddress = String(row[fieldMapping.address] ?? '').trim();
     const rawNotes = String(row[fieldMapping.notes] ?? '').trim();
     const rawOpening = row[fieldMapping.opening_balance];
+    const rawOpeningDate = fieldMapping.opening_balance_date !== undefined ? row[fieldMapping.opening_balance_date] : null;
+    const openingBalanceDate = parseExcelDate(rawOpeningDate);
 
     const rowErrors = [];
 
@@ -463,10 +538,8 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
       rowErrors.push('Customer name is required');
     }
 
-    if (!rawMobile) {
-      rowErrors.push('Mobile number is required');
-    } else if (!/^\d{10}$/.test(rawMobile)) {
-      rowErrors.push('Mobile must be 10 digits');
+    if (rawMobile && !/^\d{10}$/.test(rawMobile)) {
+      rowErrors.push('Mobile must be 10 digits if provided');
     }
 
     let openingBalance = 0;
@@ -493,6 +566,7 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
       address: rawAddress,
       notes: rawNotes,
       opening_balance: openingBalance,
+      opening_balance_date: openingBalanceDate,
       isValid,
       isExisting,
       errors: rowErrors,

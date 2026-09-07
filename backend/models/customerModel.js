@@ -44,10 +44,12 @@ function findById(id) {
  * @returns {Object|null}
  */
 function findByMobile(mobile, excludeId = null) {
+  if (!mobile || !String(mobile).trim()) return null;
+  const cleanMobile = String(mobile).trim();
   const sql = excludeId
-    ? `SELECT id FROM customers WHERE mobile = ? AND id != ? AND is_deleted = 0`
-    : `SELECT id FROM customers WHERE mobile = ? AND is_deleted = 0`;
-  const params = excludeId ? [mobile, excludeId] : [mobile];
+    ? `SELECT id FROM customers WHERE mobile = ? AND mobile != '' AND id != ? AND is_deleted = 0`
+    : `SELECT id FROM customers WHERE mobile = ? AND mobile != '' AND is_deleted = 0`;
+  const params = excludeId ? [cleanMobile, excludeId] : [cleanMobile];
   const rows = execSelect(sql, params);
   return rows[0] || null;
 }
@@ -58,11 +60,12 @@ function findByMobile(mobile, excludeId = null) {
  * @returns {Array}
  */
 function search(query) {
-  const like = `%${query}%`;
+  const cleanQuery = (query || '').trim();
+  const like = `%${cleanQuery}%`;
   return execSelect(
     `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
      FROM customers
-     WHERE (name LIKE ? OR mobile LIKE ?) AND is_deleted = 0
+     WHERE (name LIKE ? OR (mobile != '' AND mobile LIKE ?)) AND is_deleted = 0
      ORDER BY name ASC`,
     [like, like]
   ).map((c) => rowToRupees(c, 'customers'));
@@ -73,35 +76,34 @@ function search(query) {
  * @param {{ name, mobile, address, notes }} data
  * @returns {Object} The newly created/updated customer
  */
-function create({ name, mobile, address = '', notes = '' }) {
-  // Check if a record already exists with this mobile (even if deleted)
-  const rows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [mobile.trim()]);
+function create({ name, mobile = '', address = '', notes = '' }) {
+  const cleanMobile = (mobile || '').trim();
 
-  if (rows.length > 0) {
-    // Reactivate and update the existing soft-deleted record
-    const existingId = rows[0].id;
-    execRun(
-      `UPDATE customers
-       SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [name.trim(), address.trim(), notes.trim(), existingId]
-    );
-  } else {
-    // Insert fresh record
-    execRun(
-      `INSERT INTO customers (name, mobile, address, notes, credit_balance)
-       VALUES (?, ?, ?, ?, 0.0)`,
-      [name.trim(), mobile.trim(), address.trim(), notes.trim()]
-    );
+  if (cleanMobile) {
+    // Check if a record already exists with this mobile (even if deleted)
+    const rows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [cleanMobile]);
+
+    if (rows.length > 0) {
+      // Reactivate and update the existing soft-deleted record
+      const existingId = rows[0].id;
+      execRun(
+        `UPDATE customers
+         SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [name.trim(), (address || '').trim(), (notes || '').trim(), existingId]
+      );
+      return findById(existingId);
+    }
   }
 
-  // Retrieve the inserted/updated row
-  const resultRows = execSelect(
-    `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
-     FROM customers WHERE mobile = ?`,
-    [mobile.trim()]
+  // Insert fresh record
+  const result = execRun(
+    `INSERT INTO customers (name, mobile, address, notes, credit_balance)
+     VALUES (?, ?, ?, ?, 0)`,
+    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim()]
   );
-  return rowToRupees(resultRows[0], 'customers');
+
+  return findById(result.lastInsertRowid);
 }
 
 /**
@@ -110,12 +112,13 @@ function create({ name, mobile, address = '', notes = '' }) {
  * @param {{ name, mobile, address, notes }} data
  * @returns {Object|null} Updated customer or null if not found
  */
-function update(id, { name, mobile, address = '', notes = '' }) {
+function update(id, { name, mobile = '', address = '', notes = '' }) {
+  const cleanMobile = (mobile || '').trim();
   execRun(
     `UPDATE customers
      SET name = ?, mobile = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), mobile.trim(), address.trim(), notes.trim(), id]
+    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim(), id]
   );
   return findById(id);
 }
@@ -226,18 +229,15 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
         }
 
         const mobile = String(item.mobile || '').trim();
-        if (!mobile) {
-          errors.push({ row: index + 1, name, error: 'Mobile number is required.' });
-          return;
-        }
-        if (!/^\d{10}$/.test(mobile)) {
-          errors.push({ row: index + 1, name, mobile, error: 'Mobile number must be exactly 10 digits.' });
+        if (mobile && !/^\d{10}$/.test(mobile)) {
+          errors.push({ row: index + 1, name, mobile, error: 'Mobile number must be exactly 10 digits if provided.' });
           return;
         }
 
         const address = (item.address || '').trim();
         const notes = (item.notes || '').trim();
         const openingRaw = item.opening_balance;
+        const openingDate = item.opening_balance_date || item.date || null;
         let opening = 0;
         if (openingRaw !== undefined && openingRaw !== null && String(openingRaw).trim() !== '') {
           const num = Number(openingRaw);
@@ -246,7 +246,7 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
           }
         }
 
-        const rows = execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]);
+        const rows = mobile ? execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]) : [];
 
         if (rows.length > 0) {
           const existing = rows[0];
@@ -268,6 +268,7 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
               creditModel.recordOpeningBalance({
                 customer_id: existing.id,
                 amount: opening,
+                date: openingDate,
                 note: 'Opening balance (imported)',
               });
             }
@@ -275,24 +276,23 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
             skipped++;
           }
         } else {
-          execRun(
+          const res = execRun(
             `INSERT INTO customers (name, mobile, address, notes, credit_balance)
-             VALUES (?, ?, ?, ?, 0.0)`,
+             VALUES (?, ?, ?, ?, 0)`,
             [name, mobile, address, notes]
           );
 
-          const insertedRows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [mobile]);
-          const newId = insertedRows[0]?.id;
+          const newId = res.lastInsertRowid;
+          created++;
 
-          if (newId && opening > 0) {
+          if (opening > 0 && newId) {
             creditModel.recordOpeningBalance({
               customer_id: newId,
               amount: opening,
+              date: openingDate,
               note: 'Opening balance (imported)',
             });
           }
-
-          created++;
         }
       } catch (err) {
         errors.push({ row: index + 1, name: item.name || '', error: err.message });

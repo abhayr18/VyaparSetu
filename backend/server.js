@@ -60,8 +60,9 @@ app.use(cors({
     return callback(null, LOOPBACK_ORIGIN.test(origin));
   },
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use(express.raw({ type: ['application/octet-stream', 'application/x-sqlite3'], limit: '100mb' }));
 app.use(requestLogger);
 
 // ─── Licensing ──────────────────────────────────────────────────────────────

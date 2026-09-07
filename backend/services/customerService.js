@@ -24,14 +24,15 @@ function validate({ name, mobile }, excludeId = null) {
     errors.push('Customer name is required.');
   }
 
-  if (!mobile || !mobile.trim()) {
-    errors.push('Mobile number is required.');
-  } else if (!/^\d{10}$/.test(mobile.trim())) {
-    errors.push('Mobile number must be exactly 10 digits.');
-  } else {
-    const existing = customerModel.findByMobile(mobile.trim(), excludeId);
-    if (existing) {
-      errors.push(`Mobile number ${mobile.trim()} is already registered.`);
+  if (mobile && String(mobile).trim()) {
+    const cleanMobile = String(mobile).trim();
+    if (!/^\d{10}$/.test(cleanMobile)) {
+      errors.push('Mobile number must be exactly 10 digits.');
+    } else {
+      const existing = customerModel.findByMobile(cleanMobile, excludeId);
+      if (existing) {
+        errors.push(`Mobile number ${cleanMobile} is already registered.`);
+      }
     }
   }
 
@@ -92,7 +93,7 @@ function searchCustomers(query) {
  * and was not — and the vendor's only record of the real figure is the notebook they
  * are working from.
  *
- * @param {{ name, mobile, address, notes, opening_balance? }} data
+ * @param {{ name, mobile, address, notes, opening_balance?, opening_balance_date? }} data
  * @returns {Object} Created customer
  */
 function createCustomer(data) {
@@ -135,6 +136,7 @@ function createCustomer(data) {
     creditModel.recordOpeningBalance({
       customer_id: created.id,
       amount: opening,
+      date: data.opening_balance_date,
       note: 'Opening balance (brought forward)',
     });
     // Re-read so the caller sees the balance the ledger just set, not the zero the

@@ -26,7 +26,7 @@ import {
 } from '../components/Icons';
 
 export default function ReportsPage() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const {
     reportType,
     setReportType,
