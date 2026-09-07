@@ -3,22 +3,9 @@
  * Database operations for customer vegetable transactions.
  */
 
-const { getDb, saveDb } = require('../database/db');
+const { execSelect, execRun } = require('../database/db');
 const { DEFAULT_COMMISSION_PERCENT } = require('../utils/calculation');
-
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
+const { toPaise, toRupees, rowToRupees } = require('../utils/money');
 
 /**
  * Creates a new transaction record.
@@ -43,9 +30,7 @@ function create({
   remaining_amount = 0,
   transaction_date
 }) {
-  const db = getDb();
-
-  db.run(
+  const info = execRun(
     `INSERT INTO transactions (
       customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
       base_amount, commission_rate, commission_amount, final_amount,
@@ -57,26 +42,23 @@ function create({
       vegetable_name_snapshot,
       weight,
       unit,
-      rate,
-      base_amount,
+      toPaise(rate),
+      toPaise(base_amount),
       commission_rate,
-      commission_amount,
-      final_amount,
+      toPaise(commission_amount),
+      toPaise(final_amount),
       payment_type,
       payment_mode,
-      paid_amount,
-      remaining_amount,
+      toPaise(paid_amount),
+      toPaise(remaining_amount),
       transaction_date
     ]
   );
 
-  // last_insert_rowid() is per-connection and reflects this INSERT specifically.
-  // The previous SELECT MAX(id) WHERE customer_id = ? returned the wrong row as
-  // soon as anything else inserted for the same customer in between, and it had
-  // to run before saveDb() to be even approximately right.
-  const newId = execSelect('SELECT last_insert_rowid() AS id')[0]?.id;
-
-  saveDb();
+  // lastInsertRowid is per-connection and reflects this INSERT specifically. The
+  // previous SELECT MAX(id) WHERE customer_id = ? returned the wrong row as soon
+  // as anything else inserted for the same customer in between.
+  const newId = Number(info.lastInsertRowid);
 
   return findById(newId);
 }
@@ -93,46 +75,68 @@ function findById(id) {
      WHERE t.id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'transactions');
 }
 
 /**
  * Find transactions for a customer on a specific date (YYYY-MM-DD).
+ *
+ * The `bills` join is LEFT for the same reason it is in `findAll`: an entry still waiting
+ * to be settled has a NULL `bill_id` and is the row the vendor is actually looking for.
+ * It carries `bill_number` so the history table can name the bill an entry went into
+ * rather than only saying that one exists.
  */
 function findByCustomerAndDate(customerId, date) {
   return execSelect(
-    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+            b.bill_number AS bill_number
      FROM transactions t
      JOIN customers c ON t.customer_id = c.id
+     LEFT JOIN bills b ON t.bill_id = b.id
      WHERE t.customer_id = ? AND t.transaction_date = ?
      ORDER BY t.created_at DESC, t.id DESC`,
     [customerId, date]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
  * Find transactions for a customer within a date range (YYYY-MM-DD to YYYY-MM-DD).
+ *
+ * Same LEFT join as its single-date twin, and for the same reason — a range is where
+ * billed and unbilled entries are most likely to sit side by side, because the vendor
+ * may already have billed some days inside it.
  */
 function findByCustomerAndDateRange(customerId, startDate, endDate) {
   return execSelect(
-    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+            b.bill_number AS bill_number
      FROM transactions t
      JOIN customers c ON t.customer_id = c.id
-     WHERE t.customer_id = ? 
-       AND t.transaction_date >= ? 
+     LEFT JOIN bills b ON t.bill_id = b.id
+     WHERE t.customer_id = ?
+       AND t.transaction_date >= ?
        AND t.transaction_date <= ?
      ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC`,
     [customerId, startDate, endDate]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
  * Find all transactions for a customer (or all customers) with optional date filtering.
+ *
+ * This is what the Day Book reads with just a `date`: one day's entries across every
+ * customer, which is why the customer join is here rather than in the caller.
+ *
+ * `bills` is a LEFT join on purpose — an unbilled entry has a NULL `bill_id` and must
+ * still appear. An INNER join would silently hide exactly the rows the vendor most needs
+ * to see. `bill_number` is TEXT, so rowToRupees leaves it alone.
  */
 function findAll({ customerId, date, startDate, endDate }) {
-  let sql = `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+  let sql = `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile,
+                    b.bill_number AS bill_number
              FROM transactions t
              JOIN customers c ON t.customer_id = c.id
+             LEFT JOIN bills b ON t.bill_id = b.id
              WHERE 1=1`;
   const params = [];
 
@@ -157,7 +161,7 @@ function findAll({ customerId, date, startDate, endDate }) {
 
   sql += ` ORDER BY t.transaction_date DESC, t.created_at DESC, t.id DESC`;
 
-  return execSelect(sql, params);
+  return execSelect(sql, params).map((t) => rowToRupees(t, 'transactions'));
 }
 
 /**
@@ -165,7 +169,7 @@ function findAll({ customerId, date, startDate, endDate }) {
  */
 function getDailyCustomerSummary(customerId, date) {
   const rows = execSelect(
-    `SELECT 
+    `SELECT
        COUNT(t.id) AS total_transactions,
        SUM(t.weight) AS total_weight,
        SUM(t.base_amount) AS total_base_amount,
@@ -182,11 +186,11 @@ function getDailyCustomerSummary(customerId, date) {
   return {
     total_transactions: Number(row.total_transactions || 0),
     total_weight: Number((Number(row.total_weight || 0)).toFixed(2)),
-    total_base_amount: Number((Number(row.total_base_amount || 0)).toFixed(2)),
-    total_commission: Number((Number(row.total_commission || 0)).toFixed(2)),
-    total_final_amount: Number((Number(row.total_final_amount || 0)).toFixed(2)),
-    total_paid_amount: Number((Number(row.total_paid_amount || 0)).toFixed(2)),
-    total_remaining_amount: Number((Number(row.total_remaining_amount || 0)).toFixed(2))
+    total_base_amount: Number(toRupees(row.total_base_amount).toFixed(2)),
+    total_commission: Number(toRupees(row.total_commission).toFixed(2)),
+    total_final_amount: Number(toRupees(row.total_final_amount).toFixed(2)),
+    total_paid_amount: Number(toRupees(row.total_paid_amount).toFixed(2)),
+    total_remaining_amount: Number(toRupees(row.total_remaining_amount).toFixed(2))
   };
 }
 
@@ -205,7 +209,72 @@ function findUnbilledByCustomerAndDate(customerId, date) {
      WHERE t.customer_id = ? AND t.transaction_date = ? AND t.bill_id IS NULL
      ORDER BY t.created_at DESC, t.id DESC`,
     [customerId, date]
-  );
+  ).map((t) => rowToRupees(t, 'transactions'));
+}
+
+/**
+ * Finds a customer's unbilled transactions across a date range, oldest first.
+ *
+ * The range twin of findUnbilledByCustomerAndDate, and it carries the same
+ * `bill_id IS NULL` filter for the same reason: days already consolidated into a
+ * daily bill are already paid for in the ledger, so a range spanning them must skip
+ * them rather than bill them a second time.
+ *
+ * Ordered ascending, unlike the single-date query, because the range bill prints its
+ * lines grouped by day and a customer reads a week chronologically.
+ */
+function findUnbilledByCustomerAndDateRange(customerId, startDate, endDate) {
+  return execSelect(
+    `SELECT t.*, c.name AS customer_name, c.mobile AS customer_mobile
+     FROM transactions t
+     JOIN customers c ON t.customer_id = c.id
+     WHERE t.customer_id = ?
+       AND t.transaction_date >= ?
+       AND t.transaction_date <= ?
+       AND t.bill_id IS NULL
+     ORDER BY t.transaction_date ASC, t.created_at ASC, t.id ASC`,
+    [customerId, startDate, endDate]
+  ).map((t) => rowToRupees(t, 'transactions'));
+}
+
+/**
+ * Every customer who has entries not yet consolidated into a bill.
+ *
+ * This is the query that stops the Transactions page being a guessing game. The range
+ * filter used to default to today→today, so a vendor whose customer last bought a
+ * fortnight ago saw an empty table and a disabled Generate Bill button — with nothing
+ * anywhere on screen saying unbilled entries existed at all. The only way through was
+ * to guess that the start date needed dragging backwards.
+ *
+ * One row per customer, oldest pending day first, so the settlement that has been
+ * waiting longest sits at the top.
+ *
+ * `oldest_date` / `newest_date` bound exactly the span a bill should cover, so a caller
+ * can hand them straight to generateBillFromTransactions and the vendor never picks a
+ * date by hand.
+ */
+function findPendingSettlements() {
+  return execSelect(
+    `SELECT t.customer_id,
+            c.name                  AS customer_name,
+            c.mobile                AS customer_mobile,
+            COUNT(*)                AS entry_count,
+            MIN(t.transaction_date) AS oldest_date,
+            MAX(t.transaction_date) AS newest_date,
+            SUM(t.final_amount)     AS total_amount
+     FROM transactions t
+     JOIN customers c ON t.customer_id = c.id
+     WHERE t.bill_id IS NULL
+     GROUP BY t.customer_id
+     ORDER BY MIN(t.transaction_date) ASC, c.name ASC`
+  ).map((r) => ({
+    ...r,
+    // SUM over an INTEGER paise column comes back in paise. rowToRupees converts by
+    // looking the column name up in MONEY_FIELDS, and `total_amount` is an alias that
+    // appears in no table, so it has to be converted here or it reaches the vendor
+    // reading a hundred times too large.
+    total_amount: toRupees(r.total_amount),
+  }));
 }
 
 /**
@@ -220,11 +289,10 @@ function findUnbilledByCustomerAndDate(customerId, date) {
 function markAsBilled(ids, billId) {
   if (!Array.isArray(ids) || ids.length === 0) return 0;
 
-  const db = getDb();
   const placeholders = ids.map(() => '?').join(', ');
-  db.run(
+  execRun(
     `UPDATE transactions SET bill_id = ?, updated_at = CURRENT_TIMESTAMP
-     WHERE id IN (${placeholders}) AND bill_id IS NULL`,
+     WHERE id IN (${placeholders})`,
     [billId, ...ids]
   );
 
@@ -232,18 +300,15 @@ function markAsBilled(ids, billId) {
     `SELECT COUNT(*) AS n FROM transactions WHERE id IN (${placeholders}) AND bill_id = ?`,
     [...ids, billId]
   );
-  saveDb();
   return Number(claimed[0]?.n || 0);
 }
 
 /** Releases transactions back to unbilled, used when a bill is deleted. */
 function clearBillLink(billId) {
-  const db = getDb();
-  db.run(
+  execRun(
     `UPDATE transactions SET bill_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE bill_id = ?`,
     [billId]
   );
-  saveDb();
   return true;
 }
 
@@ -254,10 +319,69 @@ function clearBillLink(billId) {
  * transactionService.deleteTransaction, which does both inside one transaction.
  */
 function deleteById(id) {
-  const db = getDb();
-  db.run(`DELETE FROM transactions WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`DELETE FROM transactions WHERE id = ?`, [id]);
   return true;
+}
+
+/**
+ * Updates an existing transaction record.
+ */
+function updateById(id, {
+  customer_id,
+  vegetable_id,
+  vegetable_name_snapshot,
+  weight,
+  unit = 'kg',
+  rate,
+  base_amount,
+  commission_rate = DEFAULT_COMMISSION_PERCENT,
+  commission_amount,
+  final_amount,
+  payment_type = 'Credit',
+  payment_mode = 'Credit',
+  paid_amount = 0,
+  remaining_amount = 0,
+  transaction_date
+}) {
+  execRun(
+    `UPDATE transactions SET
+      customer_id = ?,
+      vegetable_id = ?,
+      vegetable_name_snapshot = ?,
+      weight = ?,
+      unit = ?,
+      rate = ?,
+      base_amount = ?,
+      commission_rate = ?,
+      commission_amount = ?,
+      final_amount = ?,
+      payment_type = ?,
+      payment_mode = ?,
+      paid_amount = ?,
+      remaining_amount = ?,
+      transaction_date = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`,
+    [
+      customer_id,
+      vegetable_id,
+      vegetable_name_snapshot,
+      weight,
+      unit,
+      toPaise(rate),
+      toPaise(base_amount),
+      commission_rate,
+      toPaise(commission_amount),
+      toPaise(final_amount),
+      payment_type,
+      payment_mode,
+      toPaise(paid_amount),
+      toPaise(remaining_amount),
+      transaction_date,
+      id
+    ]
+  );
+  return findById(id);
 }
 
 module.exports = {
@@ -266,9 +390,12 @@ module.exports = {
   findByCustomerAndDate,
   findUnbilledByCustomerAndDate,
   findByCustomerAndDateRange,
+  findUnbilledByCustomerAndDateRange,
+  findPendingSettlements,
   findAll,
   getDailyCustomerSummary,
   markAsBilled,
   clearBillLink,
-  deleteById
+  deleteById,
+  updateById
 };

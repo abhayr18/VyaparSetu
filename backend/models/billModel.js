@@ -1,32 +1,18 @@
 // backend/models/billModel.js
 
-const { getDb, transaction } = require('../database/db');
+const { execSelect, execGet, execRun, transaction } = require('../database/db');
 const { normalizeCommissionPercent } = require('../utils/calculation');
+const { toPaise, rowToRupees } = require('../utils/money');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
-
-// Helper to map rows
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => rowToObj(columns, row));
-}
 
 /** Get all bills with customer names, and attach items */
 function findAll() {
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      ORDER BY b.date DESC, b.id DESC`
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -36,13 +22,13 @@ function findAll() {
 /** Get a bill by its ID, with items attached */
 function findById(id) {
   const rows = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.id = ?`,
     [id]
   );
-  const bill = rows[0] || null;
+  const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
     bill.items = getByBillId(bill.id);
   }
@@ -52,13 +38,13 @@ function findById(id) {
 /** Get a bill by its bill_number, with items attached */
 function findByNumber(number) {
   const rows = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.bill_number = ?`,
     [number]
   );
-  const bill = rows[0] || null;
+  const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
     bill.items = getByBillId(bill.id);
   }
@@ -69,13 +55,13 @@ function findByNumber(number) {
 function search(query) {
   const like = `%${query}%`;
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.bill_number LIKE ? OR c.name LIKE ?
      ORDER BY b.date DESC, b.id DESC`,
     [like, like]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -85,13 +71,13 @@ function search(query) {
 /** Get bills by customer ID, and attach items */
 function findByCustomerId(customerId) {
   const bills = execSelect(
-    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile
+    `SELECT b.*, c.name AS customer_name, c.mobile AS customer_mobile, c.credit_balance AS customer_credit_balance
      FROM bills b
      JOIN customers c ON b.customer_id = c.id
      WHERE b.customer_id = ?
      ORDER BY b.date DESC, b.id DESC`,
     [customerId]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
     bill.items = getByBillId(bill.id);
   }
@@ -120,8 +106,8 @@ function selfBookedCredit(billId) {
 }
 
 /** Removes the ledger rows this bill originated, leaving transaction-owned rows. */
-function deleteSelfBookedLedgerRows(db, billId) {
-  db.run(
+function deleteSelfBookedLedgerRows(billId) {
+  execRun(
     `DELETE FROM credit_transactions
      WHERE bill_id = ? AND transaction_type = 'CREDIT_ADDED' AND transaction_id IS NULL`,
     [billId]
@@ -129,20 +115,51 @@ function deleteSelfBookedLedgerRows(db, billId) {
 }
 
 /** Adds `amount` to a customer's balance and writes the matching ledger row. */
-function bookCreditRow(db, { customerId, billId, amount, note }) {
-  db.run(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
-    amount,
+function bookCreditRow({ customerId, billId, amount, note }) {
+  const amountPaise = toPaise(amount);
+  execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+    amountPaise,
     customerId,
   ]);
   const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customerId]);
   const balanceAfter = Number(balanceRow[0]?.credit_balance || 0);
 
-  db.run(
+  execRun(
     `INSERT INTO credit_transactions
        (customer_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
      VALUES (?, ?, 'CREDIT_ADDED', ?, 'Other', ?, ?)`,
-    [customerId, billId, amount, note, balanceAfter]
+    [customerId, billId, amountPaise, note, balanceAfter]
   );
+}
+
+/**
+ * The next bill number: a plain running serial — `B-1`, `B-2`, `B-437`.
+ *
+ * The vendor reads this number out loud, writes it on a paper slip and searches for
+ * it later, so shortness is the whole requirement. The old format spelled out the
+ * period, the customer id and four digits of the epoch clock —
+ * `BILL-20260801-20260828-008-3640`, 31 characters that no code ever parsed.
+ * Everything it encoded is already its own column (`date`, `period_start`,
+ * `period_end`, `customer_id`) and already shown next to the number in the UI.
+ *
+ * Only `B-<digits>` counts toward the maximum, so bills issued under the old format
+ * keep their numbers untouched and can never collide with a new one. A deleted bill
+ * leaves a gap in the sequence — the same thing a paper bill book does, and what
+ * makes a removed settlement visible to anyone auditing the run.
+ *
+ * MUST be called inside the transaction that does the INSERT: this reads the table it
+ * is about to be written to, and read-then-write is only atomic if nothing can slip
+ * between the two.
+ */
+function nextBillNumber() {
+  // GLOB, not LIKE: `LIKE 'B-%'` also matches `B-` followed by anything, and CAST
+  // would silently turn a non-numeric tail into 0.
+  const row = execGet(
+    `SELECT MAX(CAST(SUBSTR(bill_number, 3) AS INTEGER)) AS maxSerial
+       FROM bills
+      WHERE bill_number GLOB 'B-[0-9]*'`
+  );
+  return `B-${Number(row?.maxSerial || 0) + 1}`;
 }
 
 /**
@@ -161,39 +178,43 @@ function bookCreditRow(db, { customerId, billId, amount, note }) {
  *   day's debt.
  */
 function create(data, { bookCredit = true } = {}) {
-  const db = getDb();
-  const actualNumber = data.bill_number || `BILL-${Date.now()}`;
   const dateVal = data.date || new Date().toISOString().split('T')[0];
 
   return transaction(() => {
-    db.run(
+    // Drawn inside the transaction — see nextBillNumber.
+    const actualNumber = data.bill_number || nextBillNumber();
+
+    const info = execRun(
       `INSERT INTO bills (
-        bill_number, customer_id, date, subtotal, discount_type, discount_value,
+        bill_number, customer_id, date, period_start, period_end, subtotal, discount_type, discount_value,
         discount_amount, commission_rate, commission_amount, hamali_amount, transport_amount, final_amount,
         paid_amount, remaining_amount, payment_type, payment_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         actualNumber,
         data.customer_id,
         dateVal,
-        data.subtotal,
+        // NULL unless this bill covers a span of days. A single-day bill's period is
+        // its own `date`, so writing it here twice would only invite the two to drift.
+        data.period_start || null,
+        data.period_end || null,
+        toPaise(data.subtotal),
         data.discount_type || 'fixed',
         data.discount_value || 0,
-        data.discount_amount || 0,
+        toPaise(data.discount_amount || 0),
         normalizeCommissionPercent(data.commission_rate),
-        data.commission_amount,
-        data.hamali_amount || 0,
-        data.transport_amount || 0,
-        data.final_amount,
-        data.paid_amount || 0,
-        data.remaining_amount || 0,
+        toPaise(data.commission_amount),
+        toPaise(data.hamali_amount || 0),
+        toPaise(data.transport_amount || 0),
+        toPaise(data.final_amount),
+        toPaise(data.paid_amount || 0),
+        toPaise(data.remaining_amount || 0),
         data.payment_type,
         data.payment_status,
       ]
     );
 
-    const idRow = execSelect('SELECT last_insert_rowid() AS id');
-    const billId = idRow[0]?.id;
+    const billId = Number(info.lastInsertRowid);
     if (!billId) throw new Error('Failed to retrieve inserted bill ID');
 
     if (data.items && data.items.length) {
@@ -202,7 +223,7 @@ function create(data, { bookCredit = true } = {}) {
 
     const rem = Number(data.remaining_amount) || 0;
     if (bookCredit && rem > 0) {
-      bookCreditRow(db, {
+      bookCreditRow({
         customerId: data.customer_id,
         billId,
         amount: rem,
@@ -216,7 +237,6 @@ function create(data, { bookCredit = true } = {}) {
 
 /** Update an existing bill and replace its items if provided */
 function update(id, data) {
-  const db = getDb();
   const oldBill = findById(id);
   if (!oldBill) throw new Error('Bill not found');
 
@@ -226,11 +246,11 @@ function update(id, data) {
 
   return transaction(() => {
     if (originatedOwnCredit) {
-      db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+      execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
         selfBookedCredit(id),
         oldBill.customer_id,
       ]);
-      deleteSelfBookedLedgerRows(db, id);
+      deleteSelfBookedLedgerRows(id);
     }
 
     const fields = [];
@@ -238,22 +258,22 @@ function update(id, data) {
     if (data.bill_number) { fields.push('bill_number = ?'); values.push(data.bill_number); }
     if (data.customer_id) { fields.push('customer_id = ?'); values.push(data.customer_id); }
     if (data.date) { fields.push('date = ?'); values.push(data.date); }
-    if (data.subtotal !== undefined) { fields.push('subtotal = ?'); values.push(data.subtotal); }
+    if (data.subtotal !== undefined) { fields.push('subtotal = ?'); values.push(toPaise(data.subtotal)); }
     if (data.discount_type) { fields.push('discount_type = ?'); values.push(data.discount_type); }
     if (data.discount_value !== undefined) { fields.push('discount_value = ?'); values.push(data.discount_value); }
-    if (data.discount_amount !== undefined) { fields.push('discount_amount = ?'); values.push(data.discount_amount); }
+    if (data.discount_amount !== undefined) { fields.push('discount_amount = ?'); values.push(toPaise(data.discount_amount)); }
     if (data.commission_rate !== undefined) { fields.push('commission_rate = ?'); values.push(normalizeCommissionPercent(data.commission_rate)); }
-    if (data.commission_amount !== undefined) { fields.push('commission_amount = ?'); values.push(data.commission_amount); }
-    if (data.hamali_amount !== undefined) { fields.push('hamali_amount = ?'); values.push(data.hamali_amount); }
-    if (data.transport_amount !== undefined) { fields.push('transport_amount = ?'); values.push(data.transport_amount); }
-    if (data.final_amount !== undefined) { fields.push('final_amount = ?'); values.push(data.final_amount); }
-    if (data.paid_amount !== undefined) { fields.push('paid_amount = ?'); values.push(data.paid_amount); }
-    if (data.remaining_amount !== undefined) { fields.push('remaining_amount = ?'); values.push(data.remaining_amount); }
+    if (data.commission_amount !== undefined) { fields.push('commission_amount = ?'); values.push(toPaise(data.commission_amount)); }
+    if (data.hamali_amount !== undefined) { fields.push('hamali_amount = ?'); values.push(toPaise(data.hamali_amount)); }
+    if (data.transport_amount !== undefined) { fields.push('transport_amount = ?'); values.push(toPaise(data.transport_amount)); }
+    if (data.final_amount !== undefined) { fields.push('final_amount = ?'); values.push(toPaise(data.final_amount)); }
+    if (data.paid_amount !== undefined) { fields.push('paid_amount = ?'); values.push(toPaise(data.paid_amount)); }
+    if (data.remaining_amount !== undefined) { fields.push('remaining_amount = ?'); values.push(toPaise(data.remaining_amount)); }
     if (data.payment_type) { fields.push('payment_type = ?'); values.push(data.payment_type); }
     if (data.payment_status) { fields.push('payment_status = ?'); values.push(data.payment_status); }
 
     if (fields.length) {
-      db.run(
+      execRun(
         `UPDATE bills SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [...values, id]
       );
@@ -272,7 +292,7 @@ function update(id, data) {
     const billNum = data.bill_number || oldBill.bill_number;
 
     if (originatedOwnCredit && newRem > 0) {
-      bookCreditRow(db, {
+      bookCreditRow({
         customerId: newCustId,
         billId: id,
         amount: newRem,
@@ -291,7 +311,6 @@ function update(id, data) {
  * still has bill_items violates the constraint and the whole delete rolls back.
  */
 function remove(id) {
-  const db = getDb();
   const oldBill = findById(id);
   if (!oldBill) return false;
 
@@ -299,7 +318,7 @@ function remove(id) {
 
   return transaction(() => {
     if (ownCredit > 0) {
-      db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+      execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
         ownCredit,
         oldBill.customer_id,
       ]);
@@ -308,14 +327,14 @@ function remove(id) {
     // Rows this bill originated are gone with it. Rows a transaction originated
     // stay — that debt is still owed, because the transaction still exists — and
     // are simply unlinked.
-    deleteSelfBookedLedgerRows(db, id);
-    db.run(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+    deleteSelfBookedLedgerRows(id);
+    execRun(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
 
     // Return the source transactions to unbilled so the day can be re-billed.
-    db.run(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+    execRun(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
 
-    db.run(`DELETE FROM bill_items WHERE bill_id = ?`, [id]);
-    db.run(`DELETE FROM bills WHERE id = ?`, [id]);
+    execRun(`DELETE FROM bill_items WHERE bill_id = ?`, [id]);
+    execRun(`DELETE FROM bills WHERE id = ?`, [id]);
 
     return true;
   });
@@ -328,6 +347,7 @@ module.exports = {
   findByCustomerId,
   search,
   create,
+  nextBillNumber,
   update,
   remove,
   selfBookedCredit,

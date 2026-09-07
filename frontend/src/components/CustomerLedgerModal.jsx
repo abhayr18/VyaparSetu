@@ -3,16 +3,20 @@
  * Shows the complete history of a customer:
  *   - Summary KPI cards (Total Billed, Total Paid, Outstanding)
  *   - Tabbed timeline: All | Invoices | Payments Received
+ *   - Opening balance entry for a customer migrated from a paper notebook
  *   - WhatsApp share button (generates a text summary)
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { customersApi } from '../services/apiService';
+import { customersApi, creditApi } from '../services/apiService';
 import { useTranslation } from '../hooks/useTranslation';
+import { displayAmount } from '../utils/creditLedger';
 import {
   ReceiptIcon, PhoneIcon, MapPinIcon, AlertIcon,
-  HistoryIcon, CheckIcon, ChartIcon,
+  HistoryIcon, CheckIcon, ChartIcon, EyeIcon,
 } from './Icons';
+import ReceiptPrint from './ReceiptPrint';
+import { sanitizeWhatsAppPhone, createWhatsAppShareUrl } from '../utils/whatsappShare';
 
 // ─── Small Helpers ────────────────────────────────────────────────────────────
 function fmt(val) {
@@ -23,14 +27,6 @@ function fmt(val) {
 function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function fmtDateTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
 }
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
@@ -87,12 +83,22 @@ function Tab({ label, active, count, onClick }) {
 }
 
 // ─── Main Modal ───────────────────────────────────────────────────────────────
-export default function CustomerLedgerModal({ customerId, customerName, onClose }) {
+export default function CustomerLedgerModal({ customerId, customerName, onClose, onLedgerChange }) {
   const { t } = useTranslation();
   const [ledger, setLedger]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
-  const [tab, setTab]         = useState('all'); // all | invoices | payments
+  const [tab, setTab]                 = useState('all'); // all | invoices | payments
+  const [viewingBill, setViewingBill] = useState(null);
+
+  // Opening-balance entry. Collapsed until the vendor asks for it, because it is a
+  // once-per-customer migration step, not part of day-to-day work.
+  const [obOpen, setObOpen]     = useState(false);
+  const [obAmount, setObAmount] = useState('');
+  const [obNote, setObNote]     = useState('');
+  const [obSaving, setObSaving] = useState(false);
+  const [obError, setObError]   = useState('');
+  const [obDone, setObDone]     = useState('');
 
   const fetchLedger = useCallback(async () => {
     setLoading(true);
@@ -109,6 +115,42 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose 
   }, [customerId]);
 
   useEffect(() => { fetchLedger(); }, [fetchLedger]);
+
+  // A customer can only be opened once. The backend enforces it; this hides the
+  // action so the vendor is never offered a button that can only fail.
+  const hasOpeningBalance = Boolean(
+    ledger?.transactions?.some((tx) => tx.transaction_type === 'OPENING_BALANCE')
+  );
+
+  async function handleOpeningBalanceSubmit(e) {
+    e.preventDefault();
+    const amount = Number(obAmount);
+    if (!obAmount.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setObError(t('credit.amountInvalid'));
+      return;
+    }
+
+    setObSaving(true);
+    setObError('');
+    const res = await creditApi
+      .recordOpeningBalance({ customer_id: customerId, amount, note: obNote.trim() })
+      .catch((err) => ({ success: false, error: err.message }));
+    setObSaving(false);
+
+    if (!res.success) {
+      setObError(res.error || t('common.error'));
+      return;
+    }
+
+    setObOpen(false);
+    setObAmount('');
+    setObNote('');
+    setObDone(t('credit.openingBalanceSuccess'));
+    await fetchLedger();
+    // The customers list shows credit_balance in its own column, so it has to be
+    // refetched too or the vendor sees a stale zero behind this modal.
+    if (onLedgerChange) onLedgerChange();
+  }
 
   // ─── WhatsApp Share ────────────────────────────────────────────────────────
   function handleWhatsApp() {
@@ -149,8 +191,10 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose 
 
     lines.push(`_Sent from VyapaarSetu_`);
 
-    const text = encodeURIComponent(lines.join('\n'));
-    window.open(`https://wa.me/91${mobile}?text=${text}`, '_blank');
+    const text = lines.join('\n');
+    const cleanPhone = sanitizeWhatsAppPhone(mobile);
+    const url = createWhatsAppShareUrl(cleanPhone, text) || `https://api.whatsapp.com/send/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
   }
 
   // ─── Render Items Based on Tab ─────────────────────────────────────────────
@@ -190,6 +234,82 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose 
           ))}
         </div>
 
+        {/* ── Opening Balance (notebook migration) ────────────────────────── */}
+        {/* Offered here rather than on the Udhar page because that page only lists
+            customers who already owe something — a customer whose only debt is the
+            one about to be entered would not appear on it at all. */}
+        <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--color-border)' }}>
+          {obDone && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--color-success)', fontWeight: 600, marginBottom: obOpen ? 8 : 0 }}>
+              <CheckIcon style={{ width: 13, height: 13 }} /> {obDone}
+            </div>
+          )}
+
+          {hasOpeningBalance ? (
+            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              {t('credit.openingBalanceAlreadySet')}
+            </div>
+          ) : obOpen ? (
+            <form onSubmit={handleOpeningBalanceSubmit} noValidate>
+              <p style={{ margin: '0 0 10px', fontSize: '0.74rem', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+                {t('credit.openingBalanceHelp')}
+              </p>
+
+              {obError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: 'var(--color-error)', marginBottom: 8 }}>
+                  <AlertIcon style={{ width: 13, height: 13, flexShrink: 0 }} /> {obError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', width: 150 }}>
+                  <span style={{ position: 'absolute', left: 10, top: 8, fontWeight: 600, color: 'var(--color-text-secondary)' }}>₹</span>
+                  <input
+                    type="number"
+                    className={`form-input${obError ? ' input-error' : ''}`}
+                    value={obAmount}
+                    min="0.01"
+                    step="0.01"
+                    autoFocus
+                    placeholder="0.00"
+                    style={{ paddingLeft: 24 }}
+                    onChange={(e) => { setObAmount(e.target.value); if (obError) setObError(''); }}
+                  />
+                </div>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={obNote}
+                  placeholder={t('credit.openingBalanceNotePlaceholder')}
+                  style={{ flex: 1, minWidth: 180 }}
+                  onChange={(e) => setObNote(e.target.value)}
+                />
+                <button type="submit" className="btn btn-primary" disabled={obSaving} style={{ padding: '6px 14px', fontSize: '0.8rem' }}>
+                  {obSaving ? t('common.loading') : t('common.save')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={obSaving}
+                  style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                  onClick={() => { setObOpen(false); setObError(''); setObAmount(''); setObNote(''); }}
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => { setObOpen(true); setObDone(''); }}
+              style={{ padding: '4px 12px', fontSize: '0.78rem' }}
+            >
+              + {t('credit.setOpeningBalance')}
+            </button>
+          )}
+        </div>
+
         {/* ── Filter Tabs ─────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', gap: 8, padding: '12px 20px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
           <Tab label="All History"       active={tab === 'all'}      count={bills.length + transactions.length} onClick={() => setTab('all')} />
@@ -217,16 +337,16 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose 
     ].sort((a, b) => new Date(b._date) - new Date(a._date));
 
     if (items.length === 0) return <EmptyState label="No history found for this customer." />;
-    return items.map((item, i) => (
+    return items.map((item) => (
       item._type === 'bill'
-        ? <BillRow key={`b-${item.id}`} bill={item} />
+        ? <BillRow key={`b-${item.id}`} bill={item} onView={setViewingBill} />
         : <TxRow key={`t-${item.id}`} tx={item} />
     ));
   }
 
   function renderInvoices(bills) {
     if (bills.length === 0) return <EmptyState label="No invoices found." />;
-    return bills.map(b => <BillRow key={b.id} bill={b} />);
+    return bills.map(b => <BillRow key={b.id} bill={b} onView={setViewingBill} />);
   }
 
   function renderTransactions(txs, type) {
@@ -292,6 +412,15 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose 
           {renderContent()}
         </div>
       </div>
+
+      {/* ── Direct Invoice Viewer ────────────────────────────────────────── */}
+      {viewingBill && (
+        <ReceiptPrint
+          isOpen={Boolean(viewingBill)}
+          onClose={() => setViewingBill(null)}
+          bill={viewingBill}
+        />
+      )}
     </>
   );
 }
@@ -306,20 +435,22 @@ function EmptyState({ label }) {
   );
 }
 
-function BillRow({ bill }) {
-  const statusColor = bill.payment_status === 'Paid' ? 'var(--color-success)' : bill.payment_status === 'Partial' ? '#d97706' : 'var(--color-error)';
+function BillRow({ bill, onView }) {
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '90px 1fr auto auto',
-      gap: 12,
-      alignItems: 'center',
-      padding: '10px 20px',
-      borderBottom: '1px solid var(--color-border-light)',
-      transition: 'background 0.1s',
-    }}
-    onMouseEnter={e => e.currentTarget.style.background = 'var(--color-bg-light)'}
-    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '90px 1fr auto auto auto',
+        gap: 12,
+        alignItems: 'center',
+        padding: '10px 20px',
+        borderBottom: '1px solid var(--color-border-light)',
+        transition: 'background 0.1s',
+        cursor: 'pointer',
+      }}
+      onClick={() => onView && onView(bill)}
+      onMouseEnter={e => e.currentTarget.style.background = 'var(--color-bg-light)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
       {/* Date */}
       <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
@@ -353,6 +484,26 @@ function BillRow({ bill }) {
 
       {/* Status */}
       <StatusBadge status={bill.payment_status} />
+
+      {/* View Action Icon */}
+      <button
+        type="button"
+        className="btn-icon"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onView) onView(bill);
+        }}
+        title="View Invoice"
+        style={{
+          background: 'var(--color-primary-light)',
+          color: 'var(--color-primary)',
+          border: 'none',
+          padding: '4px 6px',
+          cursor: 'pointer',
+        }}
+      >
+        <EyeIcon style={{ width: 14, height: 14 }} />
+      </button>
     </div>
   );
 }
@@ -360,10 +511,16 @@ function BillRow({ bill }) {
 function TxRow({ tx }) {
   const isPayment = tx.transaction_type === 'PAYMENT_RECEIVED';
   const isCredit  = tx.transaction_type === 'CREDIT_ADDED';
-  const color     = isPayment ? 'var(--color-success)' : isCredit ? 'var(--color-error)' : 'var(--color-text-secondary)';
-  const bg        = isPayment ? 'var(--color-success-bg)' : isCredit ? 'var(--color-error-bg)' : 'var(--color-bg-light)';
-  const label     = isPayment ? 'Payment Received' : isCredit ? 'Credit Added' : 'Adjustment';
-  const sign      = isPayment ? '−' : '+';
+  const isOpening = tx.transaction_type === 'OPENING_BALANCE';
+  const color     = isPayment ? 'var(--color-success)' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
+  const bg        = isPayment ? 'var(--color-success-bg)' : (isCredit || isOpening) ? 'var(--color-error-bg)' : 'var(--color-bg-light)';
+  // Named explicitly rather than falling through to "Adjustment": the vendor needs to
+  // be able to tell debt carried over from the notebook apart from a correction they
+  // made, and those two read very differently when a customer disputes a balance.
+  const label     = isPayment ? 'Payment Received' : isCredit ? 'Credit Added' : isOpening ? 'Opening Balance' : 'Adjustment';
+  // Sign and magnitude derived from the same signed amount, so a written-off adjustment
+  // reads −₹500.00 rather than the +₹-500.00 a type-based sign produced.
+  const { sign, magnitude } = displayAmount(tx.transaction_type, tx.amount);
 
   return (
     <div
@@ -410,7 +567,7 @@ function TxRow({ tx }) {
 
       {/* Amount */}
       <div style={{ textAlign: 'right', fontWeight: 800, fontSize: '0.9rem', color }}>
-        {sign}{fmt(tx.amount)}
+        {sign}{fmt(magnitude)}
       </div>
 
       {/* Balance after */}

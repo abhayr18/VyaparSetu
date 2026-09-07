@@ -18,11 +18,15 @@ router.get('/',    ctrl.getAll);
 // GET    /api/customers/:id/ledger   ← must be BEFORE /:id
 router.get('/:id/ledger', ctrl.getLedger);
 
+// POST   /api/customers/bulk         ← must be BEFORE /:id
+router.post('/bulk', ctrl.bulkImport);
+
 // GET    /api/customers/:id
 router.get('/:id', ctrl.getById);
 
 // POST   /api/customers
 router.post('/',   ctrl.create);
+
 
 // PUT    /api/customers/:id
 router.put('/:id', ctrl.update);

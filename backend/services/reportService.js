@@ -95,11 +95,26 @@ async function getCommissionReport(startDate, endDate) {
   }
 }
 
+async function getAllInOneReport(startDate, endDate) {
+  if (startDate || endDate) {
+    const err = validateRange(startDate, endDate);
+    if (err) return { success: false, error: err };
+  }
+
+  try {
+    const report = reportModel.getAllInOneReport(startDate, endDate);
+    return { success: true, data: report };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getDailySalesReport,
   getRangeSalesReport,
   getCustomersReport,
   getVegetablesReport,
   getCreditReport,
-  getCommissionReport
+  getCommissionReport,
+  getAllInOneReport,
 };

@@ -126,6 +126,58 @@ describe('collecting a payment', () => {
     expect(res.success).toBe(false);
     expect(creditBalance(ctx, customer.id)).toBe(324);
   });
+
+  it('settles bills and transactions in FIFO order from Credit to Paid/Partial', async () => {
+    const { ctx, customer, vegetable } = await customerOwing324();
+
+    // Bill the first sale (₹324)
+    const bill1 = await ctx.transactionService.generateBillFromTransactions({
+      customerId: customer.id,
+      date: TODAY,
+    });
+    expect(bill1.data.payment_status).toBe('Credit');
+    expect(paise(bill1.data.remaining_amount)).toBe(324);
+
+    // Create a second sale on next day (₹324)
+    await ctx.transactionService.createTransaction({
+      customer_id: customer.id,
+      vegetable_id: vegetable.id,
+      weight: 10,
+      rate: 30,
+      payment_type: 'Credit',
+      transaction_date: '2026-08-26',
+    });
+
+    const bill2 = await ctx.transactionService.generateBillFromTransactions({
+      customerId: customer.id,
+      date: '2026-08-26',
+    });
+    expect(bill2.data.payment_status).toBe('Credit');
+    expect(paise(bill2.data.remaining_amount)).toBe(324);
+
+    // Customer owes ₹648 in total. Customer pays ₹500
+    const res = await ctx.creditService.collectPayment({
+      customer_id: customer.id,
+      amount: 500,
+      payment_mode: 'Cash',
+    });
+    expect(res.success).toBe(true);
+
+    // Bill 1 (₹324) should be fully PAID
+    const updatedBill1 = ctx.billModel.findById(bill1.data.id);
+    expect(updatedBill1.payment_status).toBe('Paid');
+    expect(paise(updatedBill1.paid_amount)).toBe(324);
+    expect(paise(updatedBill1.remaining_amount)).toBe(0);
+
+    // Bill 2 (₹324) should be Partial (500 - 324 = 176 paid, 148 remaining)
+    const updatedBill2 = ctx.billModel.findById(bill2.data.id);
+    expect(updatedBill2.payment_status).toBe('Partial');
+    expect(paise(updatedBill2.paid_amount)).toBe(176);
+    expect(paise(updatedBill2.remaining_amount)).toBe(148);
+
+    // Customer balance is now ₹148
+    expect(creditBalance(ctx, customer.id)).toBe(148);
+  });
 });
 
 describe('adjusting a balance by hand', () => {

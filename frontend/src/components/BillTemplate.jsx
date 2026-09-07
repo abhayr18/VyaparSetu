@@ -1,6 +1,12 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import useSettings from '../hooks/useSettings';
 import { useTranslation } from '../hooks/useTranslation';
+import {
+  grossItems,
+  groupItemsByDate,
+  formatBillDate,
+  formatBillPeriod,
+} from '../utils/billDisplay';
 
 // Reusable Marathi combined numbers lookup (20-99)
 const marathiCombined = {
@@ -89,20 +95,75 @@ export default function BillTemplate({ bill }) {
 
   if (!bill) return null;
 
-  const subtotal = bill.subtotal || 0;
   const discountAmount = bill.discount_amount || 0;
-  const commissionAmount = bill.commission_amount || 0;
   const finalAmount = bill.final_amount || 0;
   const paidAmount = bill.paid_amount || 0;
   const remainingAmount = bill.remaining_amount || 0;
 
+  // Previous outstanding balance before this bill:
+  // Derived from the customer's total outstanding balance minus what this bill left unpaid.
+  const customerBalance = Number(bill.customer_credit_balance || 0);
+  const previousBalance = Math.max(0, Math.round((customerBalance - remainingAmount) * 100) / 100);
+  const totalPayableAmount = Math.round((finalAmount + previousBalance) * 100) / 100;
+  const netDueAmount = Math.round((previousBalance + remainingAmount) * 100) / 100;
+
   const isMarathi = language === 'mr';
+
+  // Commission is folded into the item rates and never shown as a line. The subtotal
+  // shown is therefore the grossed one, so the column above it adds up to it and
+  // subtotal − discount + hamali + transport still lands on Total Payable.
+  const displayItems = grossItems(bill.items, bill);
+
+  // Always group items datewise so every bill displays clear per-day breakdown
+  const dayGroups = groupItemsByDate(displayItems, bill.date);
+  const periodLabel = formatBillPeriod(bill, isMarathi);
+
   const themeColor = isMarathi ? '#b71c1c' : '#1a6b3c'; // Traditional Red Ink for Marathi APMC, Slate Green for English
 
-  // Extract market location / city
-  const city = settings.address 
-    ? settings.address.split(',').pop().trim() 
-    : (isMarathi ? 'फलटण' : 'Phaltan');
+  const cellBorder = `1.5px solid ${themeColor}`;
+
+  /** One vegetable line. Shared by the flat and the datewise renderings. */
+  function renderItemRow(item, key) {
+    const isKg = item.vegetable_unit === 'kg';
+    return (
+      <tr key={key} style={{ borderBottom: `1px solid ${themeColor}` }}>
+        <td style={{ padding: '8px', borderRight: cellBorder, fontWeight: '600' }}>
+          {item.vegetable_name}
+        </td>
+        {/* unit quantity column */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'center' }}>
+          {!isKg ? `${item.quantity} ${item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : ''}` : '—'}
+        </td>
+        {/* weight column */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
+          {isKg ? `${item.quantity} kg` : '—'}
+        </td>
+        {/* rate */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
+          ₹{Number(item.rate).toFixed(2)}
+        </td>
+        {/* amount */}
+        <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
+          ₹{Number(item.total).toFixed(2)}
+        </td>
+      </tr>
+    );
+  }
+
+  // Extract market location, city, market name, gala
+  const city = settings.city || (settings.address
+    ? settings.address.split(',').pop().trim()
+    : (isMarathi ? 'फलटण' : 'Phaltan'));
+  const marketName = settings.market_name || (isMarathi ? 'कृषी उत्पन्न बाजार समिती' : 'APMC Market');
+  const galaNumber = settings.gala_number ? `(${settings.gala_number})` : '';
+
+  // Devotion text
+  const defaultDevotion = isMarathi ? '॥ हरि ॐ ॥  ॥ श्रीराम ॥  ॥ अंबा ॥' : '|| Hari Om ||  || Shri Ram ||  || Amba ||';
+  const devotionText = (settings.devotion_text && settings.devotion_text.trim()) || defaultDevotion;
+  const devotionParts = devotionText.split(/\s{2,}|\s{1,}\|\s{1,}|\t/).filter(Boolean);
+
+  // Phone numbers line
+  const phones = [settings.mobile_number, settings.secondary_mobile].filter(Boolean).join(' / ');
 
   return (
     <div
@@ -121,20 +182,22 @@ export default function BillTemplate({ bill }) {
         boxSizing: 'border-box',
       }}
     >
-      {/* Devotion Headers (॥ हरि ॐ ॥  ॥ श्रीराम ॥  ॥ अंबा ॥) */}
+      {/* Devotion Headers */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: devotionParts.length > 1 ? 'space-between' : 'center',
           fontSize: '0.82rem',
           fontWeight: 'bold',
           color: themeColor,
           marginBottom: '6px',
         }}
       >
-        <span>{isMarathi ? '॥ हरि ॐ ॥' : '|| Hari Om ||'}</span>
-        <span>{isMarathi ? '॥ श्रीराम ॥' : '|| Shri Ram ||'}</span>
-        <span>{isMarathi ? '॥ अंबा ॥' : '|| Amba ||'}</span>
+        {devotionParts.length > 1 ? (
+          devotionParts.map((part, idx) => <span key={idx}>{part}</span>)
+        ) : (
+          <span>{devotionText}</span>
+        )}
       </div>
 
       {/* APMC Market Line */}
@@ -149,7 +212,7 @@ export default function BillTemplate({ bill }) {
         }}
       >
         <span>
-          {isMarathi ? 'कृषी उत्पन्न बाजार समिती,' : 'APMC,'} {city}
+          {marketName}, {city} {galaNumber}
         </span>
         <span>
           {isMarathi ? `(${city} न्यायकक्षेत)` : `(${city} Jurisdiction)`}
@@ -179,15 +242,26 @@ export default function BillTemplate({ bill }) {
             marginTop: '2px',
           }}
         >
-          {settings.owner_name ? (
+          {settings.owner_name && (
             <span>
-              {settings.owner_name} - {settings.mobile_number}
-            </span>
-          ) : (
-            <span>
-              {isMarathi ? 'भाजीपाला व फळे अडतदार' : 'Vegetables & Fruits Commission Agent'}
+              {settings.owner_name} {phones ? `(${phones})` : ''}
             </span>
           )}
+          {!settings.owner_name && phones && (
+            <span>{phones}</span>
+          )}
+        </div>
+
+        {/* Tagline / Business Nature */}
+        <div
+          style={{
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            color: '#444',
+            marginTop: '2px',
+          }}
+        >
+          {settings.tagline || (isMarathi ? 'भाजीपाला व फळे अडतदार' : 'Vegetables & Fruits Commission Agent')}
         </div>
       </div>
 
@@ -207,7 +281,9 @@ export default function BillTemplate({ bill }) {
       >
         <div>
           <span>{isMarathi ? 'पा. नं.' : 'Bill No.'} </span>
-          <span style={{ fontSize: '1.1rem', color: themeColor }}>{bill.bill_number}</span>
+          <span style={{ fontSize: '1.1rem', color: themeColor }}>
+            {bill.bill_number || (isMarathi ? 'खाते उतारा' : 'STATEMENT')}
+          </span>
         </div>
         <div style={{ fontSize: '0.78rem', maxWidth: '60%', textAlign: 'right' }}>
           {settings.address || (isMarathi ? 'भाजीपाला मार्केट' : 'Vegetable Market')}
@@ -244,10 +320,12 @@ export default function BillTemplate({ bill }) {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>
-              {isMarathi ? 'दिनांक :' : 'Date :'}
+              {dayGroups
+                ? (isMarathi ? 'कालावधी :' : 'Period :')
+                : (isMarathi ? 'दिनांक :' : 'Date :')}
             </span>
-            <span style={{ borderBottom: '1px dotted #555', paddingBottom: '2px' }}>
-              {new Date(bill.date).toLocaleDateString(isMarathi ? 'mr-IN' : 'en-IN')}
+            <span style={{ borderBottom: '1px dotted #555', paddingBottom: '2px', whiteSpace: 'nowrap' }}>
+              {periodLabel}
             </span>
           </div>
         </div>
@@ -283,40 +361,65 @@ export default function BillTemplate({ bill }) {
           </tr>
         </thead>
         <tbody>
-          {bill.items?.map((item, idx) => {
-            const isKg = item.vegetable_unit === 'kg';
-            return (
-              <tr key={idx} style={{ borderBottom: `1px solid ${themeColor}` }}>
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, fontWeight: '600' }}>
-                  {item.vegetable_name}
-                </td>
-                {/* unit quantity column */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'center' }}>
-                  {!isKg ? `${item.quantity} ${item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : ''}` : '—'}
-                </td>
-                {/* weight column */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right' }}>
-                  {isKg ? `${item.quantity} kg` : '—'}
-                </td>
-                {/* rate */}
-                <td style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right' }}>
-                  ₹{Number(item.rate).toFixed(2)}
-                </td>
-                {/* amount */}
-                <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold' }}>
-                  ₹{Number(item.total).toFixed(2)}
-                </td>
-              </tr>
-            );
-          })}
-          {/* Pad empty rows if list is short, to keep APMC visual look */}
-          {bill.items && bill.items.length < 4 && 
-            Array.from({ length: 4 - bill.items.length }).map((_, idx) => (
+          {dayGroups
+            ? dayGroups.map((group, gIdx) => (
+                <Fragment key={group.date || `undated-${gIdx}`}>
+                  {/* Day header: the vendor's notebook had one of these per page. */}
+                  <tr style={{ background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
+                    <td
+                      colSpan={5}
+                      style={{
+                        padding: '6px 8px',
+                        borderBottom: `1px solid ${themeColor}`,
+                        borderTop: cellBorder,
+                        fontWeight: 'bold',
+                        color: themeColor,
+                        fontSize: '0.86rem',
+                      }}
+                    >
+                      {isMarathi ? 'दिनांक' : 'Date'}:{' '}
+                      {group.date
+                        ? formatBillDate(group.date, isMarathi)
+                        : (isMarathi ? 'नोंद नाही' : 'Not recorded')}
+                    </td>
+                  </tr>
+
+                  {group.items.map((item, idx) => renderItemRow(item, `${gIdx}-${idx}`))}
+
+                  {/* Per-day subtotal, so a customer can check one day without
+                      re-adding the whole period. */}
+                  <tr style={{ borderBottom: cellBorder }}>
+                    <td
+                      colSpan={4}
+                      style={{
+                        padding: '6px 8px',
+                        borderRight: cellBorder,
+                        textAlign: 'right',
+                        fontWeight: 'bold',
+                        color: themeColor,
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {isMarathi ? 'दिवसाची बेरीज' : "Day's Total"}
+                    </td>
+                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>
+                      ₹{group.subtotal.toFixed(2)}
+                    </td>
+                  </tr>
+                </Fragment>
+              ))
+            : displayItems.map((item, idx) => renderItemRow(item, idx))}
+
+          {/* Pad empty rows if list is short, to keep APMC visual look. Only on a
+              single-day bill — a period bill is already tall and its day sections
+              would be pushed apart by filler. */}
+          {!dayGroups && displayItems.length < 4 &&
+            Array.from({ length: 4 - displayItems.length }).map((_, idx) => (
               <tr key={`pad-${idx}`} style={{ borderBottom: `1px solid ${themeColor}`, height: '32px' }}>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
-                <td style={{ borderRight: `1.5px solid ${themeColor}` }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
+                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
                 <td>&nbsp;</td>
               </tr>
             ))
@@ -376,34 +479,36 @@ export default function BillTemplate({ bill }) {
           <tbody>
             <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
               <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'एकूण रू. (Subtotal)' : 'Total Rs (Subtotal)'}
+                {isMarathi ? 'आजचे बिल (Current Bill)' : 'Current Bill Total'}
               </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '100px' }}>
-                ₹{subtotal.toFixed(2)}
-              </td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'एकूण खर्च रू. (कमिशन)' : 'Total Expense (Commission)'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                ₹{commissionAmount.toFixed(2)}
+              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '105px' }}>
+                ₹{finalAmount.toFixed(2)}
               </td>
             </tr>
+            {previousBalance > 0 && (
+              <tr style={{ borderBottom: `1px solid ${themeColor}`, background: '#fffbeb' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#b45309', borderRight: `1px solid ${themeColor}` }}>
+                  {isMarathi ? 'मागील बाकी (Prev. Dues)' : 'Previous Outstanding'}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#b45309' }}>
+                  ₹{previousBalance.toFixed(2)}
+                </td>
+              </tr>
+            )}
             <tr style={{ borderBottom: `1px solid ${themeColor}`, background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
               <td style={{ padding: '8px', fontWeight: '900', color: themeColor, fontSize: '0.92rem', borderRight: `1px solid ${themeColor}` }}>
                 {isMarathi ? 'एकूण देय रू.' : 'Total Payable Rs'}
               </td>
               <td style={{ padding: '8px', textAlign: 'right', fontWeight: '900', fontSize: '0.95rem', color: themeColor }}>
-                ₹{finalAmount.toFixed(2)}
+                ₹{totalPayableAmount.toFixed(2)}
               </td>
             </tr>
-            <tr style={{ color: remainingAmount > 0 ? '#dc2626' : 'inherit' }}>
+            <tr style={{ color: netDueAmount > 0 ? '#dc2626' : 'inherit' }}>
               <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'उर्वरित बाकी (Dues)' : 'Remaining Dues'}
+                {isMarathi ? 'उर्वरित बाकी (Net Dues)' : 'Remaining Dues'}
               </td>
               <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>
-                ₹{remainingAmount.toFixed(2)}
+                ₹{netDueAmount.toFixed(2)}
               </td>
             </tr>
           </tbody>
@@ -424,7 +529,7 @@ export default function BillTemplate({ bill }) {
           {isMarathi ? 'अक्षरी रू. :' : 'Amount in Words :'}
         </span>
         <span style={{ fontStyle: 'italic' }}>
-          {getAmountInWords(finalAmount, isMarathi)}
+          {getAmountInWords(totalPayableAmount, isMarathi)}
         </span>
       </div>
 
@@ -453,13 +558,19 @@ export default function BillTemplate({ bill }) {
       <div
         style={{
           textAlign: 'center',
-          marginTop: '25px',
+          marginTop: '20px',
           fontSize: '0.78rem',
-          color: '#666',
-          fontStyle: 'italic',
+          color: '#555',
         }}
       >
-        {t('billing.thankYou')}
+        <div style={{ fontStyle: 'italic', marginBottom: settings.upi_id ? 4 : 0 }}>
+          {settings.bill_footer_note || t('billing.thankYou')}
+        </div>
+        {settings.upi_id && (
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: themeColor }}>
+            UPI ID: {settings.upi_id}
+          </div>
+        )}
       </div>
     </div>
   );

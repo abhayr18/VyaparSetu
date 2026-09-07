@@ -126,6 +126,48 @@ describe('money columns', () => {
     expect(column(ctx, 'credit_transactions', 'amount').notnull).toBe(1);
     expect(column(ctx, 'credit_transactions', 'balance_after_transaction').notnull).toBe(1);
   });
+
+  it('stores every money column as INTEGER paise, not a REAL', async () => {
+    const ctx = await freshDb();
+
+    // Money lives on disk as whole paise in INTEGER columns, so a balance and the
+    // sum of its ledger are both exact integers and reconcile with =, not "within
+    // half a paisa". This locks the storage class the migration has to produce; if
+    // it goes red, the migration changed the data model, not just the driver.
+    const moneyColumns = {
+      customers: ['credit_balance'],
+      vegetables: ['rate'],
+      bills: [
+        'subtotal', 'discount_amount', 'commission_amount', 'hamali_amount',
+        'transport_amount', 'final_amount', 'paid_amount', 'remaining_amount',
+      ],
+      bill_items: ['rate', 'total'],
+      transactions: [
+        'rate', 'base_amount', 'commission_amount', 'final_amount',
+        'paid_amount', 'remaining_amount',
+      ],
+      credit_transactions: ['amount', 'balance_after_transaction'],
+    };
+
+    for (const [table, cols] of Object.entries(moneyColumns)) {
+      for (const name of cols) {
+        expect(column(ctx, table, name).type, `${table}.${name}`).toBe('INTEGER');
+      }
+    }
+  });
+
+  it('keeps deliberately non-money numerics as REAL', async () => {
+    const ctx = await freshDb();
+
+    // These are not paise and must never be scaled ×100: commission_rate is a
+    // percentage, discount_value is dual-unit (rupees or a percentage), and weight
+    // and quantity are kilograms.
+    expect(column(ctx, 'bills', 'commission_rate').type, 'bills.commission_rate').toBe('REAL');
+    expect(column(ctx, 'bills', 'discount_value').type, 'bills.discount_value').toBe('REAL');
+    expect(column(ctx, 'transactions', 'commission_rate').type, 'transactions.commission_rate').toBe('REAL');
+    expect(column(ctx, 'transactions', 'weight').type, 'transactions.weight').toBe('REAL');
+    expect(column(ctx, 'bill_items', 'quantity').type, 'bill_items.quantity').toBe('REAL');
+  });
 });
 
 describe('constraints the app relies on', () => {

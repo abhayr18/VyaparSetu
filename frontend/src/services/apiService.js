@@ -6,7 +6,10 @@
 
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+// ?? (not ||) so the packaged build's explicit empty value is honored as "" — a
+// relative base, i.e. /api on the window's own origin, whatever port Express got —
+// instead of falling back to :5000. Dev's .env still sets the full localhost URL.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
 
 // Axios instance with defaults
 const apiClient = axios.create({
@@ -38,6 +41,21 @@ export const healthApi = {
   getStatus: () => apiClient.get('/api/health'),
 };
 
+// ─── License API ──────────────────────────────────────────────────────────────
+export const licenseApi = {
+  /**
+   * GET /api/license/status
+   * @returns {Promise<{ success: boolean, data: { activated: boolean, machineId: string, customerName?: string, expiry?: string|null } }>}
+   */
+  getStatus: () => apiClient.get('/api/license/status'),
+
+  /**
+   * POST /api/license/activate
+   * @param {string} licenseKey
+   */
+  activate: (licenseKey) => apiClient.post('/api/license/activate', { licenseKey }),
+};
+
 // ─── Customers API ────────────────────────────────────────────────────────────
 export const customersApi = {
   /** GET /api/customers */
@@ -60,6 +78,9 @@ export const customersApi = {
 
   /** DELETE /api/customers/:id */
   remove: (id) => apiClient.delete(`/api/customers/${id}`),
+
+  /** POST /api/customers/bulk */
+  bulkImport: (data) => apiClient.post('/api/customers/bulk', data),
 };
 
 // ─── Vegetables API ───────────────────────────────────────────────────────────
@@ -81,7 +102,11 @@ export const vegetablesApi = {
 
   /** DELETE /api/vegetables/:id */
   remove: (id) => apiClient.delete(`/api/vegetables/${id}`),
+
+  /** POST /api/vegetables/bulk */
+  bulkImport: (data) => apiClient.post('/api/vegetables/bulk', data),
 };
+
 
 // ─── Bills API ───────────────────────────────────────────────────────────────
 export const billsApi = {
@@ -112,6 +137,8 @@ export const creditApi = {
   getTransactions: (customerId) => apiClient.get(`/api/credit/customer/${customerId}/transactions`),
   collectPayment: (data) => apiClient.post('/api/credit/payment', data),
   adjustCredit: (data) => apiClient.post('/api/credit/adjustment', data),
+  /** POST /api/credit/opening-balance — for a notebook customer who already existed. */
+  recordOpeningBalance: (data) => apiClient.post('/api/credit/opening-balance', data),
 };
 
 // ─── Reports API ─────────────────────────────────────────────────────────────
@@ -122,6 +149,7 @@ export const reportsApi = {
   getVegetables: (startDate, endDate) => apiClient.get('/api/reports/vegetables', { params: { startDate, endDate } }),
   getCredit: (date) => apiClient.get('/api/reports/credit', { params: { date } }),
   getCommission: (startDate, endDate) => apiClient.get('/api/reports/commission', { params: { startDate, endDate } }),
+  getAllInOne: (startDate, endDate) => apiClient.get('/api/reports/all-in-one', { params: { startDate, endDate } }),
 };
 
 // ─── Backup API ──────────────────────────────────────────────────────────────
@@ -131,6 +159,12 @@ export const backupApi = {
   restoreBackup: (filename) => apiClient.post('/api/backup/restore', { filename }),
   getLastBackupStatus: () => apiClient.get('/api/backup/status'),
   getInternetStatus: () => apiClient.get('/api/backup/internet-status'),
+  getConfig: () => apiClient.get('/api/backup/config'),
+  saveConfig: (data) => apiClient.post('/api/backup/config', data),
+  performAutoSync: () => apiClient.post('/api/backup/auto-sync'),
+  exportBackupUrl: () => `${BASE_URL}/api/backup/export`,
+  downloadBackupUrl: (filename) => `${BASE_URL}/api/backup/download/${encodeURIComponent(filename)}`,
+  importBackup: (fileData, filename) => apiClient.post('/api/backup/import', { fileData, filename }),
 };
 
 // ─── Dashboard API ───────────────────────────────────────────────────────────
@@ -150,7 +184,8 @@ export const settingsApi = {
 export const driveApi = {
   getAuthUrl: () => apiClient.get('/api/drive/auth-url'),
   getStatus: () => apiClient.get('/api/drive/status'),
-  backup: () => apiClient.post('/api/drive/backup'),
+  backup: (force = true) => apiClient.post('/api/drive/backup', { force }),
+  autoBackup: (force = false) => apiClient.post('/api/drive/auto-backup', { force }),
   listBackups: () => apiClient.get('/api/drive/backups'),
   restore: (fileId) => apiClient.post('/api/drive/restore', { fileId }),
   disconnect: () => apiClient.post('/api/drive/disconnect'),
@@ -160,12 +195,18 @@ export const driveApi = {
 export const transactionApi = {
   create: (data) => apiClient.post('/api/transactions', data),
   generateBill: (data) => apiClient.post('/api/transactions/generate-bill', data),
+  generateStatement: (data) => apiClient.post('/api/transactions/generate-statement', data),
   getAll: (params) => apiClient.get('/api/transactions', { params }),
+
+  // Every customer with entries not yet consolidated into a bill, oldest pending day
+  // first. Read-only aggregate, no params — it is the whole shop's outstanding work.
+  getPendingSettlements: () => apiClient.get('/api/transactions/pending-settlements'),
 
   getById: (id) => apiClient.get(`/api/transactions/${id}`),
   getByCustomer: (customerId, params) => apiClient.get(`/api/transactions/customer/${customerId}`, { params }),
   getCustomerDaily: (customerId, date) => apiClient.get(`/api/transactions/customer/${customerId}/daily`, { params: { date } }),
   getCustomerRange: (customerId, startDate, endDate) => apiClient.get(`/api/transactions/customer/${customerId}/range`, { params: { startDate, endDate } }),
+  update: (id, data) => apiClient.put(`/api/transactions/${id}`, data),
   remove: (id) => apiClient.delete(`/api/transactions/${id}`),
 };
 

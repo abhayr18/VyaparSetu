@@ -10,22 +10,8 @@
  *   and any keyword containing "shev".
  */
 
-const { getDb, saveDb } = require('../database/db');
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
+const { execSelect, execRun } = require('../database/db');
+const { toPaise, rowToRupees } = require('../utils/money');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -34,11 +20,11 @@ function execSelect(sql, params = []) {
  */
 function findAll() {
   return execSelect(
-    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+    `SELECT id, name, rate, unit, category, search_keywords, notes, created_at, updated_at
      FROM vegetables
      WHERE is_deleted = 0
      ORDER BY name ASC`
-  );
+  ).map((v) => rowToRupees(v, 'vegetables'));
 }
 
 /**
@@ -46,11 +32,11 @@ function findAll() {
  */
 function findById(id) {
   const rows = execSelect(
-    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+    `SELECT id, name, rate, unit, category, search_keywords, notes, created_at, updated_at
      FROM vegetables WHERE id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'vegetables');
 }
 
 /**
@@ -68,7 +54,7 @@ function findByName(name, excludeId = null) {
 }
 
 /**
- * Smart search — matches name OR search_keywords using LIKE.
+ * Smart search — matches name OR search_keywords OR category using LIKE.
  * Partial match: "shev" → शेवगा (if keyword contains "shev")
  * Structure is ready for fuzzy/FTS upgrade later.
  * @param {string} query
@@ -76,66 +62,60 @@ function findByName(name, excludeId = null) {
 function search(query) {
   const like = `%${query.trim()}%`;
   return execSelect(
-    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+    `SELECT id, name, rate, unit, category, search_keywords, notes, created_at, updated_at
      FROM vegetables
-     WHERE (name LIKE ? OR search_keywords LIKE ?) AND is_deleted = 0
+     WHERE (name LIKE ? OR search_keywords LIKE ? OR category LIKE ?) AND is_deleted = 0
      ORDER BY
        CASE WHEN name LIKE ? THEN 0 ELSE 1 END,
        name ASC`,
-    [like, like, like]
-  );
+    [like, like, like, like]
+  ).map((v) => rowToRupees(v, 'vegetables'));
 }
 
 /**
  * Insert a new vegetable or reactivate a deleted one.
  */
-function create({ name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
-  const db = getDb();
-  
+function create({ name, rate, unit = 'kg', category = 'General', search_keywords = '', notes = '' }) {
   // Check if a record already exists with this name (even if deleted)
   const rows = execSelect(`SELECT id FROM vegetables WHERE LOWER(name) = LOWER(?)`, [name.trim()]);
-  
+
   if (rows.length > 0) {
     // Reactivate and update existing soft-deleted record
     const existingId = rows[0].id;
-    db.run(
+    execRun(
       `UPDATE vegetables
-       SET rate = ?, unit = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+       SET rate = ?, unit = ?, category = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [rate, unit.trim(), search_keywords.trim(), notes.trim(), existingId]
+      [toPaise(rate), unit.trim(), (category || 'General').trim(), search_keywords.trim(), notes.trim(), existingId]
     );
   } else {
     // Insert fresh record
-    db.run(
-      `INSERT INTO vegetables (name, rate, unit, search_keywords, notes)
-       VALUES (?, ?, ?, ?, ?)`,
-      [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim()]
+    execRun(
+      `INSERT INTO vegetables (name, rate, unit, category, search_keywords, notes)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [name.trim(), toPaise(rate), unit.trim(), (category || 'General').trim(), search_keywords.trim(), notes.trim()]
     );
   }
-  
-  saveDb();
-  
+
   const resultRows = execSelect(
-    `SELECT id, name, rate, unit, search_keywords, notes, created_at, updated_at
+    `SELECT id, name, rate, unit, category, search_keywords, notes, created_at, updated_at
      FROM vegetables WHERE LOWER(name) = LOWER(?)`,
     [name.trim()]
   );
-  return resultRows[0];
+  return rowToRupees(resultRows[0], 'vegetables');
 }
 
 /**
  * Update an existing vegetable.
  */
-function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' }) {
-  const db = getDb();
-  db.run(
+function update(id, { name, rate, unit = 'kg', category = 'General', search_keywords = '', notes = '' }) {
+  execRun(
     `UPDATE vegetables
-     SET name = ?, rate = ?, unit = ?, search_keywords = ?, notes = ?,
+     SET name = ?, rate = ?, unit = ?, category = ?, search_keywords = ?, notes = ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), rate, unit.trim(), search_keywords.trim(), notes.trim(), id]
+    [name.trim(), toPaise(rate), unit.trim(), (category || 'General').trim(), search_keywords.trim(), notes.trim(), id]
   );
-  saveDb();
   return findById(id);
 }
 
@@ -145,10 +125,86 @@ function update(id, { name, rate, unit = 'kg', search_keywords = '', notes = '' 
 function remove(id) {
   const existing = findById(id);
   if (!existing) return false;
-  const db = getDb();
-  db.run(`UPDATE vegetables SET is_deleted = 1 WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`UPDATE vegetables SET is_deleted = 1 WHERE id = ?`, [id]);
   return true;
 }
 
-module.exports = { findAll, findById, findByName, search, create, update, remove };
+/**
+ * Bulk insert or update vegetables within a transaction.
+ * @param {Array<{ name: string, rate: number, unit?: string, category?: string, search_keywords?: string, notes?: string }>} items
+ * @param {{ updateExisting?: boolean }} options
+ */
+function bulkUpsert(items, { updateExisting = true } = {}) {
+  const { transaction } = require('../database/db');
+
+  return transaction(() => {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors = [];
+
+    items.forEach((item, index) => {
+      try {
+        const name = (item.name || '').trim();
+        if (!name) {
+          errors.push({ row: index + 1, name: '', error: 'Vegetable name is required.' });
+          return;
+        }
+
+        const rateNum = parseFloat(item.rate);
+        if (isNaN(rateNum) || rateNum < 0) {
+          errors.push({ row: index + 1, name, error: 'Valid rate (>= 0) is required.' });
+          return;
+        }
+
+        const unit = (item.unit || 'kg').trim();
+        const category = (item.category || 'General').trim();
+        const keywords = (item.search_keywords || '').trim();
+        const notes = (item.notes || '').trim();
+
+        // Check if item exists (including soft deleted)
+        const rows = execSelect(`SELECT id, is_deleted FROM vegetables WHERE LOWER(name) = LOWER(?)`, [name]);
+
+        if (rows.length > 0) {
+          const existing = rows[0];
+          if (updateExisting || existing.is_deleted === 1) {
+            execRun(
+              `UPDATE vegetables
+               SET rate = ?, unit = ?, category = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [toPaise(rateNum), unit, category, keywords, notes, existing.id]
+            );
+            if (existing.is_deleted === 1) {
+              created++;
+            } else {
+              updated++;
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          execRun(
+            `INSERT INTO vegetables (name, rate, unit, category, search_keywords, notes)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [name, toPaise(rateNum), unit, category, keywords, notes]
+          );
+          created++;
+        }
+      } catch (err) {
+        errors.push({ row: index + 1, name: item.name || '', error: err.message });
+      }
+    });
+
+    return {
+      total: items.length,
+      created,
+      updated,
+      skipped,
+      errors,
+    };
+  });
+}
+
+module.exports = { findAll, findById, findByName, search, create, update, remove, bulkUpsert };
+
+

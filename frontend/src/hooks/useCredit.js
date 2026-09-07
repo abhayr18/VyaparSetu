@@ -113,6 +113,26 @@ export function useCredit() {
     }
   }
 
+  // Bring a notebook customer's existing debt onto the ledger. Distinct from
+  // adjustCredit: it is refused once the customer already has an opening balance, so a
+  // vendor cannot migrate the same figure twice.
+  async function recordOpeningBalance({ customer_id, amount, note }) {
+    try {
+      const res = await creditApi.recordOpeningBalance({ customer_id, amount, note });
+      if (res.success) {
+        await fetchSummary();
+        await fetchCustomers();
+        if (activeCustomerId === customer_id) {
+          await fetchTransactions(customer_id);
+        }
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Failed to save opening balance' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     summary,
     customers,
@@ -129,6 +149,7 @@ export function useCredit() {
     fetchCustomers,
     fetchTransactions,
     collectPayment,
-    adjustCredit
+    adjustCredit,
+    recordOpeningBalance
   };
 }

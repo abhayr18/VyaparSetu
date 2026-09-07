@@ -14,18 +14,45 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import useSettings from '../hooks/useSettings';
 import MarathiInput from './MarathiInput';
 import { LeafIcon, AlertIcon } from './Icons';
 
-const UNIT_OPTIONS = ['kg', 'piece', 'bundle', 'dozen', 'gram', 'liter'];
+const DEFAULT_UNITS = ['kg', 'piece', 'bundle', 'dozen', 'gram', 'liter', 'crate', 'bag', 'quintal'];
+const DEFAULT_CATEGORIES = [
+  'पालेभाज्या (Leafy)',
+  'फळभाज्या (Fruit)',
+  'कंदमुळे (Roots/Tubers)',
+  'मिरची व मसाले (Chilli & Spices)',
+  'सर्वसाधारण (General)',
+];
+
+function parseArraySetting(val, fallback) {
+  if (!val) return fallback;
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const EMPTY_FORM = {
-  name: '', rate: '', unit: 'kg', search_keywords: '', notes: '',
+  name: '',
+  rate: '',
+  unit: 'kg',
+  category: 'सर्वसाधारण (General)',
+  search_keywords: '',
+  notes: '',
 };
 
 export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable }) {
   const { t } = useTranslation();
+  const { settings } = useSettings();
   const isEdit = Boolean(vegetable);
+
+  const availableUnits = parseArraySetting(settings?.units, DEFAULT_UNITS);
+  const availableCategories = parseArraySetting(settings?.categories, DEFAULT_CATEGORIES);
 
   const [form, setForm]         = useState(EMPTY_FORM);
   const [errors, setErrors]     = useState({});
@@ -34,17 +61,26 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
 
   useEffect(() => {
     if (isOpen) {
-      setForm(vegetable ? {
-        name:            vegetable.name,
-        rate:            vegetable.rate,
-        unit:            vegetable.unit || 'kg',
-        search_keywords: vegetable.search_keywords || '',
-        notes:           vegetable.notes || '',
-      } : EMPTY_FORM);
+      setForm(
+        vegetable
+          ? {
+              name:            vegetable.name,
+              rate:            vegetable.rate,
+              unit:            vegetable.unit || availableUnits[0] || 'kg',
+              category:        vegetable.category || availableCategories[0] || 'General',
+              search_keywords: vegetable.search_keywords || '',
+              notes:           vegetable.notes || '',
+            }
+          : {
+              ...EMPTY_FORM,
+              unit: availableUnits[0] || 'kg',
+              category: availableCategories[0] || 'General',
+            }
+      );
       setErrors({});
       setApiError('');
     }
-  }, [isOpen, vegetable]);
+  }, [isOpen, vegetable, settings]);
 
   if (!isOpen) return null;
 
@@ -76,6 +112,7 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
       name:            form.name.trim(),
       rate:            parseFloat(form.rate),
       unit:            form.unit.trim() || 'kg',
+      category:        (form.category || 'General').trim(),
       search_keywords: form.search_keywords.trim(),
       notes:           form.notes.trim(),
     });
@@ -105,7 +142,7 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
         )}
 
         <form onSubmit={handleSubmit} noValidate>
-          {/* ── Vegetable Name (MarathiInput — Module 3) ─────────────────── */}
+          {/* ── Vegetable Name ─────────────────────────────────────────── */}
           <div className="form-group">
             <label className="form-label" htmlFor="veg-name">
               {t('vegetables.name')} <span className="required-star">*</span>
@@ -160,13 +197,33 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
                 value={form.unit}
                 onChange={handleChange}
               >
-                {UNIT_OPTIONS.map((u) => (
+                {availableUnits.map((u) => (
                   <option key={u} value={u}>
-                    {t(`vegetables.units.${u}`)}
+                    {u}
                   </option>
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* ── Category Selector ──────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="veg-category">
+              वर्गवारी / Category
+            </label>
+            <select
+              id="veg-category"
+              name="category"
+              className="form-input form-select"
+              value={form.category}
+              onChange={handleChange}
+            >
+              {availableCategories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* ── Search Keywords ────────────────────────────────────────── */}

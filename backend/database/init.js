@@ -22,9 +22,14 @@
  * so forgiving: an index over a column a migration has not added yet raises "no
  * such column" and the boot fails. So an index over a migration-added column is
  * created *by that migration*, next to the `ALTER TABLE` that adds it.
+ *
+ * Both helpers below run schema DDL on the raw better-sqlite3 handle initDb()
+ * returns: db.exec() for parameterless CREATE/INSERT statements, a prepared
+ * statement for the seed rows. There is no saveDb() step any more — better-sqlite3
+ * writes straight to the file, so a committed statement is already durable.
  */
 
-const { initDb, saveDb } = require('./db');
+const { initDb } = require('./db');
 const { runMigrations, currentVersion } = require('./migrations');
 const logger = require('../utils/logger');
 
@@ -36,7 +41,7 @@ const logger = require('../utils/logger');
  */
 function createBaselineSchema(db) {
   // ─── Application Settings ──────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       key         TEXT    NOT NULL UNIQUE,
@@ -47,7 +52,7 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Audit Log ─────────────────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       action      TEXT    NOT NULL,
@@ -59,14 +64,14 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Module 1: Customers ───────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       name           TEXT    NOT NULL,
-      mobile         TEXT    NOT NULL UNIQUE,
+      mobile         TEXT    DEFAULT '',
       address        TEXT    DEFAULT '',
       notes          TEXT    DEFAULT '',
-      credit_balance REAL    DEFAULT 0.0,
+      credit_balance INTEGER DEFAULT 0,
       is_deleted     INTEGER DEFAULT 0,
       created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -74,11 +79,11 @@ function createBaselineSchema(db) {
   `);
 
   // ─── Module 2: Vegetables ──────────────────────────────────────────────────
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS vegetables (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       name            TEXT    NOT NULL UNIQUE,
-      rate            REAL    NOT NULL DEFAULT 0.0,
+      rate            INTEGER NOT NULL DEFAULT 0,
       unit            TEXT    NOT NULL DEFAULT 'kg',
       search_keywords TEXT    DEFAULT '',
       notes           TEXT    DEFAULT '',
@@ -90,23 +95,30 @@ function createBaselineSchema(db) {
 
   // ─── Module 3: Billing ─────────────────────────────────────────────────────
   // commission_rate is a percentage (8.0 means 8%), matching what Settings shows.
-  db.run(`
+  //
+  // period_start / period_end are NULL for a single-day bill, which is every bill
+  // written before ranges existed — the day is then `date`. When they are set, the
+  // bill consolidates every unbilled sale in that window and `date` is the day it
+  // closes, so date-keyed reports still place it in one period.
+  db.exec(`
     CREATE TABLE IF NOT EXISTS bills (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_number        TEXT    NOT NULL UNIQUE,
       customer_id        INTEGER NOT NULL,
       date               TEXT    NOT NULL,
-      subtotal           REAL    NOT NULL,
+      period_start       TEXT,
+      period_end         TEXT,
+      subtotal           INTEGER NOT NULL,
       discount_type      TEXT    DEFAULT 'fixed',
       discount_value     REAL    DEFAULT 0.0,
-      discount_amount    REAL    DEFAULT 0.0,
+      discount_amount    INTEGER DEFAULT 0,
       commission_rate    REAL    DEFAULT 8.0,
-      commission_amount  REAL    NOT NULL,
-      hamali_amount      REAL    DEFAULT 0.0,
-      transport_amount   REAL    DEFAULT 0.0,
-      final_amount       REAL    NOT NULL,
-      paid_amount        REAL    DEFAULT 0.0,
-      remaining_amount   REAL    DEFAULT 0.0,
+      commission_amount  INTEGER NOT NULL,
+      hamali_amount      INTEGER DEFAULT 0,
+      transport_amount   INTEGER DEFAULT 0,
+      final_amount       INTEGER NOT NULL,
+      paid_amount        INTEGER DEFAULT 0,
+      remaining_amount   INTEGER DEFAULT 0,
       payment_type       TEXT    NOT NULL,
       payment_status     TEXT    NOT NULL,
       created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -115,15 +127,18 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  // item_date is the day this line was actually sold, so a range bill can group its
+  // lines datewise. NULL means the line belongs to whatever single day its bill does.
+  db.exec(`
     CREATE TABLE IF NOT EXISTS bill_items (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       bill_id        INTEGER NOT NULL,
       vegetable_id   INTEGER NOT NULL,
       vegetable_name TEXT    NOT NULL,
       quantity       REAL    NOT NULL,
-      rate           REAL    NOT NULL,
-      total          REAL    NOT NULL,
+      rate           INTEGER NOT NULL,
+      total          INTEGER NOT NULL,
+      item_date      TEXT,
       created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(bill_id) REFERENCES bills(id),
       FOREIGN KEY(vegetable_id) REFERENCES vegetables(id)
@@ -136,7 +151,7 @@ function createBaselineSchema(db) {
   // commission_rate is a percentage, the same unit as bills.commission_rate.
   // bill_id is NULL until the day's sales are consolidated into a bill; that is
   // what makes bill generation idempotent.
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS transactions (
       id                      INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id             INTEGER NOT NULL,
@@ -144,15 +159,15 @@ function createBaselineSchema(db) {
       vegetable_name_snapshot TEXT    NOT NULL,
       weight                  REAL    NOT NULL,
       unit                    TEXT    NOT NULL DEFAULT 'kg',
-      rate                    REAL    NOT NULL,
-      base_amount             REAL    NOT NULL,
+      rate                    INTEGER NOT NULL,
+      base_amount             INTEGER NOT NULL,
       commission_rate         REAL    NOT NULL DEFAULT 8.0,
-      commission_amount       REAL    NOT NULL,
-      final_amount            REAL    NOT NULL,
+      commission_amount       INTEGER NOT NULL,
+      final_amount            INTEGER NOT NULL,
       payment_type            TEXT    DEFAULT 'Credit',
       payment_mode            TEXT    DEFAULT 'Credit',
-      paid_amount             REAL    DEFAULT 0.0,
-      remaining_amount        REAL    DEFAULT 0.0,
+      paid_amount             INTEGER DEFAULT 0,
+      remaining_amount        INTEGER DEFAULT 0,
       transaction_date        TEXT    NOT NULL,
       bill_id                 INTEGER,
       created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -163,28 +178,28 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
     ON transactions(customer_id, transaction_date)
   `);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
   // No index on transactions(bill_id) here — see the note below on why an index
   // over a migration-added column belongs to its migration.
 
   // ─── Module 4: Credit Transactions (the udhar passbook) ────────────────────
   // transaction_id links a ledger row to the sale that created it, so deleting
   // the sale can reverse exactly the debt it booked.
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS credit_transactions (
       id                         INTEGER PRIMARY KEY AUTOINCREMENT,
       customer_id                INTEGER NOT NULL,
       bill_id                    INTEGER,
       transaction_id             INTEGER,
       transaction_type           TEXT    NOT NULL,
-      amount                     REAL    NOT NULL,
+      amount                     INTEGER NOT NULL,
       payment_mode               TEXT    NOT NULL,
       note                       TEXT,
-      balance_after_transaction  REAL    NOT NULL,
+      balance_after_transaction  INTEGER NOT NULL,
       created_at                 DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(customer_id)    REFERENCES customers(id),
       FOREIGN KEY(bill_id)        REFERENCES bills(id),
@@ -192,7 +207,7 @@ function createBaselineSchema(db) {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_credit_transactions_customer
     ON credit_transactions(customer_id)
   `);
@@ -209,19 +224,86 @@ function seedSettings(db) {
     ['language', 'en', 'UI display language (en or mr)'],
     ['app_version', '1.0.0', 'Application version'],
     ['vendor_name', '', 'Vendor / Shop name'],
-    ['owner_name', '', 'Owner name'],
-    ['mobile_number', '', 'Mobile number'],
+    ['tagline', '', 'Business Tagline / Nature of work'],
+    ['owner_name', '', 'Owner / Proprietor name'],
+    ['mobile_number', '', 'Primary Mobile number'],
+    ['secondary_mobile', '', 'Secondary / WhatsApp mobile number'],
+    ['market_name', '', 'APMC Market name'],
+    ['gala_number', '', 'Shop / Gala number'],
     ['address', '', 'Business address'],
+    ['city', '', 'City / Jurisdiction'],
+    ['devotion_text', '', 'Header devotion / blessing text'],
+    ['bill_footer_note', '', 'Bill footer note or terms'],
+    ['upi_id', '', 'UPI ID for payments'],
     ['commission_rate', '8', 'Commission percentage rate'],
     ['default_payment_mode', 'Cash', 'Default payment type mode'],
+    ['units', JSON.stringify(['kg', 'piece', 'bundle', 'dozen', 'gram', 'liter', 'crate', 'bag', 'quintal']), 'Configurable measurement units list'],
+    ['categories', JSON.stringify(['पालेभाज्या (Leafy)', 'फळभाज्या (Fruit)', 'कंदमुळे (Roots/Tubers)', 'मिरची व मसाले (Chilli & Spices)', 'सर्वसाधारण (General)']), 'Configurable vegetable categories list'],
+    ['db_dirty', '0', 'Flag indicating unbacked-up database modifications (1 or 0)'],
+    ['last_data_change', '', 'Timestamp of last modification in business tables'],
+    ['last_cloud_sync', '', 'Timestamp of last successful Google Drive cloud sync'],
+    ['last_synced_hash', '', 'SHA-256 hash of database at last cloud sync'],
+    ['drive_backup_file_id', '', 'Canonical Google Drive backup file ID'],
+    ['google_client_id', '', 'Google OAuth 2.0 Client ID'],
+    ['google_client_secret', '', 'Google OAuth 2.0 Client Secret'],
+    ['google_redirect_uri', 'http://127.0.0.1:5000/api/drive/callback', 'Google OAuth 2.0 Redirect URI'],
+    ['custom_backup_folder', '', 'User-configured cloud sync / external backup directory path'],
+    ['auto_backup_enabled', '1', 'Flag indicating whether automatic backup sync is enabled (1 or 0)'],
   ];
 
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)`
+  );
   for (const [key, value, description] of seedData) {
-    db.run(`INSERT OR IGNORE INTO settings (key, value, description) VALUES (?, ?, ?)`, [
-      key,
-      value,
-      description,
-    ]);
+    insert.run(key, value, description);
+  }
+}
+
+/**
+ * Creates lightweight change detection triggers on business tables.
+ * Whenever data is inserted, updated, or deleted, db_dirty is set to '1'
+ * and last_data_change is updated to the current timestamp.
+ */
+function createChangeTrackingTriggers(db) {
+  const businessTables = [
+    'bills',
+    'bill_items',
+    'customers',
+    'vegetables',
+    'transactions',
+    'credit_transactions',
+  ];
+
+  for (const tbl of businessTables) {
+    try {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_insert AFTER INSERT ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_update AFTER UPDATE ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_${tbl}_delete AFTER DELETE ON ${tbl}
+        BEGIN
+          INSERT INTO settings(key, value) VALUES('db_dirty', '1')
+            ON CONFLICT(key) DO UPDATE SET value = '1';
+          INSERT INTO settings(key, value) VALUES('last_data_change', datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = datetime('now');
+        END;
+      `);
+    } catch (err) {
+      logger.warn(`Could not create change-tracking trigger for ${tbl}: ${err.message}`);
+    }
   }
 }
 
@@ -229,14 +311,13 @@ function seedSettings(db) {
  * Brings the database to the current schema. Called once at boot.
  */
 async function initializeDatabase() {
-  const db = await initDb();
+  const db = initDb();
 
   try {
     createBaselineSchema(db);
     runMigrations(db);
     seedSettings(db);
-
-    saveDb();
+    createChangeTrackingTriggers(db);
 
     logger.info(`Database initialized successfully (schema version ${currentVersion(db)})`);
   } catch (err) {
@@ -245,4 +326,4 @@ async function initializeDatabase() {
   }
 }
 
-module.exports = { initializeDatabase };
+module.exports = { initializeDatabase, createChangeTrackingTriggers };

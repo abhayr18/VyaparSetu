@@ -4,25 +4,9 @@
  * Services call these functions — never call db directly from controllers.
  */
 
-const { getDb, saveDb } = require('../database/db');
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Map a sql.js result row array + column names → plain object */
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-/** Execute a SELECT and return array of plain objects */
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map((row) => rowToObj(columns, row));
-}
+const { execSelect, execRun } = require('../database/db');
+const { rowToRupees } = require('../utils/money');
+const { splitSigned } = require('../utils/creditLedger');
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -36,7 +20,7 @@ function findAll() {
      FROM customers
      WHERE is_deleted = 0
      ORDER BY name ASC`
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /**
@@ -50,7 +34,7 @@ function findById(id) {
      FROM customers WHERE id = ?`,
     [id]
   );
-  return rows[0] || null;
+  return rowToRupees(rows[0] || null, 'customers');
 }
 
 /**
@@ -60,10 +44,12 @@ function findById(id) {
  * @returns {Object|null}
  */
 function findByMobile(mobile, excludeId = null) {
+  if (!mobile || !String(mobile).trim()) return null;
+  const cleanMobile = String(mobile).trim();
   const sql = excludeId
-    ? `SELECT id FROM customers WHERE mobile = ? AND id != ? AND is_deleted = 0`
-    : `SELECT id FROM customers WHERE mobile = ? AND is_deleted = 0`;
-  const params = excludeId ? [mobile, excludeId] : [mobile];
+    ? `SELECT id FROM customers WHERE mobile = ? AND mobile != '' AND id != ? AND is_deleted = 0`
+    : `SELECT id FROM customers WHERE mobile = ? AND mobile != '' AND is_deleted = 0`;
+  const params = excludeId ? [cleanMobile, excludeId] : [cleanMobile];
   const rows = execSelect(sql, params);
   return rows[0] || null;
 }
@@ -74,14 +60,15 @@ function findByMobile(mobile, excludeId = null) {
  * @returns {Array}
  */
 function search(query) {
-  const like = `%${query}%`;
+  const cleanQuery = (query || '').trim();
+  const like = `%${cleanQuery}%`;
   return execSelect(
     `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
      FROM customers
-     WHERE (name LIKE ? OR mobile LIKE ?) AND is_deleted = 0
+     WHERE (name LIKE ? OR (mobile != '' AND mobile LIKE ?)) AND is_deleted = 0
      ORDER BY name ASC`,
     [like, like]
-  );
+  ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /**
@@ -89,39 +76,34 @@ function search(query) {
  * @param {{ name, mobile, address, notes }} data
  * @returns {Object} The newly created/updated customer
  */
-function create({ name, mobile, address = '', notes = '' }) {
-  const db = getDb();
-  
-  // Check if a record already exists with this mobile (even if deleted)
-  const rows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [mobile.trim()]);
-  
-  if (rows.length > 0) {
-    // Reactivate and update the existing soft-deleted record
-    const existingId = rows[0].id;
-    db.run(
-      `UPDATE customers
-       SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [name.trim(), address.trim(), notes.trim(), existingId]
-    );
-  } else {
-    // Insert fresh record
-    db.run(
-      `INSERT INTO customers (name, mobile, address, notes, credit_balance)
-       VALUES (?, ?, ?, ?, 0.0)`,
-      [name.trim(), mobile.trim(), address.trim(), notes.trim()]
-    );
-  }
-  
-  saveDb();
+function create({ name, mobile = '', address = '', notes = '' }) {
+  const cleanMobile = (mobile || '').trim();
 
-  // Retrieve the inserted/updated row
-  const resultRows = execSelect(
-    `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
-     FROM customers WHERE mobile = ?`,
-    [mobile.trim()]
+  if (cleanMobile) {
+    // Check if a record already exists with this mobile (even if deleted)
+    const rows = execSelect(`SELECT id FROM customers WHERE mobile = ?`, [cleanMobile]);
+
+    if (rows.length > 0) {
+      // Reactivate and update the existing soft-deleted record
+      const existingId = rows[0].id;
+      execRun(
+        `UPDATE customers
+         SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [name.trim(), (address || '').trim(), (notes || '').trim(), existingId]
+      );
+      return findById(existingId);
+    }
+  }
+
+  // Insert fresh record
+  const result = execRun(
+    `INSERT INTO customers (name, mobile, address, notes, credit_balance)
+     VALUES (?, ?, ?, ?, 0)`,
+    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim()]
   );
-  return resultRows[0];
+
+  return findById(result.lastInsertRowid);
 }
 
 /**
@@ -130,15 +112,14 @@ function create({ name, mobile, address = '', notes = '' }) {
  * @param {{ name, mobile, address, notes }} data
  * @returns {Object|null} Updated customer or null if not found
  */
-function update(id, { name, mobile, address = '', notes = '' }) {
-  const db = getDb();
-  db.run(
+function update(id, { name, mobile = '', address = '', notes = '' }) {
+  const cleanMobile = (mobile || '').trim();
+  execRun(
     `UPDATE customers
      SET name = ?, mobile = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), mobile.trim(), address.trim(), notes.trim(), id]
+    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim(), id]
   );
-  saveDb();
   return findById(id);
 }
 
@@ -150,9 +131,7 @@ function update(id, { name, mobile, address = '', notes = '' }) {
 function remove(id) {
   const existing = findById(id);
   if (!existing) return false;
-  const db = getDb();
-  db.run(`UPDATE customers SET is_deleted = 1 WHERE id = ?`, [id]);
-  saveDb();
+  execRun(`UPDATE customers SET is_deleted = 1 WHERE id = ?`, [id]);
   return true;
 }
 
@@ -175,9 +154,15 @@ function getLedger(customerId) {
      WHERE b.customer_id = ?
      ORDER BY b.date DESC, b.id DESC`,
     [customerId]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
 
-  // All credit transactions for this customer
+  // All credit transactions for this customer.
+  //
+  // Newest first, except an opening balance, which is pinned to the bottom however
+  // late it was entered: it represents what the customer owed before any of this,
+  // so a passbook that showed it above later rows would read as though the debt
+  // appeared today. Shops migrating off a notebook often enter a sale first and
+  // remember the old balance afterwards, which is exactly when this matters.
   const transactions = execSelect(
     `SELECT ct.id, ct.transaction_type, ct.amount, ct.payment_mode,
             ct.note, ct.balance_after_transaction, ct.created_at,
@@ -185,9 +170,10 @@ function getLedger(customerId) {
      FROM credit_transactions ct
      LEFT JOIN bills b ON ct.bill_id = b.id
      WHERE ct.customer_id = ?
-     ORDER BY ct.created_at DESC, ct.id DESC`,
+     ORDER BY CASE WHEN ct.transaction_type = 'OPENING_BALANCE' THEN 1 ELSE 0 END ASC,
+              ct.created_at DESC, ct.id DESC`,
     [customerId]
-  );
+  ).map((t) => rowToRupees(t, 'credit_transactions'));
 
   // Summary totals
   //
@@ -196,20 +182,14 @@ function getLedger(customerId) {
   // subtraction. Adjustments were previously left out of both, so any written-off
   // or corrected balance made the summary contradict the outstanding beside it.
   //
-  // A signed adjustment belongs on whichever side its sign puts it: a positive one
-  // is debt added, a negative one is debt forgiven and reads as recovery.
-  const adjustments = transactions.filter((t) => t.transaction_type === 'CREDIT_ADJUSTMENT');
-
-  const totalBilled  = bills.reduce((s, b) => s + Number(b.final_amount  || 0), 0);
-  const totalPaid    = bills.reduce((s, b) => s + Number(b.paid_amount   || 0), 0);
-  const totalCredit  = transactions
-    .filter(t => t.transaction_type === 'CREDIT_ADDED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0)
-    + adjustments.reduce((s, t) => s + Math.max(0, Number(t.amount) || 0), 0);
-  const totalRecovered = transactions
-    .filter(t => t.transaction_type === 'PAYMENT_RECEIVED')
-    .reduce((s, t) => s + Number(t.amount || 0), 0)
-    + adjustments.reduce((s, t) => s + Math.max(0, -(Number(t.amount) || 0)), 0);
+  // splitSigned derives both sides from the same signs that move credit_balance
+  // (utils/creditLedger), so the identity holds by construction rather than by two
+  // hand-maintained filter lists happening to agree. A row lands on whichever side
+  // its sign puts it: a positive adjustment is debt added, a negative one is debt
+  // forgiven and reads as recovery.
+  const totalBilled = bills.reduce((s, b) => s + Number(b.final_amount || 0), 0);
+  const totalPaid   = bills.reduce((s, b) => s + Number(b.paid_amount  || 0), 0);
+  const { totalCredit, totalRecovered } = splitSigned(transactions);
 
   return {
     customer,
@@ -225,4 +205,109 @@ function getLedger(customerId) {
   };
 }
 
-module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger };
+/**
+ * Bulk insert or update customers within a transaction.
+ * @param {Array<{ name: string, mobile: string, address?: string, notes?: string, opening_balance?: number }>} items
+ * @param {{ updateExisting?: boolean }} options
+ */
+function bulkUpsert(items, { updateExisting = true } = {}) {
+  const { transaction } = require('../database/db');
+  const creditModel = require('./creditModel');
+
+  return transaction(() => {
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors = [];
+
+    items.forEach((item, index) => {
+      try {
+        const name = (item.name || '').trim();
+        if (!name) {
+          errors.push({ row: index + 1, mobile: item.mobile || '', error: 'Customer name is required.' });
+          return;
+        }
+
+        const mobile = String(item.mobile || '').trim();
+        if (mobile && !/^\d{10}$/.test(mobile)) {
+          errors.push({ row: index + 1, name, mobile, error: 'Mobile number must be exactly 10 digits if provided.' });
+          return;
+        }
+
+        const address = (item.address || '').trim();
+        const notes = (item.notes || '').trim();
+        const openingRaw = item.opening_balance;
+        const openingDate = item.opening_balance_date || item.date || null;
+        let opening = 0;
+        if (openingRaw !== undefined && openingRaw !== null && String(openingRaw).trim() !== '') {
+          const num = Number(openingRaw);
+          if (Number.isFinite(num) && num > 0) {
+            opening = Number(num.toFixed(2));
+          }
+        }
+
+        const rows = mobile ? execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]) : [];
+
+        if (rows.length > 0) {
+          const existing = rows[0];
+          if (updateExisting || existing.is_deleted === 1) {
+            execRun(
+              `UPDATE customers
+               SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?`,
+              [name, address, notes, existing.id]
+            );
+
+            if (existing.is_deleted === 1) {
+              created++;
+            } else {
+              updated++;
+            }
+
+            if (opening > 0 && !creditModel.hasOpeningBalance(existing.id)) {
+              creditModel.recordOpeningBalance({
+                customer_id: existing.id,
+                amount: opening,
+                date: openingDate,
+                note: 'Opening balance (imported)',
+              });
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          const res = execRun(
+            `INSERT INTO customers (name, mobile, address, notes, credit_balance)
+             VALUES (?, ?, ?, ?, 0)`,
+            [name, mobile, address, notes]
+          );
+
+          const newId = res.lastInsertRowid;
+          created++;
+
+          if (opening > 0 && newId) {
+            creditModel.recordOpeningBalance({
+              customer_id: newId,
+              amount: opening,
+              date: openingDate,
+              note: 'Opening balance (imported)',
+            });
+          }
+        }
+      } catch (err) {
+        errors.push({ row: index + 1, name: item.name || '', error: err.message });
+      }
+    });
+
+    return {
+      total: items.length,
+      created,
+      updated,
+      skipped,
+      errors,
+    };
+  });
+}
+
+module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger, bulkUpsert };
+

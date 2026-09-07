@@ -5,7 +5,7 @@
 
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from '../hooks/useTranslation';
-import { LeafIcon } from '../components/Icons';
+import appLogo from '../assets/logo.png';
 
 // ─── Nav Icon SVGs ────────────────────────────────────────────────────────────
 const NavIcons = {
@@ -42,6 +42,12 @@ const NavIcons = {
       <line x1="7" y1="15" x2="12" y2="15" />
     </svg>
   ),
+  DayBook: () => (
+    <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+    </svg>
+  ),
   Udhar: () => (
     <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="1" x2="12" y2="23"/>
@@ -71,15 +77,16 @@ const NavIcons = {
 };
 
 const NAV_ITEMS = [
-  { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard'    },
-  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers'    },
-  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables'   },
-  { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions' },
-  { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing'      },
-  { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar'        },
-  { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports'      },
-  { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup'       },
-  { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings'     },
+  { key: 'dashboard',    to: '/',             icon: NavIcons.Dashboard,    label: 'nav.dashboard' },
+  { key: 'transactions', to: '/transactions', icon: NavIcons.Transactions, label: 'nav.transactions', shortcut: 'F1' },
+  { key: 'daybook',      to: '/daybook',      icon: NavIcons.DayBook,      label: 'nav.daybook',      shortcut: 'F4' },
+  { key: 'billing',      to: '/billing',      icon: NavIcons.Billing,      label: 'nav.billing',      shortcut: 'F2' },
+  { key: 'udhar',        to: '/udhar',        icon: NavIcons.Udhar,        label: 'nav.udhar',        shortcut: 'F3' },
+  { key: 'customers',    to: '/customers',    icon: NavIcons.Customers,    label: 'nav.customers',    shortcut: 'F6' },
+  { key: 'vegetables',   to: '/vegetables',   icon: NavIcons.Vegetables,   label: 'nav.vegetables',   shortcut: 'F7' },
+  { key: 'reports',      to: '/reports',      icon: NavIcons.Reports,      label: 'nav.reports',      shortcut: 'F8' },
+  { key: 'backup',       to: '/backup',       icon: NavIcons.Backup,       label: 'nav.backup' },
+  { key: 'settings',     to: '/settings',     icon: NavIcons.Settings,     label: 'nav.settings' },
 ];
 
 
@@ -88,19 +95,21 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar" id="main-sidebar">
-      {/* Brand */}
+      {/* Official App Logo */}
       <div className="sidebar-brand">
-        <div className="sidebar-brand-name" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-          <LeafIcon style={{ width: '18px', height: '18px', color: 'var(--color-primary)', flexShrink: 0 }} />
-          <span>{t('common.appName')}</span>
-        </div>
-        <div className="sidebar-brand-tag">{t('common.tagline')}</div>
+        <NavLink to="/" className="sidebar-brand-link" title="VyapaarSetu">
+          <img
+            src={appLogo}
+            alt="VyapaarSetu"
+            className="sidebar-brand-logo"
+          />
+        </NavLink>
       </div>
 
       {/* Navigation */}
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-section-label">Menu</div>
-        {NAV_ITEMS.map(({ key, to, icon: Icon, label }) => (
+        {NAV_ITEMS.map(({ key, to, icon: Icon, label, shortcut }) => (
           <NavLink
             key={key}
             to={to}
@@ -109,7 +118,10 @@ export default function Sidebar() {
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
             <Icon />
-            <span>{t(label)}</span>
+            <span style={{ flex: 1 }}>{t(label)}</span>
+            {shortcut && (
+              <span className="nav-shortcut-badge">{shortcut}</span>
+            )}
           </NavLink>
         ))}
       </nav>

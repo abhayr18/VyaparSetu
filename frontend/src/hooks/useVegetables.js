@@ -69,10 +69,22 @@ export function useVegetables() {
     }
   }
 
+  async function bulkImportVegetables(data) {
+    try {
+      const res = await vegetablesApi.bulkImport(data);
+      await fetchAll();
+      return { success: true, data: res.data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
-    vegetables, loading, error,
+    vegetables, allVegetables, loading, error,
     searchQuery, setSearchQuery,
     fetchAll,
-    createVegetable, updateVegetable, deleteVegetable,
+    createVegetable, updateVegetable, deleteVegetable, bulkImportVegetables,
   };
 }
+
+

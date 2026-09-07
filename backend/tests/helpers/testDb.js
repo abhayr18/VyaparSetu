@@ -5,7 +5,9 @@
  *
  * 1. `database/db.js` resolves DB_PATH once, at module load time:
  *
- *        const DB_PATH = path.resolve(process.env.DB_PATH || './database/vyapaarsetu.db');
+ *        const DB_PATH = process.env.DB_PATH
+ *          ? path.resolve(process.env.DB_PATH)
+ *          : path.join(__dirname, 'vyapaarsetu.db');
  *
  *    So a test cannot just set process.env.DB_PATH and call into the app — by then
  *    the path is baked in and the test writes to the real shop database. That is
@@ -42,6 +44,39 @@ function purgeAppModules() {
 }
 
 /**
+ * Wraps a better-sqlite3 handle in the sql.js `exec`/`run` surface the test helpers
+ * were written against.
+ *
+ * The tests predate the engine swap and read results as `res[0].values[i][j]` with
+ * a parallel `res[0].columns` — sql.js's shape. Rather than rewrite ~20 assertion
+ * sites across four files, this reproduces that shape on top of better-sqlite3:
+ * `exec` runs one statement and, if it returns rows, reshapes them into the single
+ * `{ columns, values }` result set sql.js produced; `run` just executes. Every
+ * `ctx.raw` call in the suite is a single statement, which is all better-sqlite3's
+ * prepare() accepts.
+ */
+function sqlJsCompat(handle) {
+  return {
+    exec(sql, params = []) {
+      const stmt = handle.prepare(sql);
+      if (stmt.reader) {
+        const rows = stmt.all(params);
+        if (!rows.length) return [];
+        const columns = Object.keys(rows[0]);
+        return [{ columns, values: rows.map((r) => columns.map((c) => r[c])) }];
+      }
+      stmt.run(params);
+      return [];
+    },
+    run(sql, params = []) {
+      handle.prepare(sql).run(params);
+    },
+    prepare: (sql) => handle.prepare(sql),
+    pragma: (p, opts) => handle.pragma(p, opts),
+  };
+}
+
+/**
  * Points the app at `dbFile`, runs the real boot-time initialization against it,
  * and returns the app modules bound to that database.
  *
@@ -67,7 +102,12 @@ async function bindAppTo(dbFile) {
   return {
     dbPath: db.DB_PATH,
     db,
-    raw: db.getDb(),
+    // A getter, not a fixed handle: reloadDb() (restore, and the persistence
+    // tests) replaces the underlying connection, and the shim must wrap whichever
+    // handle is current rather than one captured at bind time.
+    get raw() {
+      return sqlJsCompat(db.getDb());
+    },
     // Exposed so tests can assert that re-running init is non-destructive.
     initializeDatabase,
     /**
@@ -88,9 +128,12 @@ async function bindAppTo(dbFile) {
     transactionService: require('../../services/transactionService.js'),
     billService: require('../../services/billService.js'),
     creditService: require('../../services/creditService.js'),
+    vegetableService: require('../../services/vegetableService.js'),
+    customerService: require('../../services/customerService.js'),
     settingsService: require('../../services/settingsService.js'),
   };
 }
+
 
 /** A new temp directory, registered for cleanup. */
 function tempDbFile() {
@@ -182,19 +225,26 @@ export function makeVegetable(ctx, overrides = {}) {
 /** Reads customers.credit_balance directly, bypassing all service-layer math. */
 export function creditBalance(ctx, customerId) {
   const res = ctx.raw.exec('SELECT credit_balance FROM customers WHERE id = ?', [customerId]);
-  return res.length ? Number(res[0].values[0][0]) : 0;
+  // Money is paise on disk; the suite reads rupees, exactly as every model return does.
+  return res.length ? Number(res[0].values[0][0]) / 100 : 0;
 }
 
 /** All credit_transactions rows for a customer, oldest first. */
 export function ledgerRows(ctx, customerId) {
   const res = ctx.raw.exec(
-    `SELECT id, transaction_type, amount, balance_after_transaction, note, bill_id
+    `SELECT id, transaction_type, amount, balance_after_transaction, note, bill_id, created_at
      FROM credit_transactions WHERE customer_id = ? ORDER BY id ASC`,
     [customerId]
   );
   if (!res.length) return [];
   const { columns, values } = res[0];
-  return values.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  return values.map((row) => {
+    const entry = Object.fromEntries(columns.map((c, i) => [c, row[i]]));
+    // amount and balance_after_transaction are paise on disk — read them as rupees.
+    entry.amount = Number(entry.amount) / 100;
+    entry.balance_after_transaction = Number(entry.balance_after_transaction) / 100;
+    return entry;
+  });
 }
 
 /**
@@ -202,17 +252,14 @@ export function ledgerRows(ctx, customerId) {
  * what is owed, payments subtract. The total must equal credit_balance. When the
  * two disagree, one of them is lying to the vendor and neither can be trusted —
  * which is why this is the invariant every money test ends on.
+ *
+ * The signs come from the app's own utils/creditLedger rather than a copy kept here.
+ * A copy is worse than no check: it would keep passing after the app learned a new
+ * row type this file did not, which is precisely the drift the test exists to catch.
  */
 export function ledgerSum(ctx, customerId) {
-  return paise(
-    ledgerRows(ctx, customerId).reduce((acc, row) => {
-      const amt = Number(row.amount) || 0;
-      if (row.transaction_type === 'CREDIT_ADDED') return acc + amt;
-      if (row.transaction_type === 'PAYMENT_RECEIVED') return acc - amt;
-      if (row.transaction_type === 'CREDIT_ADJUSTMENT') return acc + amt;
-      return acc;
-    }, 0)
-  );
+  const { replay } = require(path.join(APP_ROOT, 'utils/creditLedger.js'));
+  return paise(replay(ledgerRows(ctx, customerId)));
 }
 
 /** Rounds to paise so REAL-column float noise can't fail an otherwise-correct test. */

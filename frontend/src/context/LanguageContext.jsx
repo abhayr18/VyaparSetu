@@ -15,6 +15,22 @@ const STORAGE_KEY = 'vyapaarsetu_lang';
 const LanguageContext = createContext(null);
 
 /**
+ * Read the saved language, tolerating a localStorage that throws.
+ *
+ * This runs during the very first render of the provider that wraps the entire app.
+ * An unguarded throw here takes the whole UI down before anything is on screen, and
+ * a language preference is not worth that — falling back to English is.
+ */
+function readSavedLanguage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return TRANSLATIONS[saved] ? saved : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+/**
  * Resolves a dot-notated key from a nested translation object.
  * Example: t('nav.dashboard') → "Dashboard"
  */
@@ -25,13 +41,15 @@ function resolvePath(obj, path) {
 }
 
 export function LanguageProvider({ children }) {
-  const [language, setLanguageState] = useState(
-    () => localStorage.getItem(STORAGE_KEY) || 'en'
-  );
+  const [language, setLanguageState] = useState(readSavedLanguage);
 
   const setLanguage = useCallback((lang) => {
     if (TRANSLATIONS[lang]) {
-      localStorage.setItem(STORAGE_KEY, lang);
+      try {
+        localStorage.setItem(STORAGE_KEY, lang);
+      } catch {
+        // The switch still applies for this session; only persistence is lost.
+      }
       setLanguageState(lang);
     }
   }, []);
@@ -49,8 +67,21 @@ export function LanguageProvider({ children }) {
    * @returns {string}
    */
   const t = useCallback((key, vars) => {
-    const translations = TRANSLATIONS[language] || TRANSLATIONS.en;
-    const text = resolvePath(translations, key) ?? key;
+    const activeTranslations = TRANSLATIONS[language] || TRANSLATIONS.en;
+    let text = resolvePath(activeTranslations, key);
+    
+    // Fallback to English if missing in selected language
+    if (text === null || text === undefined) {
+      text = resolvePath(TRANSLATIONS.en, key);
+    }
+
+    // If still missing, format into clean readable string rather than raw dot-notated key
+    if (text === null || text === undefined) {
+      const lastKey = key.split('.').pop() || key;
+      // Convert camelCase or dot to Title Case words
+      text = lastKey.replace(/([A-Z])/g, ' $1').replace(/^./, (str) => str.toUpperCase()).trim();
+    }
+
     if (!vars || typeof text !== 'string') return text;
     return text.replace(/\{\{(\w+)\}\}/g, (match, name) =>
       Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match

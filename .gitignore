@@ -4,12 +4,19 @@ node_modules/
 # Production builds
 dist/
 
+# Electron installer output (electron-builder)
+release/
+
 # SQLite databases
 *.db
 database/vyapaarsetu.db
+# WAL mode keeps recent writes in these two sidecars, so `*.db` does not cover
+# them and a `git add -A` would commit a fragment of real client data.
+*.db-wal
+*.db-shm
 
-# Drive credentials
-database/drive_tokens.json
+# Drive credentials (matched in any directory, wherever the tokens land)
+drive_tokens.json
 
 # Local backups
 backups/
@@ -24,5 +31,18 @@ backups/
 # IDE configurations
 .vscode/
 .idea/
+.claude/
 .DS_Store
 Thumbs.db
+
+# Licensing — MUST NOT be committed.
+# The private key can forge licenses for every install; licenses.json is the
+# customer register; license.json is a machine's local activation record.
+tools/keys/
+tools/licenses.json
+*.pem
+backend/database/license.json
+license.json
+
+# Tooling
+gstack/

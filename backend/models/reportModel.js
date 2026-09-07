@@ -1,20 +1,7 @@
 // backend/models/reportModel.js
-const { getDb } = require('../database/db');
-
-// Helper to map rows
-function rowToObj(columns, row) {
-  const obj = {};
-  columns.forEach((col, i) => { obj[col] = row[i]; });
-  return obj;
-}
-
-function execSelect(sql, params = []) {
-  const db = getDb();
-  const result = db.exec(sql, params);
-  if (!result.length) return [];
-  const { columns, values } = result[0];
-  return values.map(row => rowToObj(columns, row));
-}
+const { execSelect } = require('../database/db');
+const { toRupees, rowToRupees } = require('../utils/money');
+const { localDateSql } = require('../utils/businessDay');
 
 /** Get sales summary + bills list for date range */
 function getSalesSummary(startDate, endDate) {
@@ -46,9 +33,22 @@ function getSalesSummary(startDate, endDate) {
     [startDate, endDate]
   );
 
+  const summary = summaryRes[0] || {};
+
   return {
-    summary: summaryRes[0] || {},
-    bills
+    summary: {
+      ...summary,
+      total_subtotal: toRupees(summary.total_subtotal),
+      total_discount: toRupees(summary.total_discount),
+      total_commission: toRupees(summary.total_commission),
+      total_sales: toRupees(summary.total_sales),
+      total_paid: toRupees(summary.total_paid),
+      total_remaining: toRupees(summary.total_remaining),
+      cash_collection: toRupees(summary.cash_collection),
+      upi_collection: toRupees(summary.upi_collection),
+      credit_sales: toRupees(summary.credit_sales),
+    },
+    bills: bills.map((b) => rowToRupees(b, 'bills')),
   };
 }
 
@@ -69,7 +69,12 @@ function getCustomerPurchaseSummary(startDate, endDate) {
      GROUP BY c.id
      ORDER BY total_purchase DESC, c.name ASC`,
     [startDate, endDate]
-  );
+  ).map((r) => ({
+    ...r,
+    total_purchase: toRupees(r.total_purchase),
+    total_paid: toRupees(r.total_paid),
+    total_pending_credit: toRupees(r.total_pending_credit),
+  }));
 }
 
 /** Get vegetable sales summary */
@@ -89,7 +94,10 @@ function getVegetableSalesSummary(startDate, endDate) {
      GROUP BY bi.vegetable_id, bi.vegetable_name
      ORDER BY total_sales DESC`,
     [startDate, endDate]
-  );
+  ).map((r) => ({
+    ...r,
+    total_sales: toRupees(r.total_sales),
+  }));
 }
 
 /** Get credit balances, additions, and collections on a specific date */
@@ -98,22 +106,26 @@ function getCreditSummary(dateVal) {
   const outstandingRes = execSelect(`SELECT COALESCE(SUM(credit_balance), 0) AS total_outstanding FROM customers WHERE is_deleted = 0`);
   const totalOutstanding = outstandingRes[0]?.total_outstanding || 0.0;
 
-  // Credit added on that date
+  // Credit added on that date — CREDIT_ADDED only, on purpose. This is an activity
+  // figure: how much udhar the shop extended that day. An opening balance entered while
+  // migrating a notebook, or a correcting adjustment, moves the outstanding total but is
+  // not credit the shop gave out, so neither belongs here. The reconciling view of every
+  // row is customerModel.getLedger's splitSigned summary.
   const addedRes = execSelect(
-    `SELECT COALESCE(SUM(amount), 0) AS credit_added 
-     FROM credit_transactions 
-     WHERE transaction_type = 'CREDIT_ADDED' 
-       AND date(created_at) = ?`,
+    `SELECT COALESCE(SUM(amount), 0) AS credit_added
+     FROM credit_transactions
+     WHERE transaction_type = 'CREDIT_ADDED'
+       AND ${localDateSql('created_at')} = ?`,
     [dateVal]
   );
   const creditAdded = addedRes[0]?.credit_added || 0.0;
 
-  // Recovery amount on that date
+  // Recovery amount on that date — money actually collected, so PAYMENT_RECEIVED only.
   const recoveredRes = execSelect(
-    `SELECT COALESCE(SUM(amount), 0) AS credit_recovered 
-     FROM credit_transactions 
-     WHERE transaction_type = 'PAYMENT_RECEIVED' 
-       AND date(created_at) = ?`,
+    `SELECT COALESCE(SUM(amount), 0) AS credit_recovered
+     FROM credit_transactions
+     WHERE transaction_type = 'PAYMENT_RECEIVED'
+       AND ${localDateSql('created_at')} = ?`,
     [dateVal]
   );
   const creditRecovered = recoveredRes[0]?.credit_recovered || 0.0;
@@ -128,11 +140,11 @@ function getCreditSummary(dateVal) {
 
   return {
     summary: {
-      total_outstanding: totalOutstanding,
-      credit_added: creditAdded,
-      credit_recovered: creditRecovered
+      total_outstanding: toRupees(totalOutstanding),
+      credit_added: toRupees(creditAdded),
+      credit_recovered: toRupees(creditRecovered)
     },
-    customers
+    customers: customers.map((c) => rowToRupees(c, 'customers'))
   };
 }
 
@@ -177,9 +189,176 @@ function getCommissionSummary(startDate, endDate) {
   );
 
   return {
-    total_commission: totalCommission,
-    dateWise,
-    billWise
+    total_commission: toRupees(totalCommission),
+    dateWise: dateWise.map((d) => ({ ...d, total_commission: toRupees(d.total_commission) })),
+    billWise: billWise.map((b) => rowToRupees(b, 'bills'))
+  };
+}
+
+/** Comprehensive All-In-One Business Master Report */
+function getAllInOneReport(startDate, endDate) {
+  const hasRange = !!(startDate && endDate);
+  const dateFilter = hasRange ? `WHERE date BETWEEN ? AND ?` : ``;
+  const dateParams = hasRange ? [startDate, endDate] : [];
+
+  // 1. Aggregated sales summary
+  const summaryRes = execSelect(
+    `SELECT 
+      COUNT(*) as total_bills,
+      COALESCE(SUM(subtotal), 0) as total_subtotal,
+      COALESCE(SUM(discount_amount), 0) as total_discount,
+      COALESCE(SUM(commission_amount), 0) as total_commission,
+      COALESCE(SUM(hamali_amount), 0) as total_hamali,
+      COALESCE(SUM(transport_amount), 0) as total_transport,
+      COALESCE(SUM(final_amount), 0) as total_sales,
+      COALESCE(SUM(paid_amount), 0) as total_paid,
+      COALESCE(SUM(remaining_amount), 0) as total_remaining,
+      COALESCE(SUM(CASE WHEN payment_type = 'Cash' THEN paid_amount ELSE 0 END), 0) as cash_collection,
+      COALESCE(SUM(CASE WHEN payment_type = 'UPI' THEN paid_amount ELSE 0 END), 0) as upi_collection,
+      COALESCE(SUM(CASE WHEN payment_status = 'Credit' THEN final_amount WHEN payment_status = 'Partial' THEN remaining_amount ELSE 0 END), 0) as credit_sales
+     FROM bills
+     ${dateFilter}`,
+    dateParams
+  );
+  const summary = summaryRes[0] || {};
+
+  // Total Outstanding across all customers
+  const outstandingRes = execSelect(`SELECT COALESCE(SUM(credit_balance), 0) AS total_outstanding FROM customers WHERE is_deleted = 0`);
+  const totalOutstanding = outstandingRes[0]?.total_outstanding || 0.0;
+
+  // Active customer count
+  const customerCountRes = execSelect(`SELECT COUNT(*) as total_customers FROM customers WHERE is_deleted = 0`);
+  const totalCustomersCount = customerCountRes[0]?.total_customers || 0;
+
+  // Vegetable catalog items count
+  const vegCountRes = execSelect(`SELECT COUNT(*) as total_vegetables FROM vegetables WHERE is_deleted = 0`);
+  const totalVegetablesCount = vegCountRes[0]?.total_vegetables || 0;
+
+  // 2. Bills with item details
+  const bills = execSelect(
+    `SELECT b.*, c.name as customer_name, c.mobile as customer_mobile, c.address as customer_address
+     FROM bills b
+     JOIN customers c ON b.customer_id = c.id
+     ${hasRange ? `WHERE b.date BETWEEN ? AND ?` : ``}
+     ORDER BY b.date DESC, b.id DESC`,
+    dateParams
+  ).map((b) => rowToRupees(b, 'bills'));
+
+  for (const bill of bills) {
+    const items = execSelect(
+      `SELECT bi.*, v.unit as vegetable_unit 
+       FROM bill_items bi 
+       LEFT JOIN vegetables v ON bi.vegetable_id = v.id 
+       WHERE bi.bill_id = ? 
+       ORDER BY bi.id ASC`,
+      [bill.id]
+    ).map((bi) => rowToRupees(bi, 'bill_items'));
+    bill.items = items;
+    bill.items_summary = items.map((i) => `${i.vegetable_name} (${i.quantity} ${i.vegetable_unit || 'kg'} @ ₹${i.rate})`).join(', ');
+  }
+
+  // 3. Customer Directory & Udhar Passbook
+  const customers = execSelect(
+    `SELECT 
+      c.id, c.name, c.mobile, c.address, c.notes, c.created_at,
+      c.credit_balance as current_credit_balance,
+      COUNT(b.id) as total_bills,
+      COALESCE(SUM(b.final_amount), 0) as total_purchases,
+      COALESCE(SUM(b.paid_amount), 0) as total_paid
+     FROM customers c
+     LEFT JOIN bills b ON c.id = b.customer_id ${hasRange ? `AND b.date BETWEEN ? AND ?` : ``}
+     WHERE c.is_deleted = 0
+     GROUP BY c.id
+     ORDER BY c.name ASC`,
+    dateParams
+  ).map((c) => ({
+    ...c,
+    current_credit_balance: toRupees(c.current_credit_balance),
+    total_purchases: toRupees(c.total_purchases),
+    total_paid: toRupees(c.total_paid),
+  }));
+
+  // 4. Credit Ledger / Passbook Transactions
+  const ledgerRows = execSelect(
+    `SELECT ct.*, c.name as customer_name, c.mobile as customer_mobile, b.bill_number
+     FROM credit_transactions ct
+     JOIN customers c ON ct.customer_id = c.id
+     LEFT JOIN bills b ON ct.bill_id = b.id
+     ${hasRange ? `WHERE ${localDateSql('ct.created_at')} BETWEEN ? AND ?` : ``}
+     ORDER BY ct.created_at DESC, ct.id DESC`,
+    dateParams
+  ).map((r) => rowToRupees(r, 'credit_transactions'));
+
+  // 5. Vegetable Sales Performance
+  const vegSales = execSelect(
+    `SELECT 
+      bi.vegetable_id,
+      bi.vegetable_name,
+      v.unit as vegetable_unit,
+      COALESCE(SUM(bi.quantity), 0) as total_quantity,
+      COALESCE(SUM(bi.total), 0) as total_sales,
+      COUNT(DISTINCT bi.bill_id) as total_bills
+     FROM bill_items bi
+     JOIN bills b ON bi.bill_id = b.id
+     LEFT JOIN vegetables v ON bi.vegetable_id = v.id
+     ${hasRange ? `WHERE b.date BETWEEN ? AND ?` : ``}
+     GROUP BY bi.vegetable_id, bi.vegetable_name
+     ORDER BY total_sales DESC`,
+    dateParams
+  ).map((r) => ({
+    ...r,
+    total_sales: toRupees(r.total_sales),
+    average_rate: r.total_quantity > 0 ? (toRupees(r.total_sales) / r.total_quantity).toFixed(2) : 0,
+  }));
+
+  // 6. Vegetables Catalog
+  const vegCatalog = execSelect(
+    `SELECT id, name, rate, unit, search_keywords, notes 
+     FROM vegetables 
+     WHERE is_deleted = 0 
+     ORDER BY name ASC`
+  ).map((v) => rowToRupees(v, 'vegetables'));
+
+  // 7. Shop Settings
+  const settingsRows = execSelect(`SELECT key, value FROM settings`);
+  const settingsObj = {};
+  for (const s of settingsRows) {
+    settingsObj[s.key] = s.value;
+  }
+
+  const totalVegVolume = vegSales.reduce((acc, item) => acc + Number(item.total_quantity || 0), 0);
+
+  return {
+    meta: {
+      generated_at: new Date().toISOString(),
+      start_date: startDate || null,
+      end_date: endDate || null,
+      period_label: hasRange ? `${startDate} to ${endDate}` : 'All-Time',
+    },
+    shop: settingsObj,
+    summary: {
+      ...summary,
+      total_subtotal: toRupees(summary.total_subtotal),
+      total_discount: toRupees(summary.total_discount),
+      total_commission: toRupees(summary.total_commission),
+      total_hamali: toRupees(summary.total_hamali),
+      total_transport: toRupees(summary.total_transport),
+      total_sales: toRupees(summary.total_sales),
+      total_paid: toRupees(summary.total_paid),
+      total_remaining: toRupees(summary.total_remaining),
+      cash_collection: toRupees(summary.cash_collection),
+      upi_collection: toRupees(summary.upi_collection),
+      credit_sales: toRupees(summary.credit_sales),
+      total_credit_outstanding: toRupees(totalOutstanding),
+      total_customers_count: totalCustomersCount,
+      total_vegetables_count: totalVegetablesCount,
+      total_vegetables_volume: totalVegVolume,
+    },
+    bills,
+    customers,
+    credit_ledger: ledgerRows,
+    vegetable_sales: vegSales,
+    vegetable_catalog: vegCatalog,
   };
 }
 
@@ -188,5 +367,6 @@ module.exports = {
   getCustomerPurchaseSummary,
   getVegetableSalesSummary,
   getCreditSummary,
-  getCommissionSummary
+  getCommissionSummary,
+  getAllInOneReport,
 };

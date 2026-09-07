@@ -14,7 +14,9 @@ const {
   normalizeCommissionPercent,
   DEFAULT_COMMISSION_PERCENT,
 } = require('../utils/calculation');
-const { getDb, transaction } = require('../database/db');
+const { execRun, execGet, execSelect, transaction } = require('../database/db');
+const { toPaise } = require('../utils/money');
+const logger = require('../utils/logger');
 
 /**
  * Returns local YYYY-MM-DD date string.
@@ -126,8 +128,6 @@ async function createTransaction(payload) {
     // three places. Written separately, a failure between them left the balance
     // and the passbook disagreeing with no way to tell which was right.
     const created = transaction(() => {
-      const db = getDb();
-
       const newTransaction = transactionModel.create({
         customer_id: Number(customer_id),
         vegetable_id: Number(vegetable_id),
@@ -147,26 +147,28 @@ async function createTransaction(payload) {
       });
 
       if (finalRemaining > 0) {
-        db.run(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
-          finalRemaining,
+        const remainingPaise = toPaise(finalRemaining);
+
+        execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+          remainingPaise,
           customer_id,
         ]);
 
-        const balanceRow = db.exec(`SELECT credit_balance FROM customers WHERE id = ?`, [
+        const balanceRow = execGet(`SELECT credit_balance FROM customers WHERE id = ?`, [
           customer_id,
         ]);
-        const balanceAfter = balanceRow[0]?.values[0][0] || 0;
+        const balanceAfter = balanceRow?.credit_balance || 0;
 
         // transaction_id ties this ledger row to the sale, so deleting the sale
         // can reverse exactly the debt it booked.
-        db.run(
+        execRun(
           `INSERT INTO credit_transactions
              (customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
            VALUES (?, ?, 'CREDIT_ADDED', ?, ?, ?, ?)`,
           [
             customer_id,
             newTransaction.id,
-            finalRemaining,
+            remainingPaise,
             payment_mode || 'Credit',
             `Udhar added: ${vegName} (${numWeight}kg)`,
             balanceAfter,
@@ -184,40 +186,152 @@ async function createTransaction(payload) {
 }
 
 /**
- * Consolidates a customer's daily transactions into a formal Bill.
+ * The commission rate to record on a consolidated bill, as a percentage.
  *
- * Only unbilled transactions are consolidated, and they are claimed by the bill as
- * part of the same database transaction that creates it. Running this twice for the
- * same day therefore finds nothing the second time instead of billing the customer
- * again.
+ * Every sale on one day carries the same shop rate, so a daily bill just reuses it.
+ * A range can straddle a rate change — the vendor edited Settings mid-week — and
+ * there is then no single rate that is true of every line. Rather than pick one and
+ * misreport the others, the effective rate is derived from the money actually
+ * charged, which is the figure that has to reconcile.
+ *
+ * The amounts are what the customer owes either way; this column is reference only.
+ */
+function billRateFor(transactions, subtotal, commissionAmount) {
+  // `?? shopRate` before normalizing, not after: normalizeCommissionPercent reads a
+  // SQL NULL as a deliberate 0%, which is right for a rate the vendor set and wrong
+  // for a rate that is simply absent.
+  const shopRate = getShopCommissionPercent();
+  const rates = new Set(
+    transactions.map((t) => normalizeCommissionPercent(t.commission_rate ?? shopRate))
+  );
+  if (rates.size === 1) {
+    return [...rates][0];
+  }
+  if (subtotal <= 0) {
+    return shopRate;
+  }
+  return Math.round((commissionAmount / subtotal) * 10000) / 100;
+}
+
+/**
+ * Parses a YYYY-MM-DD date string, returning null for anything that is not one.
+ *
+ * Stricter than a shape check on purpose: `2026-02-31` matches the pattern but is not
+ * a day, and a bill whose period ends on a date that does not exist is a support call
+ * nobody can reproduce. Round-tripping through Date.UTC rejects it.
+ */
+function parseDateOnly(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!m) return null;
+
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const utc = Date.UTC(year, month - 1, day);
+  const back = new Date(utc);
+  if (
+    back.getUTCFullYear() !== year ||
+    back.getUTCMonth() !== month - 1 ||
+    back.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { text, utc };
+}
+
+/**
+ * The widest period one bill may cover, in days, inclusive of both ends.
+ *
+ * A vendor consolidating a notebook can legitimately want a month or a season. A
+ * range of years is a mistyped year, and billing it would sweep a customer's entire
+ * history onto one sheet — recoverable only by deleting the bill.
+ */
+const MAX_BILL_PERIOD_DAYS = 366;
+
+/**
+ * Consolidates a customer's unbilled transactions for a single day into a formal Bill.
+ *
+ * Only *unbilled* transactions are consolidated, and they are claimed by the bill as
+ * part of the same database transaction that creates it. Running this twice therefore
+ * finds nothing the second time instead of billing the customer again.
+ *
+ * For period/range reports, use `generateStatement` instead — it returns a read-only
+ * bill-shaped object without saving anything to the database.
  *
  * The bill does not book credit: `createTransaction` already did, when each sale
  * was entered. The existing ledger rows are relabelled with the new bill's id so
  * the passbook still points at the bill, and the customer's balance is untouched.
  */
-async function generateBillFromTransactions({ customerId, date }) {
-  const targetDate = date ? date.trim() : getLocalDateString();
+async function generateBillFromTransactions({ customerId, date, startDate, endDate }) {
+  const wantsRange = Boolean(
+    (typeof startDate === 'string' && startDate.trim()) ||
+    (typeof endDate === 'string' && endDate.trim())
+  );
+
+  let periodStart = null;
+  let periodEnd = null;
+  let targetDate;
+
+  if (wantsRange) {
+    const from = parseDateOnly(startDate);
+    const to = parseDateOnly(endDate);
+    if (!from || !to) {
+      return { success: false, error: 'A date range needs a valid start and end date (YYYY-MM-DD)' };
+    }
+    if (from.utc > to.utc) {
+      return { success: false, error: 'The start date must not be after the end date' };
+    }
+    const span = Math.round((to.utc - from.utc) / 86400000) + 1;
+    if (span > MAX_BILL_PERIOD_DAYS) {
+      return {
+        success: false,
+        error: `A single bill can cover at most ${MAX_BILL_PERIOD_DAYS} days — this range covers ${span}`,
+      };
+    }
+
+    periodStart = from.text;
+    periodEnd = to.text;
+    targetDate = to.text;
+  } else {
+    targetDate = date ? date.trim() : getLocalDateString();
+  }
 
   const customer = customerModel.findById(customerId);
   if (!customer) return { success: false, error: 'Customer not found' };
 
-  const transactions = transactionModel.findUnbilledByCustomerAndDate(customerId, targetDate);
+  const rawTransactions = wantsRange
+    ? transactionModel.findUnbilledByCustomerAndDateRange(customerId, periodStart, periodEnd)
+    : transactionModel.findUnbilledByCustomerAndDate(customerId, targetDate);
 
-  if (!transactions || transactions.length === 0) {
-    const alreadyBilled = transactionModel.findByCustomerAndDate(customerId, targetDate);
+  if (!rawTransactions || rawTransactions.length === 0) {
+    const alreadyBilled = wantsRange
+      ? transactionModel.findByCustomerAndDateRange(customerId, periodStart, periodEnd)
+      : transactionModel.findByCustomerAndDate(customerId, targetDate);
+
     if (alreadyBilled && alreadyBilled.length > 0) {
       return {
         success: false,
-        error: "This day's transactions have already been billed for this customer",
+        error: wantsRange
+          ? 'Every transaction in this period has already been billed for this customer'
+          : "This day's transactions have already been billed for this customer",
       };
     }
     return {
       success: false,
-      error: 'No transactions found for this customer on the selected date',
+      error: wantsRange
+        ? 'No transactions found for this customer in the selected period'
+        : 'No transactions found for this customer on the selected date',
     };
   }
 
-  // Calculate totals across today's transactions
+  // Sort chronologically so the bill prints entries in sequence
+  const transactions = [...rawTransactions].sort(
+    (a, b) => a.transaction_date.localeCompare(b.transaction_date) || (a.id - b.id)
+  );
+
+  // Calculate totals across the transactions being consolidated
   const subtotal = transactions.reduce((acc, t) => acc + Number(t.base_amount || 0), 0);
   const commissionAmount = transactions.reduce((acc, t) => acc + Number(t.commission_amount || 0), 0);
   const finalAmount = transactions.reduce((acc, t) => acc + Number(t.final_amount || 0), 0);
@@ -231,35 +345,45 @@ async function generateBillFromTransactions({ customerId, date }) {
     paymentStatus = 'Partial';
   }
 
-  const items = transactions.map((t) => ({
-    vegetable_id: t.vegetable_id,
-    vegetable_name: t.vegetable_name_snapshot,
-    quantity: t.weight,
-    rate: t.rate,
-    total: t.base_amount,
-    vegetable_unit: t.unit || 'kg'
-  }));
+  // Consolidate entries of the same vegetable on the same date into a single line item
+  const mergedItemsMap = new Map();
+  for (const t of transactions) {
+    const key = `${t.transaction_date || targetDate}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
+    const existing = mergedItemsMap.get(key);
+    if (!existing) {
+      mergedItemsMap.set(key, {
+        vegetable_id: t.vegetable_id,
+        vegetable_name: t.vegetable_name_snapshot,
+        quantity: Number(t.weight || 0),
+        rate: Number(t.rate || 0),
+        total: Number(t.base_amount || 0),
+        vegetable_unit: t.unit || 'kg',
+        item_date: t.transaction_date || targetDate,
+      });
+    } else {
+      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
+      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
+      existing.rate = existing.quantity > 0
+        ? Math.round((existing.total / existing.quantity) * 100) / 100
+        : existing.rate;
+    }
+  }
+  const items = Array.from(mergedItemsMap.values());
 
-  // Every transaction on a day is charged the same shop rate, so the bill carries
-  // that rate rather than re-deriving one from summed amounts.
-  const billCommissionRate = normalizeCommissionPercent(
-    transactions[0].commission_rate ?? getShopCommissionPercent()
-  );
+  const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
 
-  const billNumber = `BILL-${targetDate.replace(/-/g, '')}-${String(customerId).padStart(3, '0')}-${Date.now().toString().slice(-4)}`;
   const transactionIds = transactions.map((t) => t.id);
 
   try {
     const createdBill = transaction(() => {
-      const db = getDb();
-
       const bill = billModel.create(
         {
-          bill_number: billNumber,
           customer_id: Number(customerId),
           customer_name: customer.name,
           customer_mobile: customer.mobile,
           date: targetDate,
+          period_start: periodStart,
+          period_end: periodEnd,
           subtotal: Math.round(subtotal * 100) / 100,
           discount_type: 'fixed',
           discount_value: 0,
@@ -287,7 +411,7 @@ async function generateBillFromTransactions({ customerId, date }) {
       // Point the existing ledger rows at this bill so the passbook and the bill
       // agree, without adding rows that would inflate the balance.
       const placeholders = transactionIds.map(() => '?').join(', ');
-      db.run(
+      execRun(
         `UPDATE credit_transactions SET bill_id = ?
          WHERE transaction_id IN (${placeholders}) AND transaction_type = 'CREDIT_ADDED'`,
         [bill.id, ...transactionIds]
@@ -299,6 +423,182 @@ async function generateBillFromTransactions({ customerId, date }) {
     return { success: true, data: createdBill };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Generates a read-only period statement for a customer across a date range.
+ *
+ * This is NOT saved to the database — it returns a bill-shaped object for the
+ * frontend to render, print, download as PDF, or share via WhatsApp. The vendor
+ * can regenerate it any time for any date range without cluttering the Invoices.
+ *
+ * All transactions (billed and unbilled) within the range are included, so the
+ * customer gets a complete picture of their purchases across the period.
+ */
+async function generateStatement({ customerId, startDate, endDate }) {
+  const from = parseDateOnly(startDate);
+  const to = parseDateOnly(endDate);
+  if (!from || !to) {
+    return { success: false, error: 'A date range needs a valid start and end date (YYYY-MM-DD)' };
+  }
+  if (from.utc > to.utc) {
+    return { success: false, error: 'The start date must not be after the end date' };
+  }
+  const span = Math.round((to.utc - from.utc) / 86400000) + 1;
+  if (span > MAX_BILL_PERIOD_DAYS) {
+    return {
+      success: false,
+      error: `A statement can cover at most ${MAX_BILL_PERIOD_DAYS} days — this range covers ${span}`,
+    };
+  }
+
+  const periodStart = from.text;
+  const periodEnd = to.text;
+
+  const customer = customerModel.findById(customerId);
+  if (!customer) return { success: false, error: 'Customer not found' };
+
+  const rawTransactions = transactionModel.findByCustomerAndDateRange(
+    customerId, periodStart, periodEnd
+  );
+
+  if (!rawTransactions || rawTransactions.length === 0) {
+    return {
+      success: false,
+      error: 'No transactions found for this customer in the selected period',
+    };
+  }
+
+  // Sort chronologically (oldest date first)
+  const transactions = [...rawTransactions].sort(
+    (a, b) => a.transaction_date.localeCompare(b.transaction_date) || (a.id - b.id)
+  );
+
+  // Calculate totals
+  const subtotal = transactions.reduce((acc, t) => acc + Number(t.base_amount || 0), 0);
+  const commissionAmount = transactions.reduce((acc, t) => acc + Number(t.commission_amount || 0), 0);
+  const finalAmount = transactions.reduce((acc, t) => acc + Number(t.final_amount || 0), 0);
+  const paidAmount = transactions.reduce((acc, t) => acc + Number(t.paid_amount || 0), 0);
+  const remainingAmount = transactions.reduce((acc, t) => acc + Number(t.remaining_amount || 0), 0);
+
+  let paymentStatus = 'Credit';
+  if (remainingAmount <= 0) {
+    paymentStatus = 'Paid';
+  } else if (paidAmount > 0) {
+    paymentStatus = 'Partial';
+  }
+
+  // Consolidate entries of the same vegetable on the same date
+  const mergedItemsMap = new Map();
+  for (const t of transactions) {
+    const key = `${t.transaction_date}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
+    const existing = mergedItemsMap.get(key);
+    if (!existing) {
+      mergedItemsMap.set(key, {
+        vegetable_id: t.vegetable_id,
+        vegetable_name: t.vegetable_name_snapshot,
+        quantity: Number(t.weight || 0),
+        rate: Number(t.rate || 0),
+        total: Number(t.base_amount || 0),
+        vegetable_unit: t.unit || 'kg',
+        item_date: t.transaction_date,
+      });
+    } else {
+      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
+      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
+      existing.rate = existing.quantity > 0
+        ? Math.round((existing.total / existing.quantity) * 100) / 100
+        : existing.rate;
+    }
+  }
+  const items = Array.from(mergedItemsMap.values());
+
+  const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
+
+  // Read the customer's current credit balance for "previous outstanding" display
+  const { toRupees } = require('../utils/money');
+  const customerBalance = toRupees(customer.credit_balance || 0);
+
+  // Return a bill-shaped object WITHOUT saving anything
+  return {
+    success: true,
+    data: {
+      // No id or bill_number — this is a statement, not a saved invoice
+      id: null,
+      bill_number: null,
+      customer_id: Number(customerId),
+      customer_name: customer.name,
+      customer_mobile: customer.mobile,
+      customer_credit_balance: customerBalance,
+      date: periodEnd,
+      period_start: periodStart,
+      period_end: periodEnd,
+      subtotal: Math.round(subtotal * 100) / 100,
+      discount_type: 'fixed',
+      discount_value: 0,
+      discount_amount: 0,
+      commission_rate: billCommissionRate,
+      commission_amount: Math.round(commissionAmount * 100) / 100,
+      hamali_amount: 0,
+      transport_amount: 0,
+      final_amount: Math.round(finalAmount * 100) / 100,
+      paid_amount: Math.round(paidAmount * 100) / 100,
+      remaining_amount: Math.round(remainingAmount * 100) / 100,
+      payment_type: paymentStatus === 'Credit' ? 'Credit' : 'Cash',
+      payment_status: paymentStatus,
+      items,
+    },
+  };
+}
+
+/**
+ * Auto-bills unbilled transactions from dates before today.
+ *
+ * Runs once on server startup. For each (customer, date) pair that has unbilled
+ * transactions from a past date, generates and saves a daily bill. This ensures
+ * that if a vendor forgot to click "Generate Bill" yesterday, the entries are
+ * still captured as invoices.
+ */
+async function autoBillPastTransactions() {
+  const today = getLocalDateString();
+  try {
+    const unbilledDays = execSelect(
+      `SELECT DISTINCT customer_id, transaction_date
+       FROM transactions
+       WHERE bill_id IS NULL AND transaction_date < ?
+       ORDER BY transaction_date ASC`,
+      [today]
+    );
+
+    if (unbilledDays.length === 0) {
+      logger.info('Auto-bill: no unbilled past transactions found.');
+      return { generated: 0 };
+    }
+
+    let generated = 0;
+    for (const { customer_id, transaction_date } of unbilledDays) {
+      const result = await generateBillFromTransactions({
+        customerId: customer_id,
+        date: transaction_date,
+      });
+      if (result.success) {
+        generated++;
+        logger.info(
+          `Auto-bill: generated bill for customer #${customer_id} on ${transaction_date} → ${result.data.bill_number}`
+        );
+      } else {
+        logger.warn(
+          `Auto-bill: skipped customer #${customer_id} on ${transaction_date} — ${result.error}`
+        );
+      }
+    }
+
+    logger.info(`Auto-bill: generated ${generated} bill(s) for past unbilled transactions.`);
+    return { generated };
+  } catch (err) {
+    logger.error(`Auto-bill failed: ${err.message}`);
+    return { generated: 0, error: err.message };
   }
 }
 
@@ -403,20 +703,18 @@ async function deleteTransaction(id) {
     }
 
     transaction(() => {
-      const db = getDb();
-
       // Reverse exactly what this sale booked, read from the ledger rather than
       // recomputed, so a later change to the pricing rules cannot make the
       // reversal disagree with the original charge.
-      const bookedRes = db.exec(
-        `SELECT COALESCE(SUM(amount), 0) FROM credit_transactions
+      const bookedRow = execGet(
+        `SELECT COALESCE(SUM(amount), 0) AS booked FROM credit_transactions
          WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
         [id]
       );
-      const booked = Number(bookedRes[0]?.values[0][0] || 0);
+      const booked = Number(bookedRow?.booked || 0);
 
       if (booked > 0) {
-        db.run(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
           booked,
           existing.customer_id,
         ]);
@@ -425,7 +723,7 @@ async function deleteTransaction(id) {
       // The ledger rows go with the sale. Keeping a reversal entry would be the
       // other reasonable choice, but the vendor's passbook is short and read by
       // hand — a cancelled sale is clearer absent than present twice.
-      db.run(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
+      execRun(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
 
       transactionModel.deleteById(id);
     });
@@ -436,13 +734,190 @@ async function deleteTransaction(id) {
   }
 }
 
+/**
+ * Update an existing transaction by ID.
+ * Recalculates financial totals, rolls back previous credit ledger booking,
+ * and records new credit/udhar debt if applicable within a transaction.
+ */
+async function updateTransaction(id, payload) {
+  try {
+    const existing = transactionModel.findById(id);
+    if (!existing) return { success: false, error: 'Transaction not found' };
+
+    // Disallow editing if already consolidated into a bill
+    if (existing.bill_id) {
+      return {
+        success: false,
+        error: 'This transaction is part of a generated bill. Delete or cancel the bill first, then edit the transaction.',
+      };
+    }
+
+    const {
+      customer_id = existing.customer_id,
+      vegetable_id = existing.vegetable_id,
+      vegetable_name_snapshot,
+      weight = existing.weight,
+      rate = existing.rate,
+      unit = existing.unit || 'kg',
+      payment_type = existing.payment_type || 'Credit',
+      payment_mode = existing.payment_mode || 'Cash',
+      paid_amount,
+      transaction_date = existing.transaction_date,
+    } = payload || {};
+
+    // 1. Validate Customer
+    const customer = customerModel.findById(customer_id);
+    if (!customer) {
+      return { success: false, error: 'Selected customer does not exist' };
+    }
+
+    // 2. Validate Vegetable
+    const vegetable = vegetableModel.findById(vegetable_id);
+    if (!vegetable) {
+      return { success: false, error: 'Selected vegetable does not exist' };
+    }
+
+    // 3. Validate Weight
+    const numWeight = Number(weight);
+    if (isNaN(numWeight) || numWeight <= 0) {
+      return { success: false, error: 'Weight must be greater than 0' };
+    }
+
+    // 4. Validate Rate
+    const numRate = Number(rate);
+    if (isNaN(numRate) || numRate < 0) {
+      return { success: false, error: 'Rate must be 0 or greater' };
+    }
+
+    // 5. Calculate Base, Commission, Final Amount at the shop's configured rate
+    const totals = calculateTransactionTotals(numWeight, numRate, getShopCommissionPercent());
+
+    // 6. Payment Amount Calculations
+    let finalPaid = 0;
+    let finalRemaining = totals.finalAmount;
+
+    if (payment_type === 'Paid') {
+      finalPaid = totals.finalAmount;
+      finalRemaining = 0;
+    } else if (payment_type === 'Partial') {
+      const rawPaid = Number(paid_amount !== undefined ? paid_amount : existing.paid_amount) || 0;
+      finalPaid = Math.min(totals.finalAmount, Math.max(0, Math.round(rawPaid * 100) / 100));
+      finalRemaining = Math.round((totals.finalAmount - finalPaid) * 100) / 100;
+    } else {
+      // Credit
+      finalPaid = 0;
+      finalRemaining = totals.finalAmount;
+    }
+
+    const vegName = vegetable_name_snapshot && vegetable_name_snapshot.trim()
+      ? vegetable_name_snapshot.trim()
+      : vegetable.name;
+
+    const tDate = transaction_date && transaction_date.trim()
+      ? transaction_date.trim()
+      : existing.transaction_date;
+
+    const updated = transaction(() => {
+      // Step A: Revert old credit booking from old customer
+      const bookedRow = execGet(
+        `SELECT COALESCE(SUM(amount), 0) AS booked FROM credit_transactions
+         WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+        [id]
+      );
+      const booked = Number(bookedRow?.booked || 0);
+
+      if (booked > 0) {
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+          booked,
+          existing.customer_id,
+        ]);
+      }
+
+      // Step B: Delete old credit_transactions for this transaction
+      execRun(`DELETE FROM credit_transactions WHERE transaction_id = ?`, [id]);
+
+      // Step C: Update the transaction record
+      const result = transactionModel.updateById(id, {
+        customer_id: Number(customer_id),
+        vegetable_id: Number(vegetable_id),
+        vegetable_name_snapshot: vegName,
+        weight: numWeight,
+        unit: unit || vegetable.unit || 'kg',
+        rate: numRate,
+        base_amount: totals.baseAmount,
+        commission_rate: totals.commissionRate,
+        commission_amount: totals.commissionAmount,
+        final_amount: totals.finalAmount,
+        payment_type,
+        payment_mode: payment_type === 'Credit' ? 'Credit' : payment_mode,
+        paid_amount: finalPaid,
+        remaining_amount: finalRemaining,
+        transaction_date: tDate,
+      });
+
+      // Step D: If there is remaining credit/udhar, add debt to customer and write ledger entry
+      if (finalRemaining > 0) {
+        const remainingPaise = toPaise(finalRemaining);
+        execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+          remainingPaise,
+          Number(customer_id),
+        ]);
+
+        const updatedCustomer = customerModel.findById(customer_id);
+        const newBalancePaise = toPaise(updatedCustomer.credit_balance);
+
+        execRun(
+          `INSERT INTO credit_transactions (
+            customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            Number(customer_id),
+            id,
+            'CREDIT_ADDED',
+            remainingPaise,
+            payment_type === 'Credit' ? 'Credit' : payment_mode,
+            `Edited sale: ${numWeight} ${unit} ${vegName} @ ₹${numRate}`,
+            newBalancePaise,
+          ]
+        );
+      }
+
+      return result;
+    });
+
+    logger.info(`Transaction ${id} updated successfully`);
+    return { success: true, data: updated };
+  } catch (err) {
+    logger.error(`Failed to update transaction ${id}:`, err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Customers with entries still waiting to be billed, oldest first.
+ *
+ * Read-only aggregate — nothing here decides anything, it only tells the vendor where
+ * the unbilled work is so the range bill is reachable without guessing dates.
+ */
+async function getPendingSettlements() {
+  try {
+    return { success: true, data: transactionModel.findPendingSettlements() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 module.exports = {
   createTransaction,
+  updateTransaction,
   generateBillFromTransactions,
+  generateStatement,
+  autoBillPastTransactions,
   getTransactionById,
   getCustomerTransactions,
   getCustomerDailyPurchase,
   getAllTransactions,
+  getPendingSettlements,
   deleteTransaction,
   getLocalDateString
 };

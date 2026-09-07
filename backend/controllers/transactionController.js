@@ -21,8 +21,24 @@ async function generateBill(req, res) {
   return res.status(400).json({ success: false, error: result.error });
 }
 
+async function generateStatement(req, res) {
+  const result = await transactionService.generateStatement(req.body);
+  if (result.success) {
+    return res.json({ success: true, data: result.data });
+  }
+  return res.status(400).json({ success: false, error: result.error });
+}
+
 async function getAllTransactions(req, res) {
   const result = await transactionService.getAllTransactions(req.query);
+  if (result.success) {
+    return res.json({ success: true, data: result.data });
+  }
+  return res.status(500).json({ success: false, error: result.error });
+}
+
+async function getPendingSettlements(req, res) {
+  const result = await transactionService.getPendingSettlements();
   if (result.success) {
     return res.json({ success: true, data: result.data });
   }
@@ -67,6 +83,15 @@ async function getCustomerRangeTransactions(req, res) {
   return res.status(400).json({ success: false, error: result.error });
 }
 
+async function updateTransaction(req, res) {
+  const { id } = req.params;
+  const result = await transactionService.updateTransaction(id, req.body);
+  if (result.success) {
+    return res.json({ success: true, data: result.data, message: 'Transaction updated successfully.' });
+  }
+  return res.status(400).json({ success: false, error: result.error });
+}
+
 async function deleteTransaction(req, res) {
   const { id } = req.params;
   const result = await transactionService.deleteTransaction(id);
@@ -78,8 +103,11 @@ async function deleteTransaction(req, res) {
 
 module.exports = {
   createTransaction,
+  updateTransaction,
   generateBill,
+  generateStatement,
   getAllTransactions,
+  getPendingSettlements,
   getTransactionById,
   getCustomerTransactions,
   getCustomerDailyPurchase,

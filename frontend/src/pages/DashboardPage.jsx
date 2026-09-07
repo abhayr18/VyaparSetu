@@ -66,11 +66,6 @@ export default function DashboardPage() {
     return isNaN(num) ? '₹ 0.00' : `₹ ${num.toFixed(2)}`;
   };
 
-  const formatDate = (iso) => {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
   const formatDateTime = (iso) => {
     if (!iso) return t('common.noData') || '—';
     return new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });

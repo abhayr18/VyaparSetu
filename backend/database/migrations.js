@@ -19,6 +19,11 @@
  *
  * Adding a migration: append an entry with the next version number. Never edit
  * or renumber a released one — an installed shop PC has already recorded it.
+ *
+ * These functions operate on the raw better-sqlite3 handle (the value initDb()
+ * returns), not the execSelect/execRun surface the models use: the runner has to
+ * toggle `PRAGMA foreign_keys` and drive its own BEGIN/COMMIT around each
+ * migration, which is below the level that surface models.
  */
 
 const logger = require('../utils/logger');
@@ -34,12 +39,8 @@ const BASELINE_VERSION = 1;
 
 /** PRAGMA table_info for a table, keyed by column name. `{}` if absent. */
 function columnInfo(db, table) {
-  const res = db.exec(`PRAGMA table_info(${table})`);
-  if (!res.length) return {};
-  const { columns, values } = res[0];
   const out = {};
-  for (const row of values) {
-    const col = Object.fromEntries(columns.map((c, i) => [c, row[i]]));
+  for (const col of db.pragma(`table_info(${table})`)) {
     out[col.name] = col;
   }
   return out;
@@ -50,22 +51,24 @@ function hasColumn(db, table, column) {
 }
 
 function tableExists(db, table) {
-  const res = db.exec(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`, [table]);
-  return res.length > 0;
+  const row = db
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+  return row !== undefined;
 }
 
 /** Adds a column only if it is missing, so the call is safe to repeat. */
 function addColumnIfMissing(db, table, column, definition) {
   if (!tableExists(db, table) || hasColumn(db, table, column)) return false;
-  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   logger.info(`  + ${table}.${column}`);
   return true;
 }
 
 /** First value of the first row, or null. */
 function scalar(db, sql, params = []) {
-  const res = db.exec(sql, params);
-  return res.length && res[0].values.length ? res[0].values[0][0] : null;
+  const value = db.prepare(sql).pluck().get(params);
+  return value === undefined ? null : value;
 }
 
 // ─── The migrations ──────────────────────────────────────────────────────────
@@ -157,7 +160,7 @@ const MIGRATIONS = [
         );
       }
 
-      db.run(`
+      db.exec(`
         CREATE TABLE transactions_migration_5 (
           id                      INTEGER PRIMARY KEY AUTOINCREMENT,
           customer_id             INTEGER NOT NULL,
@@ -182,7 +185,7 @@ const MIGRATIONS = [
         )
       `);
 
-      db.run(`
+      db.exec(`
         INSERT INTO transactions_migration_5
           (id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
            base_amount, commission_rate, commission_amount, final_amount,
@@ -201,15 +204,15 @@ const MIGRATIONS = [
         FROM transactions
       `);
 
-      db.run('DROP TABLE transactions');
-      db.run('ALTER TABLE transactions_migration_5 RENAME TO transactions');
+      db.exec('DROP TABLE transactions');
+      db.exec('ALTER TABLE transactions_migration_5 RENAME TO transactions');
 
       // Indexes belong to the dropped table and must be recreated.
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
         ON transactions(customer_id, transaction_date)
       `);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
 
       logger.info(`  ~ transactions.commission_rate converted to percentage (${fractionRows} row(s))`);
     },
@@ -224,7 +227,7 @@ const MIGRATIONS = [
      */
     up(db) {
       addColumnIfMissing(db, 'credit_transactions', 'transaction_id', 'INTEGER REFERENCES transactions(id)');
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_credit_transactions_transaction
         ON credit_transactions(transaction_id)
       `);
@@ -241,10 +244,341 @@ const MIGRATIONS = [
      */
     up(db) {
       addColumnIfMissing(db, 'transactions', 'bill_id', 'INTEGER REFERENCES bills(id)');
-      db.run(`
+      db.exec(`
         CREATE INDEX IF NOT EXISTS idx_transactions_bill
         ON transactions(bill_id)
       `);
+    },
+  },
+
+  {
+    version: 8,
+    name: 'money-columns-as-integer-paise',
+    /**
+     * Money moves from REAL rupees to INTEGER paise. A floating-point rupee cannot
+     * represent most decimal fractions exactly, so a balance updated across many
+     * sales drifts fractions of a paisa away from what its ledger sums to; whole
+     * paise in an INTEGER column cannot drift. Every money column in every table is
+     * rebuilt as INTEGER with its value multiplied by 100 and rounded to the
+     * nearest paisa. Non-money numerics stay REAL: commission_rate is a percentage,
+     * discount_value is dual-unit (rupees or a percentage), weight and quantity are
+     * kilograms.
+     *
+     * SQLite cannot alter a column's type, so each table is rebuilt with its rows
+     * copied across — the same pattern as migration 5. The runner has already
+     * turned foreign keys off and opened a transaction, which is what lets the six
+     * tables be dropped and recreated despite the references between them; the
+     * tables are rebuilt parents-first so each one's foreign keys resolve.
+     *
+     * On a fresh database the baseline already declares these columns INTEGER, so
+     * there is nothing to convert: the guard below returns early rather than dropping
+     * and recreating six tables to reach the shape already present. That keeps a new
+     * install's file small and still lands on exactly the fresh shape — which is what
+     * the schema-convergence test in migration.test.js checks.
+     */
+    up(db) {
+      // Any database predating v8 has every money column as REAL together, so one
+      // column settles whether the conversion is still needed. A fresh install is
+      // already INTEGER and skips the rebuild entirely — otherwise it would drop and
+      // recreate six tables on first boot, inflating the file with freed pages.
+      const balanceCol = columnInfo(db, 'customers').credit_balance;
+      if (balanceCol && String(balanceCol.type).toUpperCase() === 'INTEGER') {
+        logger.info('  ~ money columns already integer paise, nothing to convert');
+        return;
+      }
+
+      // ── customers ──
+      db.exec(`
+        CREATE TABLE customers_migration_8 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          name           TEXT    NOT NULL,
+          mobile         TEXT    NOT NULL UNIQUE,
+          address        TEXT    DEFAULT '',
+          notes          TEXT    DEFAULT '',
+          credit_balance INTEGER DEFAULT 0,
+          is_deleted     INTEGER DEFAULT 0,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      db.exec(`
+        INSERT INTO customers_migration_8
+          (id, name, mobile, address, notes, credit_balance, is_deleted, created_at, updated_at)
+        SELECT
+          id, name, mobile, address, notes,
+          CAST(ROUND(credit_balance * 100) AS INTEGER),
+          is_deleted, created_at, updated_at
+        FROM customers
+      `);
+      db.exec('DROP TABLE customers');
+      db.exec('ALTER TABLE customers_migration_8 RENAME TO customers');
+
+      // ── vegetables ──
+      db.exec(`
+        CREATE TABLE vegetables_migration_8 (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          name            TEXT    NOT NULL UNIQUE,
+          rate            INTEGER NOT NULL DEFAULT 0,
+          unit            TEXT    NOT NULL DEFAULT 'kg',
+          search_keywords TEXT    DEFAULT '',
+          notes           TEXT    DEFAULT '',
+          is_deleted      INTEGER DEFAULT 0,
+          created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      db.exec(`
+        INSERT INTO vegetables_migration_8
+          (id, name, rate, unit, search_keywords, notes, is_deleted, created_at, updated_at)
+        SELECT
+          id, name,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          unit, search_keywords, notes, is_deleted, created_at, updated_at
+        FROM vegetables
+      `);
+      db.exec('DROP TABLE vegetables');
+      db.exec('ALTER TABLE vegetables_migration_8 RENAME TO vegetables');
+
+      // ── bills ──
+      db.exec(`
+        CREATE TABLE bills_migration_8 (
+          id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_number        TEXT    NOT NULL UNIQUE,
+          customer_id        INTEGER NOT NULL,
+          date               TEXT    NOT NULL,
+          subtotal           INTEGER NOT NULL,
+          discount_type      TEXT    DEFAULT 'fixed',
+          discount_value     REAL    DEFAULT 0.0,
+          discount_amount    INTEGER DEFAULT 0,
+          commission_rate    REAL    DEFAULT 8.0,
+          commission_amount  INTEGER NOT NULL,
+          hamali_amount      INTEGER DEFAULT 0,
+          transport_amount   INTEGER DEFAULT 0,
+          final_amount       INTEGER NOT NULL,
+          paid_amount        INTEGER DEFAULT 0,
+          remaining_amount   INTEGER DEFAULT 0,
+          payment_type       TEXT    NOT NULL,
+          payment_status     TEXT    NOT NULL,
+          created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id) REFERENCES customers(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO bills_migration_8
+          (id, bill_number, customer_id, date, subtotal, discount_type, discount_value,
+           discount_amount, commission_rate, commission_amount, hamali_amount,
+           transport_amount, final_amount, paid_amount, remaining_amount,
+           payment_type, payment_status, created_at, updated_at)
+        SELECT
+          id, bill_number, customer_id, date,
+          CAST(ROUND(subtotal * 100) AS INTEGER),
+          discount_type, discount_value,
+          CAST(ROUND(discount_amount * 100) AS INTEGER),
+          commission_rate,
+          CAST(ROUND(commission_amount * 100) AS INTEGER),
+          CAST(ROUND(hamali_amount * 100) AS INTEGER),
+          CAST(ROUND(transport_amount * 100) AS INTEGER),
+          CAST(ROUND(final_amount * 100) AS INTEGER),
+          CAST(ROUND(paid_amount * 100) AS INTEGER),
+          CAST(ROUND(remaining_amount * 100) AS INTEGER),
+          payment_type, payment_status, created_at, updated_at
+        FROM bills
+      `);
+      db.exec('DROP TABLE bills');
+      db.exec('ALTER TABLE bills_migration_8 RENAME TO bills');
+
+      // ── bill_items ──
+      db.exec(`
+        CREATE TABLE bill_items_migration_8 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_id        INTEGER NOT NULL,
+          vegetable_id   INTEGER NOT NULL,
+          vegetable_name TEXT    NOT NULL,
+          quantity       REAL    NOT NULL,
+          rate           INTEGER NOT NULL,
+          total          INTEGER NOT NULL,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(bill_id) REFERENCES bills(id),
+          FOREIGN KEY(vegetable_id) REFERENCES vegetables(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO bill_items_migration_8
+          (id, bill_id, vegetable_id, vegetable_name, quantity, rate, total, created_at)
+        SELECT
+          id, bill_id, vegetable_id, vegetable_name, quantity,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          CAST(ROUND(total * 100) AS INTEGER),
+          created_at
+        FROM bill_items
+      `);
+      db.exec('DROP TABLE bill_items');
+      db.exec('ALTER TABLE bill_items_migration_8 RENAME TO bill_items');
+
+      // ── transactions ──
+      db.exec(`
+        CREATE TABLE transactions_migration_8 (
+          id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id             INTEGER NOT NULL,
+          vegetable_id            INTEGER NOT NULL,
+          vegetable_name_snapshot TEXT    NOT NULL,
+          weight                  REAL    NOT NULL,
+          unit                    TEXT    NOT NULL DEFAULT 'kg',
+          rate                    INTEGER NOT NULL,
+          base_amount             INTEGER NOT NULL,
+          commission_rate         REAL    NOT NULL DEFAULT 8.0,
+          commission_amount       INTEGER NOT NULL,
+          final_amount            INTEGER NOT NULL,
+          payment_type            TEXT    DEFAULT 'Credit',
+          payment_mode            TEXT    DEFAULT 'Credit',
+          paid_amount             INTEGER DEFAULT 0,
+          remaining_amount        INTEGER DEFAULT 0,
+          transaction_date        TEXT    NOT NULL,
+          bill_id                 INTEGER,
+          created_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at              DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id)  REFERENCES customers(id),
+          FOREIGN KEY(vegetable_id) REFERENCES vegetables(id),
+          FOREIGN KEY(bill_id)      REFERENCES bills(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO transactions_migration_8
+          (id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit, rate,
+           base_amount, commission_rate, commission_amount, final_amount,
+           payment_type, payment_mode, paid_amount, remaining_amount,
+           transaction_date, bill_id, created_at, updated_at)
+        SELECT
+          id, customer_id, vegetable_id, vegetable_name_snapshot, weight, unit,
+          CAST(ROUND(rate * 100) AS INTEGER),
+          CAST(ROUND(base_amount * 100) AS INTEGER),
+          commission_rate,
+          CAST(ROUND(commission_amount * 100) AS INTEGER),
+          CAST(ROUND(final_amount * 100) AS INTEGER),
+          payment_type, payment_mode,
+          CAST(ROUND(paid_amount * 100) AS INTEGER),
+          CAST(ROUND(remaining_amount * 100) AS INTEGER),
+          transaction_date, bill_id, created_at, updated_at
+        FROM transactions
+      `);
+      db.exec('DROP TABLE transactions');
+      db.exec('ALTER TABLE transactions_migration_8 RENAME TO transactions');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_transactions_customer_date
+        ON transactions(customer_id, transaction_date)
+      `);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_bill ON transactions(bill_id)`);
+
+      // ── credit_transactions ──
+      db.exec(`
+        CREATE TABLE credit_transactions_migration_8 (
+          id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+          customer_id                INTEGER NOT NULL,
+          bill_id                    INTEGER,
+          transaction_id             INTEGER,
+          transaction_type           TEXT    NOT NULL,
+          amount                     INTEGER NOT NULL,
+          payment_mode               TEXT    NOT NULL,
+          note                       TEXT,
+          balance_after_transaction  INTEGER NOT NULL,
+          created_at                 DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(customer_id)    REFERENCES customers(id),
+          FOREIGN KEY(bill_id)        REFERENCES bills(id),
+          FOREIGN KEY(transaction_id) REFERENCES transactions(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO credit_transactions_migration_8
+          (id, customer_id, bill_id, transaction_id, transaction_type, amount,
+           payment_mode, note, balance_after_transaction, created_at)
+        SELECT
+          id, customer_id, bill_id, transaction_id, transaction_type,
+          CAST(ROUND(amount * 100) AS INTEGER),
+          payment_mode, note,
+          CAST(ROUND(balance_after_transaction * 100) AS INTEGER),
+          created_at
+        FROM credit_transactions
+      `);
+      db.exec('DROP TABLE credit_transactions');
+      db.exec('ALTER TABLE credit_transactions_migration_8 RENAME TO credit_transactions');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_credit_transactions_customer
+        ON credit_transactions(customer_id)
+      `);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_credit_transactions_transaction
+        ON credit_transactions(transaction_id)
+      `);
+
+      logger.info('  ~ money columns converted to integer paise');
+    },
+  },
+
+  {
+    version: 9,
+    name: 'bills-over-a-date-range',
+    /**
+     * A bill could only ever cover one day, so a customer who bought through the
+     * week was handed seven bills. These three columns let one bill cover a range
+     * and still show which day each line came from.
+     *
+     * All three are nullable, and NULL is the legacy shape: a bill with no
+     * period_start covers the single day in `bills.date`, and a bill_item with no
+     * item_date belongs to whatever day its bill does. Every existing bill therefore
+     * keeps rendering exactly as it did, with no backfill and nothing to get wrong.
+     *
+     * These are date strings, not money — they must stay out of MONEY_FIELDS in
+     * utils/money.js, or the paise conversion would multiply them by 100.
+     */
+    up(db) {
+      addColumnIfMissing(db, 'bills', 'period_start', 'TEXT');
+      addColumnIfMissing(db, 'bills', 'period_end', 'TEXT');
+      addColumnIfMissing(db, 'bill_items', 'item_date', 'TEXT');
+
+      // Range bills are looked up and grouped by the period they cover.
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_bills_period
+        ON bills(period_start, period_end)
+      `);
+    },
+  },
+
+  {
+    version: 10,
+    name: 'vegetables-add-category-column',
+    up(db) {
+      addColumnIfMissing(db, 'vegetables', 'category', "TEXT DEFAULT 'General'");
+    },
+  },
+
+  {
+    version: 11,
+    name: 'customers-optional-mobile-number',
+    up(db) {
+      db.exec(`
+        CREATE TABLE customers_migration_11 (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          name           TEXT    NOT NULL,
+          mobile         TEXT    DEFAULT '',
+          address        TEXT    DEFAULT '',
+          notes          TEXT    DEFAULT '',
+          credit_balance INTEGER DEFAULT 0,
+          is_deleted     INTEGER DEFAULT 0,
+          created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO customers_migration_11 (id, name, mobile, address, notes, credit_balance, is_deleted, created_at, updated_at)
+          SELECT id, name, COALESCE(mobile, ''), COALESCE(address, ''), COALESCE(notes, ''), credit_balance, is_deleted, created_at, updated_at
+          FROM customers;
+        DROP TABLE customers;
+        ALTER TABLE customers_migration_11 RENAME TO customers;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_mobile_unique 
+          ON customers(mobile) 
+          WHERE mobile IS NOT NULL AND mobile != '' AND is_deleted = 0;
+      `);
+      logger.info('  ~ customers table migrated to allow optional mobile numbers');
     },
   },
 ];
@@ -252,7 +586,7 @@ const MIGRATIONS = [
 // ─── Runner ──────────────────────────────────────────────────────────────────
 
 function createVersionTable(db) {
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS schema_version (
       version    INTEGER PRIMARY KEY,
       name       TEXT     NOT NULL,
@@ -267,7 +601,7 @@ function currentVersion(db) {
 }
 
 function stamp(db, version, name) {
-  db.run(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (?, ?)`, [version, name]);
+  db.prepare(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (?, ?)`).run(version, name);
 }
 
 /**
@@ -292,21 +626,23 @@ function runMigrations(db) {
 
   for (const migration of pending) {
     // A rebuild cannot run inside a transaction while foreign keys are enforced,
-    // because the DROP + RENAME would be checked against rows mid-copy.
-    db.run('PRAGMA foreign_keys = OFF');
-    db.run('BEGIN TRANSACTION');
+    // because the DROP + RENAME would be checked against rows mid-copy. The
+    // pragma is a no-op inside a transaction, so it is toggled outside the
+    // BEGIN/COMMIT that brackets each migration.
+    db.pragma('foreign_keys = OFF');
+    db.exec('BEGIN');
     try {
       migration.up(db);
       stamp(db, migration.version, migration.name);
-      db.run('COMMIT');
+      db.exec('COMMIT');
       applied.push(migration.version);
       logger.info(`Migration ${migration.version} applied: ${migration.name}`);
     } catch (err) {
-      db.run('ROLLBACK');
+      db.exec('ROLLBACK');
       logger.error(`Migration ${migration.version} (${migration.name}) failed: ${err.message}`);
       throw err;
     } finally {
-      db.run('PRAGMA foreign_keys = ON');
+      db.pragma('foreign_keys = ON');
     }
   }
 

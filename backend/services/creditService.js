@@ -110,11 +110,57 @@ async function adjustCredit({ customer_id, amount, note }) {
   }
 }
 
+/**
+ * Records what a customer already owed before they existed in this app.
+ *
+ * Vendors migrate from a paper notebook, so most customers arrive mid-debt. The only
+ * way to represent that until now was to invent a bill, which put revenue that never
+ * happened into the sales and commission reports. This writes the balance straight to
+ * the ledger instead: one OPENING_BALANCE row and no bill.
+ *
+ * A customer can only be opened once. Other ledger rows are fine — a vendor who
+ * enters a sale before remembering the notebook figure is not blocked — but a second
+ * opening balance would silently double the migrated debt, and the vendor would have
+ * no way to tell which of the two was the real one. Correcting a wrong opening
+ * balance goes through adjustCredit, which is what that path is for.
+ */
+async function recordOpeningBalance({ customer_id, amount, note }) {
+  if (!customer_id) return { success: false, error: 'Customer required' };
+
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) {
+    return { success: false, error: 'Opening balance must be greater than 0' };
+  }
+
+  try {
+    const cust = customerModel.findById(customer_id);
+    if (!cust) return { success: false, error: 'Customer not found' };
+
+    if (creditModel.hasOpeningBalance(customer_id)) {
+      return {
+        success: false,
+        error: 'This customer already has an opening balance. Use a credit adjustment to correct it.',
+      };
+    }
+
+    const result = creditModel.recordOpeningBalance({
+      customer_id,
+      amount: Number(amt.toFixed(2)),
+      note: note && note.trim() ? note.trim() : 'Opening balance (brought forward)',
+    });
+
+    return { success: true, data: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getSummary,
   getCustomersWithBalance,
   getCustomerDetails,
   getCustomerTransactions,
   collectPayment,
-  adjustCredit
+  adjustCredit,
+  recordOpeningBalance
 };

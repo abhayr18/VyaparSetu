@@ -206,7 +206,10 @@ describe('generating a bill from transactions', () => {
     expect(paise(bill.data.subtotal)).toBe(425); // 300 + 125
     expect(paise(bill.data.commission_amount)).toBe(34); // 24 + 10
     expect(paise(bill.data.final_amount)).toBe(459);
-    expect(bill.data.items).toHaveLength(2);
+    // Consolidates multiple transactions of the same vegetable on the same day into 1 item
+    expect(bill.data.items).toHaveLength(1);
+    expect(bill.data.items[0].quantity).toBe(15);
+    expect(paise(bill.data.items[0].total)).toBe(425);
   });
 
   it('fails clearly when there is nothing to bill', async () => {

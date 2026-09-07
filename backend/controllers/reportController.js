@@ -43,11 +43,19 @@ async function getCommission(req, res) {
   res.status(400).json({ success: false, error: result.error });
 }
 
+async function getAllInOne(req, res) {
+  const { startDate, endDate } = req.query;
+  const result = await reportService.getAllInOneReport(startDate, endDate);
+  if (result.success) return res.json({ success: true, data: result.data });
+  res.status(400).json({ success: false, error: result.error });
+}
+
 module.exports = {
   getDailySales,
   getRangeSales,
   getCustomers,
   getVegetables,
   getCredit,
-  getCommission
+  getCommission,
+  getAllInOne,
 };

@@ -98,10 +98,131 @@ async function checkInternetStatus(req, res, next) {
   }
 }
 
+/**
+ * GET /api/backup/export
+ * Creates an instant snapshot and streams it as a download attachment.
+ */
+async function exportBackup(req, res, next) {
+  try {
+    const { filePath, filename } = await backupService.exportCurrentSnapshot();
+    res.download(filePath, filename, (err) => {
+      if (err && !res.headersSent) {
+        next(err);
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/backup/download/:filename
+ * Downloads a specific existing backup file from history.
+ */
+async function downloadBackup(req, res, next) {
+  try {
+    const { filename } = req.params;
+    const filePath = backupService.getBackupFilePath(filename);
+    res.download(filePath, filename, (err) => {
+      if (err && !res.headersSent) {
+        next(err);
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/backup/import
+ * Accepts uploaded database file (base64 in JSON or raw binary) and safely restores it.
+ */
+async function importBackup(req, res, next) {
+  try {
+    let buffer = null;
+    let originalName = 'imported-backup.db';
+
+    if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+      buffer = req.body;
+    } else if (req.body && req.body.fileData) {
+      // Base64 payload: { fileData: '...', filename: 'backup.db' }
+      buffer = Buffer.from(req.body.fileData, 'base64');
+      if (req.body.filename) originalName = req.body.filename;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'No backup file payload provided. Send fileData (base64) or raw binary.',
+      });
+    }
+
+    const restoreInfo = await backupService.restoreFromBuffer(buffer, originalName);
+    res.status(200).json({
+      success: true,
+      message: 'Database imported and restored successfully.',
+      data: restoreInfo,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/backup/config
+ * Retrieves current backup folder paths, cloud detection, and auto-sync toggle.
+ */
+function getConfig(req, res, next) {
+  try {
+    const config = backupService.getBackupConfig();
+    res.status(200).json({
+      success: true,
+      data: config,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/backup/config
+ * Updates custom backup folder path and auto-backup toggle.
+ */
+function saveConfig(req, res, next) {
+  try {
+    const { customDir, autoBackupEnabled } = req.body;
+    const updated = backupService.saveBackupConfig({ customDir, autoBackupEnabled });
+    res.status(200).json({
+      success: true,
+      message: 'Backup configuration saved successfully.',
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/backup/auto-sync
+ * Executes an immediate automated backup snapshot to configured destinations.
+ */
+async function performAutoSync(req, res, next) {
+  try {
+    const result = await backupService.performAutoSync();
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   createLocalBackup,
   listBackups,
   restoreBackup,
   getBackupStatus,
   checkInternetStatus,
+  exportBackup,
+  downloadBackup,
+  importBackup,
+  getConfig,
+  saveConfig,
+  performAutoSync,
 };
