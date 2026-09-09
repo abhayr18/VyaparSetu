@@ -81,7 +81,11 @@ export const customersApi = {
 
   /** POST /api/customers/bulk */
   bulkImport: (data) => apiClient.post('/api/customers/bulk', data),
+
+  /** POST /api/customers/deduplicate */
+  deduplicate: () => apiClient.post('/api/customers/deduplicate'),
 };
+
 
 // ─── Vegetables API ───────────────────────────────────────────────────────────
 export const vegetablesApi = {

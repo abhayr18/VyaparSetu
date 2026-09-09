@@ -10,6 +10,7 @@ import {
   generateCustomersSampleTemplate,
   parseCustomersExcelFile,
 } from '../utils/excelUtils';
+import { formatDDMMYYYY } from '../utils/dates';
 import {
   UploadIcon,
   DownloadIcon,
@@ -338,7 +339,7 @@ export default function ImportCustomersModal({
                               </span>
                               {item.opening_balance_date && (
                                 <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', marginTop: 2 }}>
-                                  {item.opening_balance_date}
+                                  {formatDDMMYYYY(item.opening_balance_date)}
                                 </div>
                               )}
                             </div>

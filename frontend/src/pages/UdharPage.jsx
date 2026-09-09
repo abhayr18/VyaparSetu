@@ -148,8 +148,13 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
 
           <div className="form-group">
             <label className="form-label">{t('credit.note')}</label>
-            <input type="text" className="form-input" value={note}
-              onChange={e => setNote(e.target.value)} placeholder={t('credit.notePlaceholder')} disabled={!customerId} />
+            <MarathiInput
+              id="payment-note-input"
+              value={note}
+              onChange={setNote}
+              placeholder={t('credit.notePlaceholder')}
+              disabled={!customerId}
+            />
           </div>
 
           <div className="modal-actions">

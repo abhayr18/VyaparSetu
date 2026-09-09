@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { customersApi, creditApi } from '../services/apiService';
+import { customersApi, creditApi, billsApi } from '../services/apiService';
 import { useTranslation } from '../hooks/useTranslation';
 import { displayAmount } from '../utils/creditLedger';
 import {
@@ -336,17 +336,43 @@ export default function CustomerLedgerModal({ customerId, customerName, onClose,
       ...transactions.map(t => ({ _type: 'tx', _date: t.created_at, ...t })),
     ].sort((a, b) => new Date(b._date) - new Date(a._date));
 
+    const handleViewBill = async (billSummary) => {
+      try {
+        const res = await billsApi.getById(billSummary.id);
+        if (res?.success && res.data) {
+          setViewingBill(res.data);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to fetch full bill details:', err);
+      }
+      setViewingBill(billSummary);
+    };
+
     if (items.length === 0) return <EmptyState label="No history found for this customer." />;
     return items.map((item) => (
       item._type === 'bill'
-        ? <BillRow key={`b-${item.id}`} bill={item} onView={setViewingBill} />
+        ? <BillRow key={`b-${item.id}`} bill={item} onView={handleViewBill} />
         : <TxRow key={`t-${item.id}`} tx={item} />
     ));
   }
 
   function renderInvoices(bills) {
+    const handleViewBill = async (billSummary) => {
+      try {
+        const res = await billsApi.getById(billSummary.id);
+        if (res?.success && res.data) {
+          setViewingBill(res.data);
+          return;
+        }
+      } catch (err) {
+        console.error('Failed to fetch full bill details:', err);
+      }
+      setViewingBill(billSummary);
+    };
+
     if (bills.length === 0) return <EmptyState label="No invoices found." />;
-    return bills.map(b => <BillRow key={b.id} bill={b} onView={setViewingBill} />);
+    return bills.map(b => <BillRow key={b.id} bill={b} onView={handleViewBill} />);
   }
 
   function renderTransactions(txs, type) {

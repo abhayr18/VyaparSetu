@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { reportsApi } from '../services/apiService';
-import { exportAllInOneReportToExcel } from '../utils/excelUtils';
+import { exportAllInOneReportToExcel, exportDailyReportToExcel } from '../utils/excelUtils';
 import {
   PhoneIcon,
   AlertIcon,
@@ -24,6 +24,7 @@ import {
   PrintIcon,
   BuildingIcon,
 } from '../components/Icons';
+import { formatDDMMYYYY, formatStoredTime } from '../utils/dates';
 
 export default function ReportsPage() {
   const { t, language } = useTranslation();
@@ -48,6 +49,12 @@ export default function ReportsPage() {
   const handleDownloadMasterExcel = async () => {
     try {
       setIsExportingExcel(true);
+      if (reportType === 'daily' || reportType === 'range') {
+        const targetDate = reportType === 'daily' ? date : `${startDate}_to_${endDate}`;
+        exportDailyReportToExcel(data, targetDate);
+        return;
+      }
+
       let reportDataToExport = data;
       if (reportType !== 'all_in_one' || !data || !data.summary) {
         const res = await reportsApi.getAllInOne(startDate, endDate);
@@ -60,7 +67,7 @@ export default function ReportsPage() {
       exportAllInOneReportToExcel(reportDataToExport);
     } catch (err) {
       console.error('Failed to export Excel report:', err);
-      alert(err.message || 'Failed to export master Excel file');
+      alert(err.message || 'Failed to export Excel file');
     } finally {
       setIsExportingExcel(false);
     }
@@ -207,34 +214,42 @@ export default function ReportsPage() {
       case 'daily':
       case 'range': {
         const sum = data.summary || {};
+        const custCount = data.customers?.length || (data.bills ? new Set(data.bills.map((b) => b.customer_id)).size : 0);
         return (
           <div className="kpi-grid no-print" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', marginBottom: 20 }}>
             <div className="kpi-card">
               <div className="kpi-icon-box kpi-icon-blue"><ReceiptIcon style={{ width: '18px', height: '18px' }} /></div>
               <div className="kpi-content">
                 <div className="kpi-value">₹{Number(sum.total_sales || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-                <div className="kpi-label">Total Sales</div>
+                <div className="kpi-label">{t('reports.totalSales') || 'एकूण विक्री (Turnover)'}</div>
               </div>
             </div>
             <div className="kpi-card">
               <div className="kpi-icon-box kpi-icon-green"><CheckIcon style={{ width: '18px', height: '18px' }} /></div>
               <div className="kpi-content">
                 <div className="kpi-value">₹{Number(sum.total_paid || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-                <div className="kpi-label">Paid Amount</div>
+                <div className="kpi-label">{t('reports.paidAmount') || 'एकूण जमा (Collected)'}</div>
               </div>
             </div>
             <div className="kpi-card">
               <div className="kpi-icon-box kpi-icon-red"><ChartIcon style={{ width: '18px', height: '18px' }} /></div>
               <div className="kpi-content">
-                <div className="kpi-value">₹{Number(sum.total_remaining || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-                <div className="kpi-label">Remaining</div>
+                <div className="kpi-value">₹{Number(sum.total_outstanding || sum.total_remaining || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
+                <div className="kpi-label">{t('credit.totalOutstanding') || 'चालू उधारी (Market Udhar)'}</div>
               </div>
             </div>
             <div className="kpi-card">
               <div className="kpi-icon-box kpi-icon-purple"><SaveIcon style={{ width: '18px', height: '18px' }} /></div>
               <div className="kpi-content">
                 <div className="kpi-value">₹{Number(sum.total_commission || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</div>
-                <div className="kpi-label">Commission</div>
+                <div className="kpi-label">{t('reports.commission') || 'कमिशन (Commission)'}</div>
+              </div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-icon-box kpi-icon-teal"><UsersIcon style={{ width: '18px', height: '18px' }} /></div>
+              <div className="kpi-content">
+                <div className="kpi-value">{custCount}</div>
+                <div className="kpi-label">{t('reports.activeCustomers') || 'ग्राहक (Customers)'}</div>
               </div>
             </div>
           </div>
@@ -402,7 +417,7 @@ export default function ReportsPage() {
                     Period: {data.meta?.period_label || 'All-Time'}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                    Generated: {new Date().toLocaleDateString('en-IN')}
+                    Generated: {formatDDMMYYYY(new Date())}
                   </div>
                 </div>
               </div>
@@ -476,7 +491,7 @@ export default function ReportsPage() {
                             <div style={{ fontWeight: 600 }}>{bill.customer_name}</div>
                             <div className="text-muted text-sm">{bill.customer_mobile}</div>
                           </td>
-                          <td className="table-cell" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{new Date(bill.date).toLocaleDateString('en-IN')}</td>
+                          <td className="table-cell" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{formatDDMMYYYY(bill.date)}</td>
                           <td className="table-cell" style={{ fontSize: '0.82rem', maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                             {bill.items_summary || '-'}
                           </td>
@@ -606,7 +621,9 @@ export default function ReportsPage() {
                     ) : (
                       ledger.map((r) => (
                         <tr className="table-row" key={r.id}>
-                          <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleString(language === 'mr' ? 'mr-IN' : 'en-IN')}</td>
+                          <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                            {formatDDMMYYYY(r.created_at)} {formatStoredTime(r.created_at, language === 'mr')}
+                          </td>
                           <td className="table-cell" style={{ fontWeight: 600 }}>{r.customer_name}</td>
                           <td className="table-cell">
                             <span className={`badge badge-${r.transaction_type === 'PAYMENT_RECEIVED' ? 'success' : 'warning'}`}>
@@ -632,6 +649,240 @@ export default function ReportsPage() {
       case 'daily':
       case 'range': {
         const bills = data.bills || [];
+        const customers = data.customers || [];
+        const sum = data.summary || {};
+
+        if (customers.length === 0 && bills.length === 0) {
+          return (
+            <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
+              <ReceiptIcon style={{ width: '40px', height: '40px', marginBottom: 12, opacity: 0.5 }} />
+              <p style={{ fontSize: '1rem', fontWeight: 600 }}>{t('common.noData') || 'या कालावधीत कोणतीही विक्री किंवा व्यवहार नोंदवलेले नाहीत'}</p>
+            </div>
+          );
+        }
+
+        // If customers array is available with items, render organized customer cards
+        if (customers.length > 0) {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {customers.map((c, cIdx) => (
+                <div
+                  key={c.customer_id || cIdx}
+                  className="card report-customer-card"
+                  style={{
+                    padding: 0,
+                    overflow: 'hidden',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--border-radius-md, 10px)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    breakInside: 'avoid',
+                    pageBreakInside: 'avoid'
+                  }}
+                >
+                  {/* Customer Banner */}
+                  <div
+                    style={{
+                      background: 'var(--color-bg-light, #f8fafc)',
+                      borderBottom: '1px solid var(--color-border)',
+                      padding: '12px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ background: '#e0f2fe', color: '#0284c7', width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem' }}>
+                        {cIdx + 1}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--color-text-primary)' }}>
+                          {c.customer_name}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span>📱 {c.customer_mobile || (language === 'mr' ? 'मोबाईल नाही' : 'No mobile')}</span>
+                          {c.bill_numbers?.length > 0 && (
+                            <span style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>
+                              #{c.bill_numbers.join(', ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block' }}>
+                        {language === 'mr' ? 'मागील उधारी बाकी (Prev Udhar)' : 'Previous Udhar Due'}
+                      </span>
+                      <span style={{ fontWeight: 700, color: c.previous_balance > 0 ? '#d97706' : 'var(--color-text-primary)' }}>
+                        ₹{Number(c.previous_balance || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Customer Produce Items Table */}
+                  <div className="table-wrapper" style={{ margin: 0 }}>
+                    <table className="data-table" style={{ margin: 0, width: '100%' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          <th className="table-th" style={{ width: 50, textAlign: 'center' }}>
+                            {language === 'mr' ? 'अ.क्र' : 'Sr.'}
+                          </th>
+                          <th className="table-th">
+                            {language === 'mr' ? 'शेतमालाचे नांव (Produce / Vegetable)' : 'Produce / Vegetable'}
+                          </th>
+                          <th className="table-th" style={{ textAlign: 'right' }}>
+                            {language === 'mr' ? 'प्रमाण / वजन (Qty/Weight)' : 'Quantity / Weight'}
+                          </th>
+                          <th className="table-th" style={{ textAlign: 'right' }}>
+                            {language === 'mr' ? 'दर (Rate ₹)' : 'Rate (₹)'}
+                          </th>
+                          <th className="table-th" style={{ textAlign: 'right' }}>
+                            {language === 'mr' ? 'रक्कम (Amount ₹)' : 'Amount (₹)'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {c.items && c.items.length > 0 ? (
+                          c.items.map((it, itIdx) => (
+                            <tr className="table-row" key={it.id || itIdx}>
+                              <td className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                                {itIdx + 1}
+                              </td>
+                              <td className="table-cell" style={{ fontWeight: 600 }}>
+                                {it.vegetable_name}
+                              </td>
+                              <td className="table-cell" style={{ textAlign: 'right', fontWeight: 600 }}>
+                                {it.weight} {it.unit || 'kg'}
+                              </td>
+                              <td className="table-cell" style={{ textAlign: 'right' }}>
+                                ₹{Number(it.rate).toFixed(2)}
+                              </td>
+                              <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700 }}>
+                                ₹{Number(it.base_amount || 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '14px' }}>
+                              {language === 'mr' ? 'या दिवशी भाजी खरेदी नाही (फक्त जमा रक्कम / मागील बाकी नोंद)' : 'No produce purchase on this day (Payment or balance record only)'}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Financial Reconciliation Strip */}
+                  <div
+                    style={{
+                      background: '#f1f5f9',
+                      borderTop: '1px solid var(--color-border)',
+                      padding: '12px 18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                      fontSize: '0.88rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
+                          {language === 'mr' ? 'आजची खरेदी:' : 'Today Purchase:'}{' '}
+                        </span>
+                        <strong>₹{Number(c.today_base_purchase || 0).toFixed(2)}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
+                          {language === 'mr' ? 'कमिशन:' : 'Commission:'}{' '}
+                        </span>
+                        <strong>₹{Number(c.today_commission || 0).toFixed(2)}</strong>
+                      </div>
+                      <div style={{ background: '#ffffff', padding: '3px 10px', borderRadius: 6, border: '1px solid var(--color-border)' }}>
+                        <span style={{ color: 'var(--color-primary)', fontWeight: 700, fontSize: '0.82rem' }}>
+                          {language === 'mr' ? 'आजचे एकूण बिल:' : "Today's Bill:"}{' '}
+                        </span>
+                        <strong style={{ color: 'var(--color-primary)', fontSize: '0.98rem' }}>₹{Number(c.today_bill_total || 0).toFixed(2)}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div>
+                        <span style={{ color: 'var(--color-text-muted)', fontSize: '0.78rem' }}>
+                          {language === 'mr' ? 'आज जमा रक्कम:' : 'Paid Today:'}{' '}
+                        </span>
+                        <strong style={{ color: '#15803d', fontSize: '0.98rem' }}>₹{Number(c.today_paid || 0).toFixed(2)}</strong>
+                      </div>
+                      <div style={{ background: c.closing_balance > 0 ? '#fef3c7' : '#dcfce7', padding: '4px 12px', borderRadius: 8, border: `1px solid ${c.closing_balance > 0 ? '#f59e0b' : '#16a34a'}` }}>
+                        <span style={{ color: c.closing_balance > 0 ? '#92400e' : '#166534', fontWeight: 700, fontSize: '0.82rem' }}>
+                          {language === 'mr' ? 'चालू बाकी (Closing Udhar):' : 'Closing Udhar Balance:'}{' '}
+                        </span>
+                        <strong style={{ color: c.closing_balance > 0 ? '#b45309' : '#15803d', fontSize: '1.05rem', fontWeight: 800 }}>₹{Number(c.closing_balance || 0).toFixed(2)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Day Financial Grand Total Footer */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #15803d, #166534)',
+                  color: '#ffffff',
+                  padding: '16px 22px',
+                  borderRadius: 'var(--border-radius-md, 10px)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 16
+                }}
+              >
+                <div>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '1.05rem', color: '#ffffff', fontWeight: 800 }}>
+                    {language === 'mr' ? 'दिवसाची एकूण गोषवारा बेरीज (Daily Grand Total)' : 'Daily Summary Grand Total'}
+                  </h4>
+                  <div style={{ fontSize: '0.82rem', color: '#bbf7d0' }}>
+                    {language === 'mr' ? `एकूण ग्राहक: ${customers.length} | तयार झालेली बिले: ${sum.total_bills || bills.length}` : `Active Customers: ${customers.length} | Bills Generated: ${sum.total_bills || bills.length}`}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#bbf7d0' }}>
+                      {language === 'mr' ? 'एकूण विक्री (Turnover)' : 'Total Sales Turnover'}
+                    </div>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#ffffff' }}>
+                      ₹{Number(sum.total_sales || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#bbf7d0' }}>
+                      {language === 'mr' ? 'एकूण जमा (Collected)' : 'Total Paid Collected'}
+                    </div>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#bbf7d0' }}>
+                      ₹{Number(sum.total_paid || 0).toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: '#fef08a' }}>
+                      {language === 'mr' ? 'एकूण चालू येणे बाकी (Market Udhar)' : 'Total Market Outstanding Udhar'}
+                    </div>
+                    <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fef08a' }}>
+                      ₹{Number(sum.market_udhar || sum.total_outstanding || sum.total_remaining || 0).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // Fallback for bills-only if customers breakdown is empty
         return (
           <table className="data-table">
             <thead>
@@ -652,7 +903,7 @@ export default function ReportsPage() {
                     <div style={{ fontWeight: 600 }}>{bill.customer_name}</div>
                     <div className="text-muted text-sm">{bill.customer_mobile}</div>
                   </td>
-                  <td className="table-cell" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{new Date(bill.date).toLocaleDateString('en-IN')}</td>
+                  <td className="table-cell" style={{ whiteSpace: 'nowrap', fontSize: '0.82rem' }}>{formatDDMMYYYY(bill.date)}</td>
                   <td className="table-cell" style={{ fontWeight: 700, textAlign: 'right' }}>₹{Number(bill.final_amount).toFixed(2)}</td>
                   <td className="table-cell" style={{ textAlign: 'right', color: 'var(--color-success)' }}>₹{Number(bill.paid_amount).toFixed(2)}</td>
                   <td className="table-cell">
@@ -813,7 +1064,7 @@ export default function ReportsPage() {
                 <tr className="table-row" key={c.bill_id}>
                   <td className="table-cell" style={{ fontWeight: 600, fontFamily: 'monospace', fontSize: '0.82rem' }}>{c.bill_number}</td>
                   <td className="table-cell" style={{ fontWeight: 600 }}>{c.customer_name}</td>
-                  <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{new Date(c.date).toLocaleDateString('en-IN')}</td>
+                  <td className="table-cell" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{formatDDMMYYYY(c.date)}</td>
                   <td className="table-cell" style={{ textAlign: 'right' }}>₹{Number(c.final_amount).toFixed(2)}</td>
                   <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-primary)' }}>₹{Number(c.commission_amount).toFixed(2)}</td>
                 </tr>
@@ -837,10 +1088,12 @@ export default function ReportsPage() {
   const hasData = () => {
     if (!data) return false;
     if (reportType === 'all_in_one') return true;
-    if (reportType === 'daily' || reportType === 'range') return data.bills && data.bills.length > 0;
-    if (reportType === 'credit') return data.customers && data.customers.length > 0;
-    if (reportType === 'commission') return data.billWise && data.billWise.length > 0;
-    return data.length > 0;
+    if (reportType === 'daily' || reportType === 'range') {
+      return Boolean((data.bills && data.bills.length > 0) || (data.customers && data.customers.length > 0));
+    }
+    if (reportType === 'credit') return Boolean(data.customers && data.customers.length > 0);
+    if (reportType === 'commission') return Boolean(data.billWise && data.billWise.length > 0);
+    return Array.isArray(data) ? data.length > 0 : Boolean(data);
   };
 
   return (
@@ -859,13 +1112,29 @@ export default function ReportsPage() {
           .sidebar, #main-sidebar, .topbar, .reports-selectors, .reports-filters, .no-print,
           .toast, .modal-backdrop { display: none !important; visibility: hidden !important; }
           main, .content, .reports-page { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 100% !important; }
-          .card { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
+          .card:not(.report-customer-card) { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
+          .report-customer-card {
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 8px !important;
+            box-shadow: none !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin-bottom: 16px !important;
+          }
           body { color: #000 !important; background: #fff !important; }
           .print-header { display: block !important; }
         }
         body.pdf-mode .sidebar, body.pdf-mode #main-sidebar, body.pdf-mode .topbar, body.pdf-mode .reports-selectors, body.pdf-mode .reports-filters, body.pdf-mode .no-print { display: none !important; visibility: hidden !important; }
         body.pdf-mode main, body.pdf-mode .content, body.pdf-mode .reports-page { margin: 0 !important; padding: 0 !important; background: #fff !important; width: 100% !important; }
-        body.pdf-mode .card { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
+        body.pdf-mode .card:not(.report-customer-card) { border: none !important; box-shadow: none !important; background: #fff !important; padding: 0 !important; }
+        body.pdf-mode .report-customer-card {
+          border: 1px solid #cbd5e1 !important;
+          border-radius: 8px !important;
+          box-shadow: none !important;
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+          margin-bottom: 16px !important;
+        }
         body.pdf-mode { color: #000 !important; background: #fff !important; }
         body.pdf-mode .print-header { display: block !important; }
       `,
@@ -1005,8 +1274,8 @@ export default function ReportsPage() {
           <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#555' }}>
             <strong>Report:</strong> {reportType === 'all_in_one' ? 'All-in-One Master Business Record' : t(`reports.type${reportType.charAt(0).toUpperCase() + reportType.slice(1)}`)} |&nbsp;
             {reportType === 'daily' || reportType === 'credit'
-              ? `Date: ${new Date(date).toLocaleDateString('en-IN')}`
-              : `Range: ${new Date(startDate).toLocaleDateString('en-IN')} to ${new Date(endDate).toLocaleDateString('en-IN')}`}
+              ? `Date: ${formatDDMMYYYY(date)}`
+              : `Range: ${formatDDMMYYYY(startDate)} to ${formatDDMMYYYY(endDate)}`}
           </p>
           <hr style={{ border: 'none', borderTop: '2px solid #000', margin: '10px 0 20px 0' }} />
         </div>

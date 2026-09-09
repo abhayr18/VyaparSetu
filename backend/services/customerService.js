@@ -156,7 +156,34 @@ function updateCustomer(id, data) {
   getCustomerById(id);
   // Validate, excluding current customer's mobile from duplicate check
   validate(data, id);
-  return customerModel.update(id, data);
+
+  const raw = data.opening_balance;
+  const hasOpening = raw !== undefined && raw !== null && String(raw).trim() !== '';
+  let opening = null;
+
+  if (hasOpening) {
+    opening = Number(raw);
+    if (!Number.isFinite(opening) || opening < 0) {
+      const err = new Error('Opening balance must be a number of 0 or more.');
+      err.statusCode = 400;
+      throw err;
+    }
+    opening = Number(opening.toFixed(2));
+  }
+
+  return transaction(() => {
+    customerModel.update(id, data);
+
+    if (opening !== null || data.opening_balance_date) {
+      creditModel.updateOpeningBalance({
+        customer_id: id,
+        amount: opening !== null ? opening : 0,
+        date: data.opening_balance_date,
+      });
+    }
+
+    return customerModel.findById(id);
+  });
 }
 
 /**
@@ -198,6 +225,14 @@ function bulkImportCustomers(items, options = {}) {
   return customerModel.bulkUpsert(items, { updateExisting });
 }
 
+/**
+ * Deduplicate customer records across the entire database.
+ * @returns {{ mergedGroups: number, duplicatesRemoved: number }}
+ */
+function deduplicateCustomers() {
+  return customerModel.deduplicate();
+}
+
 module.exports = {
   getAllCustomers,
   getCustomerById,
@@ -207,6 +242,8 @@ module.exports = {
   deleteCustomer,
   getCustomerLedger,
   bulkImportCustomers,
+  deduplicateCustomers,
 };
+
 
 

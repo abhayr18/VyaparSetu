@@ -93,8 +93,11 @@ async function createTransaction(payload) {
     return { success: false, error: 'Rate must be 0 or greater' };
   }
 
-  // 5. Calculate Base, Commission, Final Amount at the shop's configured rate
-  const totals = calculateTransactionTotals(numWeight, numRate, getShopCommissionPercent());
+  // 5. Calculate Base, Commission, Final Amount at custom or shop's configured rate
+  const effectiveCommissionRate = payload.commission_rate !== undefined && payload.commission_rate !== null && String(payload.commission_rate).trim() !== ''
+    ? normalizeCommissionPercent(payload.commission_rate)
+    : getShopCommissionPercent();
+  const totals = calculateTransactionTotals(numWeight, numRate, effectiveCommissionRate);
 
   // 6. Payment Amount Calculations
   let finalPaid = 0;
@@ -345,30 +348,16 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
     paymentStatus = 'Partial';
   }
 
-  // Consolidate entries of the same vegetable on the same date into a single line item
-  const mergedItemsMap = new Map();
-  for (const t of transactions) {
-    const key = `${t.transaction_date || targetDate}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
-    const existing = mergedItemsMap.get(key);
-    if (!existing) {
-      mergedItemsMap.set(key, {
-        vegetable_id: t.vegetable_id,
-        vegetable_name: t.vegetable_name_snapshot,
-        quantity: Number(t.weight || 0),
-        rate: Number(t.rate || 0),
-        total: Number(t.base_amount || 0),
-        vegetable_unit: t.unit || 'kg',
-        item_date: t.transaction_date || targetDate,
-      });
-    } else {
-      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
-      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
-      existing.rate = existing.quantity > 0
-        ? Math.round((existing.total / existing.quantity) * 100) / 100
-        : existing.rate;
-    }
-  }
-  const items = Array.from(mergedItemsMap.values());
+  // Keep each transaction entry as its own distinct line item on the bill
+  const items = transactions.map((t) => ({
+    vegetable_id: t.vegetable_id,
+    vegetable_name: t.vegetable_name_snapshot,
+    quantity: Number(t.weight || 0),
+    rate: Number(t.rate || 0),
+    total: Number(t.base_amount || 0),
+    vegetable_unit: t.unit || 'kg',
+    item_date: t.transaction_date || targetDate,
+  }));
 
   const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
 
@@ -489,36 +478,38 @@ async function generateStatement({ customerId, startDate, endDate }) {
     paymentStatus = 'Partial';
   }
 
-  // Consolidate entries of the same vegetable on the same date
-  const mergedItemsMap = new Map();
-  for (const t of transactions) {
-    const key = `${t.transaction_date}__${t.vegetable_id || t.vegetable_name_snapshot}__${t.unit || 'kg'}`;
-    const existing = mergedItemsMap.get(key);
-    if (!existing) {
-      mergedItemsMap.set(key, {
-        vegetable_id: t.vegetable_id,
-        vegetable_name: t.vegetable_name_snapshot,
-        quantity: Number(t.weight || 0),
-        rate: Number(t.rate || 0),
-        total: Number(t.base_amount || 0),
-        vegetable_unit: t.unit || 'kg',
-        item_date: t.transaction_date,
-      });
-    } else {
-      existing.quantity = Math.round((existing.quantity + Number(t.weight || 0)) * 100) / 100;
-      existing.total = Math.round((existing.total + Number(t.base_amount || 0)) * 100) / 100;
-      existing.rate = existing.quantity > 0
-        ? Math.round((existing.total / existing.quantity) * 100) / 100
-        : existing.rate;
-    }
-  }
-  const items = Array.from(mergedItemsMap.values());
+  // Keep each transaction entry as its own distinct line item on the statement
+  const items = transactions.map((t) => ({
+    vegetable_id: t.vegetable_id,
+    vegetable_name: t.vegetable_name_snapshot,
+    quantity: Number(t.weight || 0),
+    rate: Number(t.rate || 0),
+    total: Number(t.base_amount || 0),
+    vegetable_unit: t.unit || 'kg',
+    item_date: t.transaction_date,
+  }));
 
   const billCommissionRate = billRateFor(transactions, subtotal, commissionAmount);
 
   // Read the customer's current credit balance for "previous outstanding" display
+  const { localDateSql } = require('../utils/businessDay');
   const { toRupees } = require('../utils/money');
-  const customerBalance = toRupees(customer.credit_balance || 0);
+  const customerBalance = Number(customer.credit_balance || 0);
+
+  // Query payments received from this customer during the statement period
+  const payRows = execSelect(
+    `SELECT COALESCE(SUM(amount), 0) AS total_paid
+     FROM credit_transactions
+     WHERE customer_id = ?
+       AND transaction_type = 'PAYMENT_RECEIVED'
+       AND (${localDateSql('created_at')} >= ? AND ${localDateSql('created_at')} <= ?)`,
+    [Number(customerId), periodStart, periodEnd]
+  );
+  const ledgerPaidPaise = payRows[0]?.total_paid || 0;
+  const ledgerPaidRupees = toRupees(ledgerPaidPaise);
+  const finalPaidAmount = Math.max(paidAmount, ledgerPaidRupees);
+  const finalPaidRounded = Math.round(finalPaidAmount * 100) / 100;
+  const previousBalance = Math.max(0, Math.round((customerBalance + finalPaidRounded - finalAmount) * 100) / 100);
 
   // Return a bill-shaped object WITHOUT saving anything
   return {
@@ -531,6 +522,8 @@ async function generateStatement({ customerId, startDate, endDate }) {
       customer_name: customer.name,
       customer_mobile: customer.mobile,
       customer_credit_balance: customerBalance,
+      previous_balance: previousBalance,
+      payments_received: finalPaidRounded,
       date: periodEnd,
       period_start: periodStart,
       period_end: periodEnd,
@@ -543,7 +536,7 @@ async function generateStatement({ customerId, startDate, endDate }) {
       hamali_amount: 0,
       transport_amount: 0,
       final_amount: Math.round(finalAmount * 100) / 100,
-      paid_amount: Math.round(paidAmount * 100) / 100,
+      paid_amount: finalPaidRounded,
       remaining_amount: Math.round(remainingAmount * 100) / 100,
       payment_type: paymentStatus === 'Credit' ? 'Credit' : 'Cash',
       payment_status: paymentStatus,
@@ -789,8 +782,11 @@ async function updateTransaction(id, payload) {
       return { success: false, error: 'Rate must be 0 or greater' };
     }
 
-    // 5. Calculate Base, Commission, Final Amount at the shop's configured rate
-    const totals = calculateTransactionTotals(numWeight, numRate, getShopCommissionPercent());
+    // 5. Calculate Base, Commission, Final Amount at custom or shop's configured rate
+    const effectiveCommissionRate = payload.commission_rate !== undefined && payload.commission_rate !== null && String(payload.commission_rate).trim() !== ''
+      ? normalizeCommissionPercent(payload.commission_rate)
+      : (existing.commission_rate !== undefined ? existing.commission_rate : getShopCommissionPercent());
+    const totals = calculateTransactionTotals(numWeight, numRate, effectiveCommissionRate);
 
     // 6. Payment Amount Calculations
     let finalPaid = 0;

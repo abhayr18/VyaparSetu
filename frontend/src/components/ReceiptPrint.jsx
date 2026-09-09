@@ -15,9 +15,9 @@ import {
   generateBillWhatsAppMessage,
   shareWhatsAppDocument,
 } from '../utils/whatsappShare';
-import { SendIcon, FileIcon, PrintIcon } from './Icons';
+import { SendIcon, FileIcon, PrintIcon, EditIcon } from './Icons';
 
-export default function ReceiptPrint({ isOpen, onClose, bill }) {
+export default function ReceiptPrint({ isOpen, onClose, bill, onEdit }) {
   const { t, language } = useTranslation();
   const [pdfLoading, setPdfLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
@@ -240,6 +240,32 @@ export default function ReceiptPrint({ isOpen, onClose, bill }) {
           >
             <PrintIcon /> {t('billing.print')}
           </button>
+
+          {/* Edit Bill button */}
+          {onEdit && (
+            <button
+              type="button"
+              id="modal-edit-bill-btn"
+              title={t('common.edit') || 'बिल बदला'}
+              className="btn btn-outline"
+              onClick={() => {
+                onClose();
+                onEdit(bill);
+              }}
+              disabled={isProcessing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 16px',
+                borderColor: '#0284c7',
+                color: '#0284c7',
+                fontWeight: 600,
+              }}
+            >
+              <EditIcon /> {t('common.edit') || 'बदला'}
+            </button>
+          )}
         </div>
       </div>
     </>

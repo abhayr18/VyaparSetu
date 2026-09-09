@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+
 import { useCustomers } from '../hooks/useCustomers';
 import { useTranslation } from '../hooks/useTranslation';
 import CustomerModal from '../components/CustomerModal';
@@ -144,6 +145,7 @@ export default function CustomersPage() {
     updateCustomer,
     deleteCustomer,
     bulkImportCustomers,
+    deduplicateCustomers,
   } = useCustomers();
 
   // Modal state
@@ -153,7 +155,26 @@ export default function CustomersPage() {
   const [deleteTarget, setDeleteTarget]         = useState(null);
   const [deleteLoading, setDeleteLoading]       = useState(false);
   const [ledgerCustomer, setLedgerCustomer]     = useState(null); // for history modal
+  const [dedupLoading, setDedupLoading]         = useState(false);
   const [toast, setToast]                       = useState({ message: '', type: 'success' });
+
+  // ─── Duplicate Detection ───────────────────────────────────────────────────
+  const duplicateDetectedCount = useMemo(() => {
+    if (!allCustomers || allCustomers.length < 2) return 0;
+    const names = new Set();
+    const mobiles = new Set();
+    let count = 0;
+    for (const c of allCustomers) {
+      const mob = (c.mobile || '').trim();
+      const name = (c.name || '').trim().toLowerCase();
+      if ((mob && mobiles.has(mob)) || (name && names.has(name))) {
+        count++;
+      }
+      if (mob) mobiles.add(mob);
+      if (name) names.add(name);
+    }
+    return count;
+  }, [allCustomers]);
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
   function showToast(message, type = 'success') {
@@ -205,6 +226,22 @@ export default function CustomersPage() {
     }
   }
 
+  async function handleDeduplicate() {
+    setDedupLoading(true);
+    const res = await deduplicateCustomers();
+    setDedupLoading(false);
+    if (res.success) {
+      const removed = res.data?.duplicatesRemoved ?? 0;
+      showToast(
+        removed > 0
+          ? `Cleaned up ${removed} duplicate customer record(s) and merged ledgers successfully!`
+          : 'No duplicate records found.'
+      );
+    } else {
+      showToast(res.error || 'Failed to merge duplicates', 'error');
+    }
+  }
+
   function handleExport() {
     if (!customers || customers.length === 0) {
       showToast(t('excel.noDataToExport') || 'No customers to export', 'error');
@@ -240,6 +277,49 @@ export default function CustomersPage() {
         onClose={() => setToast({ message: '', type: 'success' })}
       />
 
+      {/* Duplicate Alert Banner */}
+      {duplicateDetectedCount > 0 && (
+        <div style={{
+          background: '#fffbeb',
+          border: '1px solid #fef3c7',
+          borderLeft: '4px solid #f59e0b',
+          borderRadius: 8,
+          padding: '12px 16px',
+          marginBottom: 16,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+            <div>
+              <div style={{ fontWeight: 600, color: '#92400e', fontSize: '0.88rem' }}>
+                Duplicate customer records detected ({duplicateDetectedCount} potential duplicate{duplicateDetectedCount > 1 ? 's' : ''})
+              </div>
+              <div style={{ color: '#b45309', fontSize: '0.78rem' }}>
+                Customers with identical names or phone numbers are present. Click below to safely merge their bills and credit balances into single records.
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={handleDeduplicate}
+            disabled={dedupLoading}
+            style={{
+              background: '#fef3c7',
+              borderColor: '#fcd34d',
+              color: '#92400e',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+            }}
+          >
+            {dedupLoading ? 'Merging...' : '✨ Merge & Clean Duplicates'}
+          </button>
+        </div>
+      )}
+
       {/* ── Page Header ───────────────────────────────────────────────────── */}
       <div className="page-header-bar">
         <div>
@@ -248,6 +328,7 @@ export default function CustomersPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {/* Export Excel Button */}
+
           <button
             className="btn btn-secondary"
             onClick={handleExport}

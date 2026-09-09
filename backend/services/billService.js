@@ -96,7 +96,8 @@ async function createNewBill(payload) {
       vegetable_id: it.vegetable_id,
       vegetable_name: veg.name, // always use official name from vegetable master
       quantity: Number(it.quantity),
-      rate: Number(it.rate)
+      rate: Number(it.rate),
+      item_date: it.item_date || null
     });
   }
 
@@ -183,7 +184,8 @@ async function updateExistingBill(id, payload) {
       vegetable_id: it.vegetable_id,
       vegetable_name: veg.name,
       quantity: Number(it.quantity),
-      rate: Number(it.rate)
+      rate: Number(it.rate),
+      item_date: it.item_date || null
     });
   }
 

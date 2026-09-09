@@ -120,9 +120,9 @@ function setupAutoCloudBackup(port) {
     }
   }
 
-  // Initial check 5 seconds after startup, then every 15 seconds
-  setTimeout(runAutoBackup, 5000);
-  setInterval(runAutoBackup, 15000);
+  // Initial check 10 seconds after startup, then checks dirty state every 60 seconds
+  setTimeout(runAutoBackup, 10000);
+  setInterval(runAutoBackup, 60000);
 }
 
 // --- File logging -----------------------------------------------------------

@@ -21,7 +21,8 @@ const TOKENS_PATH = process.env.DRIVE_TOKENS_PATH
   : path.resolve(__dirname, '../database/drive_tokens.json');
 
 const DRIVE_FOLDER_NAME = 'VyapaarSetu_Backups';
-const BACKUP_FILE_NAME = 'vyapaarsetu-backup.db';
+const BACKUP_FILE_NAME = 'vyapaarsetu_backup.db';
+const LEGACY_BACKUP_FILE_NAME = 'vyapaarsetu-backup.db';
 
 /**
  * Retrieve setting from SQLite settings table
@@ -330,7 +331,7 @@ async function upsertDriveBackup(force = false) {
   let fileId = getSetting('drive_backup_file_id');
   if (!fileId) {
     const res = await drive.files.list({
-      q: `name = '${BACKUP_FILE_NAME}' and '${folderId}' in parents and trashed = false`,
+      q: `(name = '${BACKUP_FILE_NAME}' or name = '${LEGACY_BACKUP_FILE_NAME}') and '${folderId}' in parents and trashed = false`,
       fields: 'files(id, name)',
       spaces: 'drive',
     });
@@ -339,12 +340,7 @@ async function upsertDriveBackup(force = false) {
 
   let resultFile = null;
 
-  // Stream a clean, WAL-checkpointed snapshot
-  const snapshotPath = path.join(backupService.BACKUP_DIR, `drive-upload-${Date.now()}.db`);
-  await backupService.createBackup().then((b) => {
-    // b is created in backup dir; we can use DB_PATH directly after checkpoint
-  }).catch(() => {});
-
+  // Flush WAL to ensure DB_PATH has all latest committed transactions
   backupService.checkpointDatabase();
 
   // 4. Try updating existing canonical file (preserves revisions in Google Drive)
@@ -455,11 +451,13 @@ async function restoreFromDrive(driveFileId) {
 
   const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-  // 1. Trigger local safety backup first
+  // 1. Trigger local safety backup first without overwriting master files
   logger.info('Creating local safety backup prior to Google Drive restoration...');
   const safetyBackupBuffer = serialize();
-  const safetyInfo = await backupService.createBackup();
-  const safetyFilename = safetyInfo.filename;
+  const safetyFilename = 'vyapaarsetu_safety_pre_restore.bak';
+  try {
+    fs.writeFileSync(path.join(backupService.BACKUP_DIR, safetyFilename), safetyBackupBuffer);
+  } catch (_) {}
 
   // 2. Define temp file path to download content securely
   const tempDownloadPath = path.join(backupService.BACKUP_DIR, `temp_drive_${Date.now()}.db`);
@@ -493,7 +491,15 @@ async function restoreFromDrive(driveFileId) {
     reloadDb(downloadedBuffer);
     backupService.checkpointDatabase();
 
-    // 6. Record sync metadata in the newly restored database
+    // 6. Keep master backup in sync with restored state
+    const masterPath = path.join(backupService.BACKUP_DIR, BACKUP_FILE_NAME);
+    const legacyLatest = path.join(backupService.BACKUP_DIR, 'vyapaarsetu-latest.db');
+    try {
+      fs.writeFileSync(masterPath, downloadedBuffer);
+      fs.writeFileSync(legacyLatest, downloadedBuffer);
+    } catch (_) {}
+
+    // 7. Record sync metadata in the newly restored database
     const restoredHash = computeDbHash();
     setSetting('drive_backup_file_id', driveFileId);
     setSetting('last_synced_hash', restoredHash);

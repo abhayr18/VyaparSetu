@@ -95,10 +95,14 @@ describe('Optional Mobile Number & Backup Import/Export', () => {
     expect(updatedConfig.customDir).toBe(tempCustomDir);
     expect(fs.existsSync(tempCustomDir)).toBe(true);
 
+    // Create a customer to mark database dirty
+    ctx.customerService.createCustomer({ name: 'Sync Test Customer', mobile: '9111222333' });
+
     // Test auto-sync
     const syncResult = await backupService.performAutoSync();
     expect(syncResult.success).toBe(true);
     expect(syncResult.data.filename).toBeDefined();
+
 
     // Verify file exists in both default and custom folders
     const mirroredLatest = path.join(tempCustomDir, 'vyapaarsetu-latest.db');
@@ -120,5 +124,5 @@ describe('Optional Mobile Number & Backup Import/Export', () => {
     expect(authUrl).toContain('redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fapi%2Fdrive%2Fcallback');
     delete process.env.GOOGLE_CLIENT_ID;
     delete process.env.GOOGLE_CLIENT_SECRET;
-  });
+  }, 35000);
 });

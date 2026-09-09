@@ -183,70 +183,69 @@ function checkpointDatabase() {
   }
 }
 
+const CANONICAL_BACKUP_NAME = 'vyapaarsetu_backup.db';
+const ROLLBACK_BACKUP_NAME = 'vyapaarsetu_backup.previous.bak';
+const LEGACY_LATEST_NAME = 'vyapaarsetu-latest.db';
+
 /**
- * Formats a Date object into backup-YYYY-MM-DD-HH-mm-ss.db
+ * Formats canonical backup filename
  */
-function generateBackupFilename(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
-  return `backup-${year}-${month}-${day}-${hours}-${minutes}-${seconds}.db`;
+function generateBackupFilename() {
+  return CANONICAL_BACKUP_NAME;
 }
 
 /**
- * Cleans up old historical snapshots in a target folder, retaining the latest N backups
+ * Cleans up old historical redundant snapshots, keeping storage lean and un-duplicated
  */
-function rotateBackups(folderPath, maxKeep = 30) {
+function pruneLegacySnapshots(folderPath) {
   try {
     if (!fs.existsSync(folderPath)) return;
-    const files = fs.readdirSync(folderPath)
-      .filter((f) => f.startsWith('backup-') && (f.endsWith('.db') || f.endsWith('.sqlite')))
-      .map((f) => ({
-        name: f,
-        fullPath: path.join(folderPath, f),
-        mtime: fs.statSync(path.join(folderPath, f)).mtimeMs,
-      }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    if (files.length > maxKeep) {
-      const toDelete = files.slice(maxKeep);
-      for (const item of toDelete) {
+    const files = fs.readdirSync(folderPath);
+    for (const f of files) {
+      if (
+        (f.startsWith('backup-20') || f.startsWith('drive-upload-') || f.startsWith('temp_drive_')) &&
+        (f.endsWith('.db') || f.endsWith('.sqlite'))
+      ) {
         try {
-          fs.unlinkSync(item.fullPath);
-          logger.info(`Rotated old backup: ${item.name}`);
+          fs.unlinkSync(path.join(folderPath, f));
+          logger.info(`Pruned redundant legacy snapshot: ${f}`);
         } catch (_) {}
       }
     }
   } catch (err) {
-    logger.warn(`Backup rotation warning for ${folderPath}: ${err.message}`);
+    logger.warn(`Legacy snapshot cleanup warning for ${folderPath}: ${err.message}`);
   }
 }
 
+function rotateBackups(folderPath) {
+  pruneLegacySnapshots(folderPath);
+}
+
 /**
- * Creates a local backup of the current SQLite database.
- * @returns {Promise<object>} Metadata of the created backup
+ * Updates/creates the single master local backup of the current SQLite database.
+ * Preserves one previous rollback copy (.bak) before updating, preventing data clutter.
+ * @returns {Promise<object>} Metadata of the master backup
  */
 async function createBackup() {
   if (!fs.existsSync(DB_PATH)) {
     throw new Error('Database file does not exist to backup.');
   }
 
-  // 1. Flush WAL
+  // 1. Flush WAL to ensure complete integrity
   checkpointDatabase();
 
-  // Format filename and set full destination path
-  const filename = generateBackupFilename();
-  const destPath = path.join(BACKUP_DIR, filename);
+  const destPath = path.join(BACKUP_DIR, CANONICAL_BACKUP_NAME);
+  const rollbackPath = path.join(BACKUP_DIR, ROLLBACK_BACKUP_NAME);
+  const legacyLatestPath = path.join(BACKUP_DIR, LEGACY_LATEST_NAME);
 
-  // If a backup with this name already exists, wait a second to avoid overwrite
+  // 2. If a master backup already exists, preserve 1 previous rollback copy before replacing
   if (fs.existsSync(destPath)) {
-    await new Promise((resolve) => setTimeout(resolve, 1050));
-    return createBackup();
+    try {
+      fs.copyFileSync(destPath, rollbackPath);
+    } catch (_) {}
   }
 
+  // 3. Write new master backup
   try {
     await backupTo(destPath);
   } catch (err) {
@@ -254,47 +253,73 @@ async function createBackup() {
     checkpointDatabase();
     fs.copyFileSync(DB_PATH, destPath);
   }
-  logger.info(`Backup created successfully at: ${destPath}`);
+  logger.info(`Master database backup saved at: ${destPath}`);
 
-  // Maintain canonical latest file
-  const latestLocal = path.join(BACKUP_DIR, 'vyapaarsetu-latest.db');
-  try { fs.copyFileSync(destPath, latestLocal); } catch (_) {}
+  // 4. Maintain canonical latest file alias for backward compatibility
+  try { fs.copyFileSync(destPath, legacyLatestPath); } catch (_) {}
 
-  // Mirror to custom cloud folder if configured
+  // 5. Mirror to custom cloud folder if configured
   const customDir = getSetting('custom_backup_folder')?.trim();
   if (customDir && fs.existsSync(customDir) && path.resolve(customDir) !== path.resolve(BACKUP_DIR)) {
     try {
-      const customDest = path.join(customDir, filename);
-      const customLatest = path.join(customDir, 'vyapaarsetu-latest.db');
+      const customDest = path.join(customDir, CANONICAL_BACKUP_NAME);
+      const customRollback = path.join(customDir, ROLLBACK_BACKUP_NAME);
+      const customLatest = path.join(customDir, LEGACY_LATEST_NAME);
+      if (fs.existsSync(customDest)) {
+        try { fs.copyFileSync(customDest, customRollback); } catch (_) {}
+      }
       fs.copyFileSync(destPath, customDest);
       fs.copyFileSync(destPath, customLatest);
-      rotateBackups(customDir, 30);
-      logger.info(`Mirrored backup to custom folder: ${customDest}`);
+      pruneLegacySnapshots(customDir);
+      logger.info(`Mirrored master backup to custom folder: ${customDest}`);
     } catch (mirrorErr) {
       logger.warn(`Could not mirror backup to custom folder: ${mirrorErr.message}`);
     }
   }
 
-  rotateBackups(BACKUP_DIR, 30);
+  // 6. Clean up any older legacy timestamped snapshots to remove redundancy
+  pruneLegacySnapshots(BACKUP_DIR);
 
   const stats = fs.statSync(destPath);
   setSetting('last_cloud_sync', new Date().toISOString());
   setSetting('db_dirty', '0');
 
   return {
-    filename,
+    filename: CANONICAL_BACKUP_NAME,
     size: stats.size,
     createdAt: stats.mtime.toISOString(),
   };
 }
 
 /**
- * Executes automatic background sync to local and cloud/custom destinations
+ * Executes automatic background sync to local and cloud/custom destinations.
+ * Checks if auto-backup is enabled, if database has dirty changes (db_dirty === '1'),
+ * and enforces a minimum throttle between automated snapshot files.
+ *
+ * @param {{ force?: boolean }} options
  */
-async function performAutoSync() {
+async function performAutoSync(options = {}) {
+  const { force = false } = options;
   const isEnabled = getSetting('auto_backup_enabled') !== '0';
-  if (!isEnabled) {
+  if (!isEnabled && !force) {
     return { success: true, skipped: true, reason: 'Auto-backup disabled by user' };
+  }
+
+  const isDirty = getSetting('db_dirty') === '1';
+  if (!isDirty && !force) {
+    return { success: true, skipped: true, reason: 'No new data changes since last backup' };
+  }
+
+  // Throttle automatic background snapshots (min 5 minutes between automated files)
+  if (!force) {
+    const lastSync = getSetting('last_cloud_sync') || getSetting('last_backup_sync');
+    if (lastSync) {
+      const elapsedMs = Date.now() - new Date(lastSync).getTime();
+      const minIntervalMs = 5 * 60 * 1000; // 5 minutes
+      if (elapsedMs < minIntervalMs) {
+        return { success: true, skipped: true, reason: 'Throttled: recent backup snapshot already exists' };
+      }
+    }
   }
 
   const result = await createBackup();
@@ -305,8 +330,10 @@ async function performAutoSync() {
   };
 }
 
+
 /**
  * Lists all backups from the default and custom history folders.
+ * Prioritizes the Master Database and its previous rollback version.
  * @returns {Promise<Array>} List of backup metadata
  */
 async function listBackups() {
@@ -317,16 +344,27 @@ async function listBackups() {
     try {
       const files = fs.readdirSync(folderPath);
       for (const file of files) {
-        if (file.startsWith('backup-') && (file.endsWith('.db') || file.endsWith('.sqlite'))) {
+        const isMaster = file === CANONICAL_BACKUP_NAME;
+        const isRollback = file === ROLLBACK_BACKUP_NAME;
+        const isLegacy = file.startsWith('backup-') && (file.endsWith('.db') || file.endsWith('.sqlite'));
+        const isSafety = file === 'vyapaarsetu_safety_pre_restore.bak';
+
+        if (isMaster || isRollback || isLegacy || isSafety) {
           const filePath = path.join(folderPath, file);
           try {
             const stats = fs.statSync(filePath);
             if (!seen.has(file) || isCustom) {
+              let locationLabel = isCustom ? 'Cloud / Custom Folder' : 'Local App Storage';
+              if (isMaster) locationLabel += ' (Master DB)';
+              else if (isRollback) locationLabel += ' (Rollback Copy)';
+
               seen.set(file, {
                 filename: file,
                 size: stats.size,
                 createdAt: stats.mtime.toISOString(),
-                location: isCustom ? 'Cloud / Custom Folder' : 'Local App Storage',
+                location: locationLabel,
+                isMaster,
+                isRollback,
                 filePath,
               });
             }
@@ -343,7 +381,14 @@ async function listBackups() {
     scanFolder(customDir, true);
   }
 
-  return Array.from(seen.values()).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  // Sort: Master first, then Rollback, then newest to oldest
+  return Array.from(seen.values()).sort((a, b) => {
+    if (a.isMaster) return -1;
+    if (b.isMaster) return 1;
+    if (a.isRollback) return -1;
+    if (b.isRollback) return 1;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
 }
 
 /**
@@ -385,11 +430,13 @@ async function restoreBackup(filename) {
     throw new Error('Target file is not a valid SQLite database.');
   }
 
-  // 1. Create a safety backup first
+  // 1. Create a safety backup first without overwriting the chosen target
   logger.info('Creating safety backup prior to database restore...');
   const safetyBackupBuffer = serialize();
-  const safetyInfo = await createBackup();
-  const safetyFilename = safetyInfo.filename;
+  const safetyFilename = 'vyapaarsetu_safety_pre_restore.bak';
+  try {
+    fs.writeFileSync(path.join(BACKUP_DIR, safetyFilename), safetyBackupBuffer);
+  } catch (_) {}
   logger.info(`Safety backup created at name: ${safetyFilename}`);
 
   try {
@@ -398,6 +445,15 @@ async function restoreBackup(filename) {
     logger.info(`Starting restore from backup file: ${filename}`);
     reloadDb(selectedBackupBuffer);
     checkpointDatabase();
+
+    // 3. Keep master backup in sync with restored state
+    const masterPath = path.join(BACKUP_DIR, CANONICAL_BACKUP_NAME);
+    const legacyLatest = path.join(BACKUP_DIR, LEGACY_LATEST_NAME);
+    try {
+      fs.copyFileSync(targetPath, masterPath);
+      fs.copyFileSync(targetPath, legacyLatest);
+    } catch (_) {}
+
     logger.info('Database restored successfully from backup.');
     return {
       success: true,
@@ -469,17 +525,20 @@ async function restoreFromBuffer(buffer, originalName = 'imported.db') {
   // 1. Create a safety backup first
   logger.info('Creating safety backup prior to database import...');
   const safetyBackupBuffer = serialize();
-  const safetyInfo = await createBackup();
-  const safetyFilename = safetyInfo.filename;
+  const safetyFilename = 'vyapaarsetu_safety_pre_restore.bak';
+  try {
+    fs.writeFileSync(path.join(BACKUP_DIR, safetyFilename), safetyBackupBuffer);
+  } catch (_) {}
   logger.info(`Safety backup created at name: ${safetyFilename}`);
 
-  // 2. Save the imported file to the backup directory for record-keeping
-  const importedFilename = generateBackupFilename(new Date()).replace('backup-', 'backup-imported-');
-  const importedDestPath = path.join(BACKUP_DIR, importedFilename);
+  // 2. Overwrite the master backup file with the newly imported database
+  const masterDestPath = path.join(BACKUP_DIR, CANONICAL_BACKUP_NAME);
+  const legacyLatest = path.join(BACKUP_DIR, LEGACY_LATEST_NAME);
   try {
-    fs.writeFileSync(importedDestPath, buffer);
+    fs.writeFileSync(masterDestPath, buffer);
+    fs.writeFileSync(legacyLatest, buffer);
   } catch (saveErr) {
-    logger.warn(`Could not save imported copy to BACKUP_DIR: ${saveErr.message}`);
+    logger.warn(`Could not save imported buffer to master backup: ${saveErr.message}`);
   }
 
   try {
@@ -491,7 +550,7 @@ async function restoreFromBuffer(buffer, originalName = 'imported.db') {
     logger.info('Database restored successfully from imported file.');
     return {
       success: true,
-      restoredFile: importedFilename,
+      restoredFile: CANONICAL_BACKUP_NAME,
       originalName,
       safetyBackup: safetyFilename,
     };

@@ -2,8 +2,43 @@
 
 const { execSelect, execGet, execRun, transaction } = require('../database/db');
 const { normalizeCommissionPercent } = require('../utils/calculation');
-const { toPaise, rowToRupees } = require('../utils/money');
+const { toPaise, rowToRupees, toRupees } = require('../utils/money');
+const { localDateSql } = require('../utils/businessDay');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
+
+/** Attach items, payments received, and accurate previous balance to a bill */
+function attachBillDetails(bill) {
+  if (!bill) return bill;
+  bill.items = getByBillId(bill.id);
+
+  const pStart = bill.period_start || bill.date;
+  const pEnd = bill.period_end || bill.date;
+
+  // Query payments received from this customer on this bill's date/period or linked to this bill
+  const payRows = execSelect(
+    `SELECT COALESCE(SUM(amount), 0) AS total_paid
+     FROM credit_transactions
+     WHERE customer_id = ?
+       AND transaction_type = 'PAYMENT_RECEIVED'
+       AND (bill_id = ? OR (${localDateSql('created_at')} >= ? AND ${localDateSql('created_at')} <= ?))`,
+    [bill.customer_id, bill.id || -1, pStart, pEnd]
+  );
+  const ledgerPaidPaise = payRows[0]?.total_paid || 0;
+  const ledgerPaidRupees = toRupees(ledgerPaidPaise);
+
+  const billPaid = Number(bill.paid_amount || 0);
+  const finalPaid = Math.max(billPaid, ledgerPaidRupees);
+  bill.payments_received = Number(finalPaid.toFixed(2));
+
+  const custBal = Number(bill.customer_credit_balance || 0);
+  const finalAmt = Number(bill.final_amount || 0);
+
+  // Invariant: prev_balance + final_amount - payments_received = customer_credit_balance
+  const prevBal = Math.max(0, Math.round((custBal + finalPaid - finalAmt) * 100) / 100);
+  bill.previous_balance = prevBal;
+
+  return bill;
+}
 
 /** Get all bills with customer names, and attach items */
 function findAll() {
@@ -14,7 +49,7 @@ function findAll() {
      ORDER BY b.date DESC, b.id DESC`
   ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
-    bill.items = getByBillId(bill.id);
+    attachBillDetails(bill);
   }
   return bills;
 }
@@ -30,7 +65,7 @@ function findById(id) {
   );
   const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
-    bill.items = getByBillId(bill.id);
+    attachBillDetails(bill);
   }
   return bill;
 }
@@ -46,7 +81,7 @@ function findByNumber(number) {
   );
   const bill = rows[0] ? rowToRupees(rows[0], 'bills') : null;
   if (bill) {
-    bill.items = getByBillId(bill.id);
+    attachBillDetails(bill);
   }
   return bill;
 }
@@ -63,7 +98,7 @@ function search(query) {
     [like, like]
   ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
-    bill.items = getByBillId(bill.id);
+    attachBillDetails(bill);
   }
   return bills;
 }
@@ -79,7 +114,7 @@ function findByCustomerId(customerId) {
     [customerId]
   ).map((b) => rowToRupees(b, 'bills'));
   for (const bill of bills) {
-    bill.items = getByBillId(bill.id);
+    attachBillDetails(bill);
   }
   return bills;
 }

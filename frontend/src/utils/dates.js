@@ -117,5 +117,75 @@ export function formatStoredTime(stored, isMarathi) {
   return parsed.toLocaleTimeString(isMarathi ? 'mr-IN' : 'en-IN', {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   });
+}
+
+/** Formats any YYYY-MM-DD string, ISO timestamp, or Date into strict DD/MM/YYYY format. */
+export function formatDDMMYYYY(dateStr) {
+  if (!dateStr) return '';
+  if (dateStr instanceof Date) {
+    const day = String(dateStr.getDate()).padStart(2, '0');
+    const month = String(dateStr.getMonth() + 1).padStart(2, '0');
+    const year = dateStr.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  const str = String(dateStr).trim().split('T')[0];
+  // Already DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+    return str;
+  }
+  // DD-MM-YYYY
+  if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(str)) {
+    const [d, m, y] = str.split('-');
+    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+  }
+  // YYYY-MM-DD or YYYY/MM/DD
+  const parts = str.split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      const [y, m, d] = parts;
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    }
+    if (parts[2].length === 4) {
+      const [d, m, y] = parts;
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    }
+  }
+  return dateStr;
+}
+
+/** Parses a DD/MM/YYYY or DD-MM-YYYY string into backend standard YYYY-MM-DD. */
+export function parseDDMMYYYY(str) {
+  if (!str) return '';
+  const clean = String(str).trim();
+  // If already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    return clean;
+  }
+  // DD/MM/YYYY or DD-MM-YYYY
+  const m = clean.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) {
+    const day = m[1].padStart(2, '0');
+    const month = m[2].padStart(2, '0');
+    const year = m[3];
+    return `${year}-${month}-${day}`;
+  }
+  return '';
+}
+
+/** Checks if a string is a valid DD/MM/YYYY date. */
+export function isValidDDMMYYYY(str) {
+  if (!str) return false;
+  const iso = parseDDMMYYYY(str);
+  if (!iso) return false;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  const parsed = new Date(y, m - 1, d);
+  return (
+    parsed.getFullYear() === y &&
+    parsed.getMonth() === m - 1 &&
+    parsed.getDate() === d
+  );
 }

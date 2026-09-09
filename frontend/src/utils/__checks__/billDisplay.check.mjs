@@ -60,8 +60,8 @@ const week = {
 const weekItems = grossItems(week.items, week);
 
 check('week: multiplier folds 8% in', Number(commissionMultiplier(week).toFixed(4)), 1.08);
-check('week: rate is grossed to the all-in price', weekItems[0].rate, 32.4);
-check('week: 10kg x the grossed rate is the line amount', weekItems[0].total, 324);
+check('week: rate remains original mandi rate', weekItems[0].rate, 30);
+check('week: 10kg x rate with commission is the line amount', weekItems[0].total, 324);
 check('week: the item column adds up to the subtotal printed under it', columnSum(weekItems), grossSubtotal(week));
 check('week: and that subtotal is the total payable', grossSubtotal(week), week.final_amount);
 check('week: reads as a period bill', isPeriodBill(week), true);
@@ -137,8 +137,8 @@ const legacy = {
 };
 check('legacy: not a period bill', isPeriodBill(legacy), false);
 check('legacy: nothing to group by', groupItemsByDate(legacy.items), null);
-check('legacy: labelled with its own date', formatBillPeriod(legacy, false), '24/8/2026');
-check('period: labelled with its span', formatBillPeriod(week, false), '20/8/2026 – 24/8/2026');
+check('legacy: labelled with its own date', formatBillPeriod(legacy, false), '24/08/2026');
+check('period: labelled with its span', formatBillPeriod(week, false), '20/08/2026 – 24/08/2026');
 
 // ── A bill whose stored figures disagree is shown as-is, not quietly patched ─────
 // 400 + 500 is not the stored 1000. Folding that ₹100 gap into one vegetable would

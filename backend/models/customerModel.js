@@ -16,10 +16,17 @@ const { splitSigned } = require('../utils/creditLedger');
  */
 function findAll() {
   return execSelect(
-    `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
-     FROM customers
-     WHERE is_deleted = 0
-     ORDER BY name ASC`
+    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+            ot.amount AS opening_balance,
+            ot.created_at AS opening_balance_date
+     FROM customers c
+     LEFT JOIN (
+       SELECT customer_id, amount, created_at
+       FROM credit_transactions
+       WHERE transaction_type = 'OPENING_BALANCE'
+     ) ot ON ot.customer_id = c.id
+     WHERE c.is_deleted = 0
+     ORDER BY c.name ASC`
   ).map((c) => rowToRupees(c, 'customers'));
 }
 
@@ -30,8 +37,16 @@ function findAll() {
  */
 function findById(id) {
   const rows = execSelect(
-    `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
-     FROM customers WHERE id = ?`,
+    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+            ot.amount AS opening_balance,
+            ot.created_at AS opening_balance_date
+     FROM customers c
+     LEFT JOIN (
+       SELECT customer_id, amount, created_at
+       FROM credit_transactions
+       WHERE transaction_type = 'OPENING_BALANCE'
+     ) ot ON ot.customer_id = c.id
+     WHERE c.id = ?`,
     [id]
   );
   return rowToRupees(rows[0] || null, 'customers');
@@ -63,10 +78,17 @@ function search(query) {
   const cleanQuery = (query || '').trim();
   const like = `%${cleanQuery}%`;
   return execSelect(
-    `SELECT id, name, mobile, address, notes, credit_balance, created_at, updated_at
-     FROM customers
-     WHERE (name LIKE ? OR (mobile != '' AND mobile LIKE ?)) AND is_deleted = 0
-     ORDER BY name ASC`,
+    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+            ot.amount AS opening_balance,
+            ot.created_at AS opening_balance_date
+     FROM customers c
+     LEFT JOIN (
+       SELECT customer_id, amount, created_at
+       FROM credit_transactions
+       WHERE transaction_type = 'OPENING_BALANCE'
+     ) ot ON ot.customer_id = c.id
+     WHERE (c.name LIKE ? OR (c.mobile != '' AND c.mobile LIKE ?)) AND c.is_deleted = 0
+     ORDER BY c.name ASC`,
     [like, like]
   ).map((c) => rowToRupees(c, 'customers'));
 }
@@ -246,16 +268,28 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
           }
         }
 
-        const rows = mobile ? execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]) : [];
+        let rows = [];
+        if (mobile) {
+          rows = execSelect(`SELECT id, is_deleted FROM customers WHERE mobile = ?`, [mobile]);
+        }
+        // Fallback: If not found by mobile (or mobile was not provided), match by exact customer name (case-insensitive)
+        if (rows.length === 0 && name) {
+          rows = execSelect(`SELECT id, is_deleted FROM customers WHERE LOWER(TRIM(name)) = LOWER(?)`, [name]);
+        }
 
         if (rows.length > 0) {
           const existing = rows[0];
           if (updateExisting || existing.is_deleted === 1) {
             execRun(
               `UPDATE customers
-               SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+               SET name = ?,
+                   mobile = CASE WHEN ? != '' THEN ? ELSE mobile END,
+                   address = CASE WHEN ? != '' THEN ? ELSE address END,
+                   notes = CASE WHEN ? != '' THEN ? ELSE notes END,
+                   is_deleted = 0,
+                   updated_at = CURRENT_TIMESTAMP
                WHERE id = ?`,
-              [name, address, notes, existing.id]
+              [name, mobile, mobile, address, address, notes, notes, existing.id]
             );
 
             if (existing.is_deleted === 1) {
@@ -309,5 +343,110 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
   });
 }
 
-module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger, bulkUpsert };
+/**
+ * Detect and merge duplicate customer records in the database.
+ * Duplicates are identified by identical mobile numbers or identical customer names (case-insensitive).
+ * Re-assigns bills & transactions to the primary customer record, transfers missing fields,
+ * reconciles credit balance, and soft-deletes duplicate records.
+ *
+ * @returns {{ mergedGroups: number, duplicatesRemoved: number }}
+ */
+function deduplicate() {
+  const { transaction } = require('../database/db');
+  const { signedSumSql } = require('../utils/creditLedger');
+
+  return transaction(() => {
+    const customers = execSelect(
+      `SELECT id, name, mobile, address, notes, credit_balance, created_at
+       FROM customers
+       WHERE is_deleted = 0
+       ORDER BY id ASC`
+    );
+
+    let duplicatesRemoved = 0;
+    let mergedGroups = 0;
+    const handledIds = new Set();
+
+    for (let i = 0; i < customers.length; i++) {
+      const primary = customers[i];
+      if (handledIds.has(primary.id)) continue;
+
+      const pMobile = (primary.mobile || '').trim();
+      const pName = (primary.name || '').trim().toLowerCase();
+
+      // Find other active records that share the same non-empty mobile or the exact same name
+      const dups = customers.filter((c) => {
+        if (c.id === primary.id || handledIds.has(c.id)) return false;
+        const cMobile = (c.mobile || '').trim();
+        const cName = (c.name || '').trim().toLowerCase();
+
+        if (pMobile && cMobile && pMobile === cMobile) return true;
+        if (pName && cName && pName === cName) return true;
+        return false;
+      });
+
+      if (dups.length === 0) continue;
+
+      mergedGroups++;
+
+      for (const dup of dups) {
+        handledIds.add(dup.id);
+        duplicatesRemoved++;
+
+        // 1. Transfer bills
+        execRun(`UPDATE bills SET customer_id = ? WHERE customer_id = ?`, [primary.id, dup.id]);
+
+        // 2. Transfer credit_transactions
+        const primaryHasOpening = execSelect(
+          `SELECT id FROM credit_transactions WHERE customer_id = ? AND transaction_type = 'OPENING_BALANCE'`,
+          [primary.id]
+        ).length > 0;
+
+        const dupTxs = execSelect(
+          `SELECT id, transaction_type FROM credit_transactions WHERE customer_id = ?`,
+          [dup.id]
+        );
+
+        for (const tx of dupTxs) {
+          if (tx.transaction_type === 'OPENING_BALANCE' && primaryHasOpening) {
+            execRun(`DELETE FROM credit_transactions WHERE id = ?`, [tx.id]);
+          } else {
+            execRun(`UPDATE credit_transactions SET customer_id = ? WHERE id = ?`, [primary.id, tx.id]);
+          }
+        }
+
+        // 3. Fill missing fields on primary
+        if (!pMobile && (dup.mobile || '').trim()) {
+          execRun(`UPDATE customers SET mobile = ? WHERE id = ?`, [(dup.mobile || '').trim(), primary.id]);
+        }
+        if (!primary.address && (dup.address || '').trim()) {
+          execRun(`UPDATE customers SET address = ? WHERE id = ?`, [(dup.address || '').trim(), primary.id]);
+        }
+        if (!primary.notes && (dup.notes || '').trim()) {
+          execRun(`UPDATE customers SET notes = ? WHERE id = ?`, [(dup.notes || '').trim(), primary.id]);
+        }
+
+        // 4. Mark duplicate as deleted
+        execRun(`UPDATE customers SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [dup.id]);
+      }
+
+      // 5. Reconcile primary credit balance
+      const sumSql = signedSumSql('ct');
+      const balRow = execSelect(
+        `SELECT ${sumSql} AS total_balance FROM credit_transactions ct WHERE ct.customer_id = ?`,
+        [primary.id]
+      );
+      const newBalPaise = balRow[0]?.total_balance || 0;
+      execRun(`UPDATE customers SET credit_balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [newBalPaise, primary.id]);
+    }
+
+    return {
+      mergedGroups,
+      duplicatesRemoved,
+    };
+  });
+}
+
+module.exports = { findAll, findById, findByMobile, search, create, update, remove, getLedger, bulkUpsert, deduplicate };
+
 

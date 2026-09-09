@@ -6,6 +6,6 @@
 
 import ReceiptPrint from './ReceiptPrint';
 
-export default function TodayBillModal({ isOpen, onClose, bill }) {
-  return <ReceiptPrint isOpen={isOpen} onClose={onClose} bill={bill} />;
+export default function TodayBillModal({ isOpen, onClose, bill, onEdit }) {
+  return <ReceiptPrint isOpen={isOpen} onClose={onClose} bill={bill} onEdit={onEdit} />;
 }

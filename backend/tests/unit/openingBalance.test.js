@@ -344,3 +344,65 @@ describe('adding a customer who already owes money', () => {
     expect(rows[0].created_at).toMatch(/^2026-07-15/);
   });
 });
+
+describe('editing a customer with opening balance and date', () => {
+  it('updates opening balance amount and date for existing customer', async () => {
+    const ctx = await freshDb();
+    const customerService = ctx.requireApp('services/customerService.js');
+
+    const customer = customerService.createCustomer({
+      name: 'Ramesh Patil',
+      mobile: '9876543210',
+      opening_balance: 1500,
+      opening_balance_date: '2026-08-01',
+    });
+
+    expect(creditBalance(ctx, customer.id)).toBe(1500);
+
+    const updated = customerService.updateCustomer(customer.id, {
+      name: 'Ramesh Patil',
+      mobile: '9876543210',
+      opening_balance: 2000,
+      opening_balance_date: '2026-07-20',
+    });
+
+    expect(creditBalance(ctx, customer.id)).toBe(2000);
+    expect(updated.opening_balance).toBe(2000);
+    expect(updated.opening_balance_date).toMatch(/^2026-07-20/);
+
+    const rows = ledgerRows(ctx, customer.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(2000);
+    expect(rows[0].created_at).toMatch(/^2026-07-20/);
+    expect(ctx.creditModel.findBalanceMismatches()).toEqual([]);
+  });
+
+  it('can add opening balance to a customer who initially had zero', async () => {
+    const ctx = await freshDb();
+    const customerService = ctx.requireApp('services/customerService.js');
+
+    const customer = customerService.createCustomer({
+      name: 'Suresh Patil',
+      mobile: '9876543211',
+      opening_balance: 0,
+    });
+
+    expect(creditBalance(ctx, customer.id)).toBe(0);
+
+    const updated = customerService.updateCustomer(customer.id, {
+      name: 'Suresh Patil',
+      mobile: '9876543211',
+      opening_balance: 1200,
+      opening_balance_date: '2026-08-10',
+    });
+
+    expect(creditBalance(ctx, customer.id)).toBe(1200);
+    expect(updated.opening_balance).toBe(1200);
+    expect(updated.opening_balance_date).toMatch(/^2026-08-10/);
+
+    const rows = ledgerRows(ctx, customer.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].amount).toBe(1200);
+    expect(ctx.creditModel.findBalanceMismatches()).toEqual([]);
+  });
+});

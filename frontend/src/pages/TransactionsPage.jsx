@@ -147,6 +147,7 @@ export default function TransactionsPage() {
         loading={loading}
         onCustomerSelectForHistory={(cId) => setActiveCustomerId(cId)}
         commissionRate={settings.commission_rate}
+        recentTransactions={dailyData?.transactions || []}
       />
 
       {/* Where the unbilled work is. Sits directly above the history view because

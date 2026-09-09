@@ -26,8 +26,31 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [translitPills, setTranslitPills] = useState([]);
 
+  const storageKey = 'translit_customer_autocomplete_enabled';
+  const [isTranslitEnabled, setIsTranslitEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
+
+  const toggleTranslit = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsTranslitEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
 
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -54,13 +77,13 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
 
   // Generate Marathi transliteration pills for query
   useEffect(() => {
-    if (query && query.trim()) {
+    if (isTranslitEnabled && query && query.trim()) {
       const pills = getTransliterationSuggestions(query);
       setTranslitPills(pills || []);
     } else {
       setTranslitPills([]);
     }
-  }, [query]);
+  }, [query, isTranslitEnabled]);
 
   // Adjust highlight index bounds
   useEffect(() => {
@@ -86,6 +109,19 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
   }
 
   function handleKeyDown(e) {
+    if (e.key === ' ' && isTranslitEnabled && translitPills.length > 0) {
+      const words = query.trim().split(/\s+/);
+      const lastWord = words[words.length - 1];
+      if (lastWord && !/[\u0900-\u097F]/.test(lastWord)) {
+        e.preventDefault();
+        const top = translitPills[0];
+        const newQuery = query.replace(/\S+$/, top) + ' ';
+        setQuery(newQuery);
+        setIsOpen(true);
+        return;
+      }
+    }
+
     if (e.key === 'ArrowDown') {
       if (!isOpen || filteredCustomers.length === 0) {
         if (onNavigateNext) {
@@ -189,18 +225,46 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
           style={{
             fontSize: '1rem',
             padding: '0.65rem 0.85rem',
-            paddingRight: (query || selectedCustomer) ? '2.2rem' : '0.85rem',
+            paddingRight: (query || selectedCustomer) ? '4rem' : '2.4rem',
             width: '100%',
             borderColor: selectedCustomer ? '#16a34a' : undefined,
             backgroundColor: selectedCustomer ? '#f0fdf4' : undefined,
             fontWeight: selectedCustomer ? 600 : 400
           }}
         />
+        
+        {/* Marathi Transliteration Toggle Button */}
+        <button
+          type="button"
+          className={`mi-toggle-btn ${isTranslitEnabled ? 'active' : 'inactive'}`}
+          onClick={toggleTranslit}
+          title={isTranslitEnabled ? 'मराठी टायपिंग चालू आहे (Switch to English)' : 'मराठी टायपिंग बंद आहे (Switch to Marathi)'}
+          aria-label="Toggle Marathi Transliteration"
+          tabIndex={-1}
+          style={{
+            position: 'absolute',
+            right: (query || selectedCustomer) ? '34px' : '8px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 2,
+            width: '24px',
+            height: '24px',
+            fontSize: '0.78rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          {isTranslitEnabled ? 'अ' : 'A'}
+        </button>
+
         {selectedCustomer && !query && (
           <span
             style={{
               position: 'absolute',
-              right: '28px',
+              right: '34px',
               fontSize: '0.8rem',
               color: '#16a34a',
               fontWeight: 700,

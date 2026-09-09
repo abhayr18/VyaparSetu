@@ -15,11 +15,14 @@ import { useTranslation } from '../hooks/useTranslation';
 import CustomerAutocomplete from './CustomerAutocomplete';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import TodayBillModal from './TodayBillModal';
+import BillModal from './BillModal';
 import EditTransactionModal from './EditTransactionModal';
 import BilledBadge from './BilledBadge';
+import { EditIcon } from './Icons';
 import { billsApi } from '../services/apiService';
 import { formatCommissionPercent, parseStoredPercent } from '../utils/money';
 import { isBilled } from '../utils/billDisplay';
+import { formatDDMMYYYY } from '../utils/dates';
 
 export default function CustomerDailyPurchase({
   customers = [],
@@ -50,8 +53,26 @@ export default function CustomerDailyPurchase({
   const [editingTx, setEditingTx] = useState(null);
   const [generatedBill, setGeneratedBill] = useState(null);
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
+  const [confirmGenerateOpen, setConfirmGenerateOpen] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
   const [billGenerating, setBillGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
+
+  async function handleUpdateBill(payload) {
+    if (!editingBill) return { success: false, error: 'No bill selected' };
+    try {
+      const res = await billsApi.update(editingBill.id, payload);
+      if (res.data?.success && res.data?.data) {
+        setGeneratedBill(res.data.data);
+        setEditingBill(null);
+        setIsBillModalOpen(true);
+        return { success: true, data: res.data.data };
+      }
+      return { success: false, error: res.data?.error || 'Failed to update bill' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
 
   const activeCustomer = customers.find((c) => c.id === activeCustomerId);
   const summary = dailyData.summary || {};
@@ -344,44 +365,81 @@ export default function CustomerDailyPurchase({
             {/* Generate Bill CTA / View & WhatsApp Share Bill CTA */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {allBilled && existingBillId ? (
-                <button
-                  type="button"
-                  id="view-existing-bill-btn"
-                  onClick={() => openBillModal(existingBillId)}
-                  title="Click to open full bill and share on WhatsApp"
-                  style={{
-                    width: '100%',
-                    minHeight: '56px',
-                    padding: '0.65rem 0.85rem',
-                    fontSize: '0.88rem',
-                    fontWeight: 700,
-                    background: '#15803d',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 'var(--border-radius-pill)',
-                    boxShadow: '0 4px 14px rgba(21, 128, 61, 0.35)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '2px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '1.15rem' }}>📱</span>
-                    <span>{t('billing.shareWhatsApp') || 'WhatsApp वर पाठवा'}</span>
-                  </div>
-                  <span style={{ fontSize: '0.72rem', color: '#bbf7d0', fontWeight: 600 }}>
-                    ✓ बिल तयार आहे (#{existingBillId}) • पहा / शेअर करा
-                  </span>
-                </button>
+                <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                  <button
+                    type="button"
+                    id="view-existing-bill-btn"
+                    onClick={() => openBillModal(existingBillId)}
+                    title="Click to open full bill and share on WhatsApp"
+                    style={{
+                      flex: 1,
+                      minHeight: '56px',
+                      padding: '0.65rem 0.85rem',
+                      fontSize: '0.88rem',
+                      fontWeight: 700,
+                      background: '#15803d',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 'var(--border-radius-pill)',
+                      boxShadow: '0 4px 14px rgba(21, 128, 61, 0.35)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '2px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '1.15rem' }}>📱</span>
+                      <span>{t('billing.shareWhatsApp') || 'WhatsApp वर पाठवा'}</span>
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: '#bbf7d0', fontWeight: 600 }}>
+                      ✓ बिल तयार आहे (#{existingBillId}) • पहा / शेअर करा
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    id="edit-existing-bill-btn"
+                    onClick={async () => {
+                      try {
+                        const res = await billsApi.getById(existingBillId);
+                        if (res.data?.success && res.data?.data) {
+                          setEditingBill(res.data.data);
+                        }
+                      } catch (e) {
+                        console.error('Failed to load bill for editing', e);
+                      }
+                    }}
+                    title={t('billing.editBill') || 'बिल बदला'}
+                    style={{
+                      minHeight: '56px',
+                      padding: '0.65rem 1.1rem',
+                      fontSize: '0.88rem',
+                      fontWeight: 700,
+                      background: '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 'var(--border-radius-pill)',
+                      boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <EditIcon />
+                    <span>{t('common.edit') || 'बदला'}</span>
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
                   id="generate-todays-bill-btn"
-                  onClick={handleGenerateBillClick}
+                  onClick={() => setConfirmGenerateOpen(true)}
                   disabled={billGenerating || transactions.length === 0}
                   style={{
                     width: '100%',
@@ -478,8 +536,8 @@ export default function CustomerDailyPurchase({
                     const billed = isBilled(tx.bill_id);
                     return (
                     <tr key={tx.id} id={`history-row-${tx.id}`} style={{ borderBottom: '1px solid #e2e8f0', fontSize: '0.9rem' }}>
-                      <td style={{ padding: '0.75rem 1rem', color: '#64748b' }}>
-                        {tx.transaction_date}
+                      <td style={{ padding: '0.75rem 1rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        {formatDDMMYYYY(tx.transaction_date)}
                       </td>
                       <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: '#0f172a' }}>
                         {tx.vegetable_name_snapshot}
@@ -598,12 +656,143 @@ export default function CustomerDailyPurchase({
         />
       )}
 
+      {/* Generate Bill Confirmation Popup Modal */}
+      {confirmGenerateOpen && (
+        <>
+          <div className="modal-backdrop" onClick={() => !billGenerating && setConfirmGenerateOpen(false)} />
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            id="generate-bill-confirm-modal"
+            style={{ maxWidth: 480, padding: 0, overflow: 'hidden' }}
+          >
+            {/* Header */}
+            <div style={{ background: '#15803d', color: '#ffffff', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.4rem' }}>🧾</span>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#ffffff' }}>
+                  {t('billing.confirmGenerateTitle') || 'बिल तयार करायचे आहे का?'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmGenerateOpen(false)}
+                disabled={billGenerating}
+                style={{ background: 'transparent', border: 'none', color: '#ffffff', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px' }}>
+              {generateError && (
+                <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: '0.88rem' }}>
+                  ⚠️ {generateError}
+                </div>
+              )}
+
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.92rem', color: 'var(--color-text-secondary)' }}>
+                {t('billing.confirmGenerateMsg') || 'या कालावधीतील सर्व अनबिल्ड नोंदींचे एकत्रित बिल तयार केले जाईल.'}
+              </p>
+
+              {/* Summary Details Box */}
+              <div style={{ background: 'var(--color-bg-light, #f8fafc)', border: '1px solid var(--color-border, #e2e8f0)', borderRadius: 10, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-text-muted)' }}>{t('billing.customer') || 'ग्राहक'}:</span>
+                  <strong style={{ color: 'var(--color-text-primary)' }}>{activeCustomer?.name} {activeCustomer?.mobile ? `(${activeCustomer.mobile})` : ''}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-text-muted)' }}>{t('billing.date') || 'तारीख'}:</span>
+                  <span style={{ fontWeight: 600 }}>{formatDDMMYYYY(billPeriod?.date || selectedDate) || (startDate && endDate ? `${formatDDMMYYYY(startDate)} ते ${formatDDMMYYYY(endDate)}` : 'आज')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-text-muted)' }}>{t('transactions.totalEntries') || 'एकूण नोंदी'}:</span>
+                  <span style={{ fontWeight: 600 }}>{unbilledTransactions.length || transactions.length}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--color-border, #cbd5e1)', paddingTop: '8px' }}>
+                  <span style={{ fontWeight: 700, color: '#15803d' }}>{t('billing.grandTotal') || 'एकूण देय रक्कम'}:</span>
+                  <strong style={{ fontSize: '1.15rem', color: '#15803d', fontWeight: 800 }}>₹{Number(summary.total_final_amount || 0).toFixed(2)}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div style={{ padding: '14px 20px', background: 'var(--color-bg-subtle, #f1f5f9)', display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--color-border, #e2e8f0)' }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setConfirmGenerateOpen(false)}
+                disabled={billGenerating}
+                style={{ padding: '9px 18px', fontWeight: 600 }}
+              >
+                {t('common.cancel') || 'रद्द करा'}
+              </button>
+              <button
+                type="button"
+                id="confirm-generate-bill-btn"
+                onClick={async () => {
+                  await handleGenerateBillClick();
+                  setConfirmGenerateOpen(false);
+                }}
+                disabled={billGenerating}
+                style={{
+                  padding: '9px 20px',
+                  background: '#15803d',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 'var(--border-radius-sm, 6px)',
+                  fontWeight: 700,
+                  cursor: billGenerating ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {billGenerating ? (
+                  <>
+                    <span className="spinner" style={{ width: 14, height: 14, borderColor: '#fff', borderTopColor: 'transparent' }} />
+                    {t('common.loading') || 'तयार करत आहे...'}
+                  </>
+                ) : (
+                  <>
+                    <span>✓</span>
+                    <span>{t('billing.confirmGenerateBtn') || 'होय, बिल बनवा'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Today Bill Modal View (Print, WhatsApp, PDF) */}
       {isBillModalOpen && (
         <TodayBillModal
           isOpen={isBillModalOpen}
           onClose={() => setIsBillModalOpen(false)}
           bill={generatedBill}
+          onEdit={(b) => {
+            setIsBillModalOpen(false);
+            setEditingBill(b);
+          }}
+        />
+      )}
+
+      {/* Bill Edit Modal */}
+      {editingBill && (
+        <BillModal
+          isOpen={Boolean(editingBill)}
+          onClose={(updated) => {
+            setEditingBill(null);
+            if (updated) {
+              setGeneratedBill(updated);
+              setIsBillModalOpen(true);
+            }
+          }}
+          bill={editingBill}
+          onSubmit={handleUpdateBill}
         />
       )}
     </div>

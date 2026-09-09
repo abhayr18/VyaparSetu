@@ -80,6 +80,16 @@ export function useCustomers() {
     }
   }
 
+  async function deduplicateCustomers() {
+    try {
+      const res = await customersApi.deduplicate();
+      await fetchAll();
+      return { success: true, data: res.data, message: res.message };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     customers,
     allCustomers,
@@ -92,6 +102,8 @@ export function useCustomers() {
     updateCustomer,
     deleteCustomer,
     bulkImportCustomers,
+    deduplicateCustomers,
   };
 }
+
 

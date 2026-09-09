@@ -70,8 +70,15 @@ function update(req, res, next) {
     if (isNaN(id)) {
       return res.status(400).json({ success: false, message: 'Invalid customer ID.' });
     }
-    const { name, mobile, address, notes } = req.body;
-    const customer = customerService.updateCustomer(id, { name, mobile, address, notes });
+    const { name, mobile, address, notes, opening_balance, opening_balance_date } = req.body;
+    const customer = customerService.updateCustomer(id, {
+      name,
+      mobile,
+      address,
+      notes,
+      opening_balance,
+      opening_balance_date,
+    });
     res.json({ success: true, data: customer, message: 'Customer updated successfully.' });
   } catch (err) {
     next(err);
@@ -128,6 +135,24 @@ function bulkImport(req, res, next) {
   }
 }
 
-module.exports = { getAll, getById, searchCustomers, create, update, remove, getLedger, bulkImport };
+/**
+ * POST /api/customers/deduplicate
+ */
+function deduplicate(req, res, next) {
+  try {
+    const result = customerService.deduplicateCustomers();
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: `Cleaned up ${result.duplicatesRemoved} duplicate customer(s) across ${result.mergedGroups} group(s).`,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getAll, getById, searchCustomers, create, update, remove, getLedger, bulkImport, deduplicate };
+
+
 
 

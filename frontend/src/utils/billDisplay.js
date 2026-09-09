@@ -74,7 +74,7 @@ export function grossItems(items, bill) {
   const multiplier = commissionMultiplier(bill);
   const grossed = list.map((item) => ({
     ...item,
-    rate: round2(Number(item.rate || 0) * multiplier),
+    rate: Number(item.rate || 0),
     total: round2(Number(item.total || 0) * multiplier),
   }));
 
@@ -143,25 +143,12 @@ export function groupItemsByDate(items, fallbackDate = null) {
     const key = item.item_date || fallbackDate || '';
     let group = byDate.get(key);
     if (!group) {
-      group = { date: key || null, items: [], subtotal: 0, _itemMap: new Map() };
+      group = { date: key || null, items: [], subtotal: 0 };
       byDate.set(key, group);
       groups.push(group);
     }
 
-    const itemKey = `${item.vegetable_name || ''}__${item.vegetable_unit || ''}`;
-    const existing = group._itemMap.get(itemKey);
-    if (!existing) {
-      const copy = { ...item };
-      group._itemMap.set(itemKey, copy);
-      group.items.push(copy);
-    } else {
-      existing.quantity = round2(Number(existing.quantity || 0) + Number(item.quantity || 0));
-      existing.total = round2(Number(existing.total || 0) + Number(item.total || 0));
-      existing.rate = existing.quantity > 0
-        ? round2(existing.total / existing.quantity)
-        : existing.rate;
-    }
-
+    group.items.push({ ...item });
     group.subtotal = round2(group.subtotal + Number(item.total || 0));
   }
 
@@ -174,11 +161,26 @@ export function groupItemsByDate(items, fallbackDate = null) {
  * Returns the raw string for anything unparseable, so a malformed stored date prints
  * as itself rather than as "Invalid Date".
  */
-export function formatBillDate(value, isMarathi) {
+export function formatBillDate(value) {
   if (!value) return '';
+  const str = String(value).trim().split('T')[0];
+  const parts = str.split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      const [y, m, d] = parts;
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    }
+    if (parts[2].length === 4) {
+      const [d, m, y] = parts;
+      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    }
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleDateString(isMarathi ? 'mr-IN' : 'en-IN');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const year = parsed.getFullYear();
+  return `${day}/${month}/${year}`;
 }
 
 /**

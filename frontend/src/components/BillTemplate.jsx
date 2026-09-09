@@ -86,7 +86,7 @@ function getAmountInWords(amount, isMarathi) {
 }
 
 export default function BillTemplate({ bill }) {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const { settings, refetch } = useSettings();
 
   useEffect(() => {
@@ -95,23 +95,43 @@ export default function BillTemplate({ bill }) {
 
   if (!bill) return null;
 
-  const discountAmount = bill.discount_amount || 0;
-  const finalAmount = bill.final_amount || 0;
-  const paidAmount = bill.paid_amount || 0;
-  const remainingAmount = bill.remaining_amount || 0;
+  const subtotal = Number(
+    bill.subtotal !== undefined && bill.subtotal !== null
+      ? bill.subtotal
+      : (bill.items || []).reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+  );
+  const discountAmount = Number(bill.discount_amount || 0);
+  const commissionRate = bill.commission_rate != null ? Number(bill.commission_rate) : null;
+  const commissionAmount = Number(bill.commission_amount || 0);
+  const hamaliAmount = Number(bill.hamali_amount || 0);
+  const transportAmount = Number(bill.transport_amount || 0);
+  const finalAmount = Number(bill.final_amount || 0);
 
-  // Previous outstanding balance before this bill:
-  // Derived from the customer's total outstanding balance minus what this bill left unpaid.
+  // Received payments (today's payment / ledger payment or bill.paid_amount)
+  const paidAmount = Number(
+    bill.payments_received !== undefined
+      ? bill.payments_received
+      : (bill.paid_amount || 0)
+  );
+
   const customerBalance = Number(bill.customer_credit_balance || 0);
-  const previousBalance = Math.max(0, Math.round((customerBalance - remainingAmount) * 100) / 100);
+
+  // Previous balance before this bill/date
+  const previousBalance = bill.previous_balance !== undefined
+    ? Number(bill.previous_balance)
+    : Math.max(0, Math.round((customerBalance + paidAmount - finalAmount) * 100) / 100);
+
+  // Total payable / dues before today's payments
   const totalPayableAmount = Math.round((finalAmount + previousBalance) * 100) / 100;
-  const netDueAmount = Math.round((previousBalance + remainingAmount) * 100) / 100;
 
-  const isMarathi = language === 'mr';
+  // Remaining net balance after today's payment
+  const netDueAmount = Math.max(0, Math.round((totalPayableAmount - paidAmount) * 100) / 100);
 
-  // Commission is folded into the item rates and never shown as a line. The subtotal
-  // shown is therefore the grossed one, so the column above it adds up to it and
-  // subtotal − discount + hamali + transport still lands on Total Payable.
+  // All bills formatted in authentic Marathi APMC Mandi style as per client requirement
+  const isMarathi = true;
+
+  // Display items keep the authentic negotiated mandi rate in the 'दर' (Rate) column,
+  // while the 'रक्कम' (Amount) column reflects the line total inclusive of commission.
   const displayItems = grossItems(bill.items, bill);
 
   // Always group items datewise so every bill displays clear per-day breakdown
@@ -125,18 +145,21 @@ export default function BillTemplate({ bill }) {
   /** One vegetable line. Shared by the flat and the datewise renderings. */
   function renderItemRow(item, key) {
     const isKg = item.vegetable_unit === 'kg';
+    const unitText = item.vegetable_unit
+      ? (t(`vegetables.units.${item.vegetable_unit}`) || item.vegetable_unit)
+      : '';
+    const displayQty = isKg
+      ? `${item.quantity} ${isMarathi ? 'किलो' : 'kg'}`
+      : `${item.quantity} ${unitText}`;
+
     return (
       <tr key={key} style={{ borderBottom: `1px solid ${themeColor}` }}>
         <td style={{ padding: '8px', borderRight: cellBorder, fontWeight: '600' }}>
           {item.vegetable_name}
         </td>
-        {/* unit quantity column */}
-        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'center' }}>
-          {!isKg ? `${item.quantity} ${item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : ''}` : '—'}
-        </td>
-        {/* weight column */}
-        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
-          {isKg ? `${item.quantity} kg` : '—'}
+        {/* Combined Quantity / Weight column */}
+        <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right', fontWeight: '500' }}>
+          {displayQty}
         </td>
         {/* rate */}
         <td style={{ padding: '8px', borderRight: cellBorder, textAlign: 'right' }}>
@@ -331,7 +354,7 @@ export default function BillTemplate({ bill }) {
         </div>
       </div>
 
-      {/* Mid Grid Items Table */}
+      {/* Mid Grid Items Table - Clean 4 Columns */}
       <table
         style={{
           width: '100%',
@@ -346,16 +369,13 @@ export default function BillTemplate({ bill }) {
             <th style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, fontWeight: 'bold', color: themeColor }}>
               {isMarathi ? 'शेतमालाचे नांव' : 'Vegetable Item'}
             </th>
-            <th style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'center', fontWeight: 'bold', color: themeColor, width: '120px' }}>
-              {isMarathi ? 'नग/क्रेट/जुडी' : 'Unit Qty'}
-            </th>
-            <th style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right', fontWeight: 'bold', color: themeColor, width: '90px' }}>
-              {isMarathi ? 'वजन (Weight)' : 'Weight'}
+            <th style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right', fontWeight: 'bold', color: themeColor, width: '130px' }}>
+              {isMarathi ? 'प्रमाण / वजन' : 'Qty / Weight'}
             </th>
             <th style={{ padding: '8px', borderRight: `1.5px solid ${themeColor}`, textAlign: 'right', fontWeight: 'bold', color: themeColor, width: '90px' }}>
               {isMarathi ? 'दर' : 'Rate'}
             </th>
-            <th style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: themeColor, width: '100px' }}>
+            <th style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: themeColor, width: '110px' }}>
               {isMarathi ? 'रक्कम' : 'Amount'}
             </th>
           </tr>
@@ -364,10 +384,10 @@ export default function BillTemplate({ bill }) {
           {dayGroups
             ? dayGroups.map((group, gIdx) => (
                 <Fragment key={group.date || `undated-${gIdx}`}>
-                  {/* Day header: the vendor's notebook had one of these per page. */}
+                  {/* Day header */}
                   <tr style={{ background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
                     <td
-                      colSpan={5}
+                      colSpan={4}
                       style={{
                         padding: '6px 8px',
                         borderBottom: `1px solid ${themeColor}`,
@@ -386,11 +406,10 @@ export default function BillTemplate({ bill }) {
 
                   {group.items.map((item, idx) => renderItemRow(item, `${gIdx}-${idx}`))}
 
-                  {/* Per-day subtotal, so a customer can check one day without
-                      re-adding the whole period. */}
+                  {/* Per-day subtotal */}
                   <tr style={{ borderBottom: cellBorder }}>
                     <td
-                      colSpan={4}
+                      colSpan={3}
                       style={{
                         padding: '6px 8px',
                         borderRight: cellBorder,
@@ -410,13 +429,10 @@ export default function BillTemplate({ bill }) {
               ))
             : displayItems.map((item, idx) => renderItemRow(item, idx))}
 
-          {/* Pad empty rows if list is short, to keep APMC visual look. Only on a
-              single-day bill — a period bill is already tall and its day sections
-              would be pushed apart by filler. */}
+          {/* Pad empty rows if list is short, to keep APMC visual look */}
           {!dayGroups && displayItems.length < 4 &&
             Array.from({ length: 4 - displayItems.length }).map((_, idx) => (
               <tr key={`pad-${idx}`} style={{ borderBottom: `1px solid ${themeColor}`, height: '32px' }}>
-                <td style={{ borderRight: cellBorder }}>&nbsp;</td>
                 <td style={{ borderRight: cellBorder }}>&nbsp;</td>
                 <td style={{ borderRight: cellBorder }}>&nbsp;</td>
                 <td style={{ borderRight: cellBorder }}>&nbsp;</td>
@@ -427,68 +443,38 @@ export default function BillTemplate({ bill }) {
         </tbody>
       </table>
 
-      {/* Bottom Expenses & Calculations Summary */}
+      {/* Bottom Financial Reconciliation Summary */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: '1.2fr 1fr',
-          gap: '16px',
-          fontSize: '0.88rem',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginBottom: '10px'
         }}
       >
-        {/* Left Side: Expense/Receipt Details Table */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
+        <table style={{ width: '360px', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
           <tbody>
+            {discountAmount > 0 && (
+              <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
+                <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
+                  {isMarathi ? 'इतर / सवलत' : 'Discount'}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', color: '#dc2626', fontWeight: 'bold', width: '120px' }}>
+                  -₹{discountAmount.toFixed(2)}
+                </td>
+              </tr>
+            )}
             <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
               <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'हमाली / मापाई' : 'Hamali Charges'}
+                {isMarathi ? 'आजचे बिल' : 'Current Bill Total'}
               </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', width: '100px' }}>
-                ₹{(Number(bill.hamali_amount) || 0).toFixed(2)}
-              </td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'वाहतूक' : 'Transport'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                ₹{(Number(bill.transport_amount) || 0).toFixed(2)}
-              </td>
-            </tr>
-            <tr style={{ borderBottom: `1px solid ${themeColor}`, background: '#fffbeb' }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'उचल (Paid Amount)' : 'Advance (Paid)'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: 'var(--color-success)' }}>
-                ₹{paidAmount.toFixed(2)}
-              </td>
-            </tr>
-            <tr>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'इतर / सवलत (Discount)' : 'Other (Discount)'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', color: '#dc2626' }}>
-                {discountAmount > 0 ? `-₹${discountAmount.toFixed(2)}` : '₹0.00'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        {/* Right Side: Calculation Totals Box */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
-          <tbody>
-            <tr style={{ borderBottom: `1px solid ${themeColor}` }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'आजचे बिल (Current Bill)' : 'Current Bill Total'}
-              </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '105px' }}>
+              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', width: '120px' }}>
                 ₹{finalAmount.toFixed(2)}
               </td>
             </tr>
             {previousBalance > 0 && (
               <tr style={{ borderBottom: `1px solid ${themeColor}`, background: '#fffbeb' }}>
                 <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#b45309', borderRight: `1px solid ${themeColor}` }}>
-                  {isMarathi ? 'मागील बाकी (Prev. Dues)' : 'Previous Outstanding'}
+                  {isMarathi ? 'मागील बाकी' : 'Previous Outstanding'}
                 </td>
                 <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#b45309' }}>
                   ₹{previousBalance.toFixed(2)}
@@ -496,18 +482,28 @@ export default function BillTemplate({ bill }) {
               </tr>
             )}
             <tr style={{ borderBottom: `1px solid ${themeColor}`, background: isMarathi ? '#fff5f5' : '#f0faf4' }}>
-              <td style={{ padding: '8px', fontWeight: '900', color: themeColor, fontSize: '0.92rem', borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'एकूण देय रू.' : 'Total Payable Rs'}
+              <td style={{ padding: '7px 8px', fontWeight: '900', color: themeColor, fontSize: '0.92rem', borderRight: `1px solid ${themeColor}` }}>
+                {isMarathi ? 'एकूण देय रक्कम' : 'Total Payable Rs'}
               </td>
-              <td style={{ padding: '8px', textAlign: 'right', fontWeight: '900', fontSize: '0.95rem', color: themeColor }}>
+              <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: '900', fontSize: '0.95rem', color: themeColor }}>
                 ₹{totalPayableAmount.toFixed(2)}
               </td>
             </tr>
-            <tr style={{ color: netDueAmount > 0 ? '#dc2626' : 'inherit' }}>
-              <td style={{ padding: '6px 8px', fontWeight: 'bold', color: themeColor, borderRight: `1px solid ${themeColor}` }}>
-                {isMarathi ? 'उर्वरित बाकी (Net Dues)' : 'Remaining Dues'}
+            {paidAmount > 0 && (
+              <tr style={{ borderBottom: `1px solid ${themeColor}`, background: '#f0fdf4' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 'bold', color: '#166534', borderRight: `1px solid ${themeColor}` }}>
+                  {isMarathi ? 'आज जमा / भरलेली रक्कम' : 'Payment Received'}
+                </td>
+                <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold', color: '#166534' }}>
+                  -₹{paidAmount.toFixed(2)}
+                </td>
+              </tr>
+            )}
+            <tr style={{ color: netDueAmount > 0 ? '#dc2626' : '#166534', background: netDueAmount > 0 ? '#fef2f2' : '#f0fdf4' }}>
+              <td style={{ padding: '7px 8px', fontWeight: '900', color: netDueAmount > 0 ? '#b91c1c' : '#166534', borderRight: `1px solid ${themeColor}`, fontSize: '0.92rem' }}>
+                {isMarathi ? 'एकूण शिल्लक बाकी' : 'Remaining Net Dues'}
               </td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 'bold' }}>
+              <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: '900', fontSize: '0.95rem', color: netDueAmount > 0 ? '#b91c1c' : '#166534' }}>
                 ₹{netDueAmount.toFixed(2)}
               </td>
             </tr>
@@ -528,8 +524,8 @@ export default function BillTemplate({ bill }) {
         <span style={{ fontWeight: 'bold', color: themeColor }}>
           {isMarathi ? 'अक्षरी रू. :' : 'Amount in Words :'}
         </span>
-        <span style={{ fontStyle: 'italic' }}>
-          {getAmountInWords(totalPayableAmount, isMarathi)}
+        <span style={{ fontStyle: 'italic', fontWeight: 600 }}>
+          {getAmountInWords(netDueAmount > 0 ? netDueAmount : totalPayableAmount, isMarathi)}
         </span>
       </div>
 
@@ -568,7 +564,7 @@ export default function BillTemplate({ bill }) {
         </div>
         {settings.upi_id && (
           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: themeColor }}>
-            UPI ID: {settings.upi_id}
+            {isMarathi ? 'युपीआय आयडी (UPI ID)' : 'UPI ID'}: {settings.upi_id}
           </div>
         )}
       </div>

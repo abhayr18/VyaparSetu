@@ -467,16 +467,16 @@ export default function BackupPage() {
         <div className="backup-section-header">
           <div className="backup-section-title">
             <HistoryIcon style={{ color: 'var(--color-primary)', width: 16, height: 16 }} />
-            Backup History & Fail-Safe Restore ({backups.length})
+            Master Backup & Restore Points ({backups.length})
           </div>
           <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-            Auto-rotates keeping latest 30 snapshots
+            Single Master Database Architecture • Instant Rollback Protection
           </span>
         </div>
 
         {backups.length === 0 ? (
           <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
-            No backup snapshots created yet. Click <strong>Backup Now</strong> above to create your first snapshot.
+            No backup file created yet. Click <strong>Backup Now</strong> above to create your master backup.
           </div>
         ) : (
           <div className="table-wrapper">
@@ -484,17 +484,43 @@ export default function BackupPage() {
               <thead>
                 <tr>
                   <th className="table-th">{t('backup.filename') || 'Filename'}</th>
-                  <th className="table-th">Location</th>
-                  <th className="table-th">{t('backup.createdAt') || 'Created'}</th>
+                  <th className="table-th">Type / Location</th>
+                  <th className="table-th">{t('backup.createdAt') || 'Last Updated'}</th>
                   <th className="table-th">{t('backup.fileSize') || 'Size'}</th>
                   <th className="table-th" style={{ textAlign: 'right' }}>{t('common.actions') || 'Actions'}</th>
                 </tr>
               </thead>
               <tbody>
                 {backups.map((bk) => (
-                  <tr className="table-row" key={bk.filename}>
+                  <tr className="table-row" key={bk.filename} style={bk.isMaster || bk.filename === 'vyapaarsetu_backup.db' ? { background: 'rgba(16, 185, 129, 0.04)' } : undefined}>
                     <td className="table-cell" style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--color-text-secondary)' }}>
-                      {bk.filename}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{bk.filename}</span>
+                        {(bk.isMaster || bk.filename === 'vyapaarsetu_backup.db') && (
+                          <span style={{
+                            background: '#dcfce7',
+                            color: '#15803d',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                          }}>
+                            Master DB
+                          </span>
+                        )}
+                        {(bk.isRollback || bk.filename.includes('.previous.bak')) && (
+                          <span style={{
+                            background: '#fef3c7',
+                            color: '#b45309',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                          }}>
+                            Previous .bak
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="table-cell" style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
                       <span style={{

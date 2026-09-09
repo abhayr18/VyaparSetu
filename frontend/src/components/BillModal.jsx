@@ -154,8 +154,6 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   const [paymentType, setPaymentType]     = useState('Cash');
   const [paymentStatus, setPaymentStatus] = useState('Paid');
   const [paidAmount, setPaidAmount]       = useState(0);
-  const [hamaliAmount, setHamaliAmount]   = useState(0);
-  const [transportAmount, setTransportAmount] = useState(0);
   const [vegSearch, setVegSearch]         = useState('');
   const [items, setItems]                 = useState([]);
   const [errors, setErrors]               = useState({});
@@ -174,8 +172,6 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
         setPaymentType(bill.payment_type || 'Cash');
         setPaymentStatus(bill.payment_status || 'Paid');
         setPaidAmount(bill.paid_amount || 0);
-        setHamaliAmount(bill.hamali_amount || 0);
-        setTransportAmount(bill.transport_amount || 0);
         setItems(bill.items || []);
       } else {
         setCustomerId('');
@@ -186,8 +182,6 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
         setPaymentType('Cash');
         setPaymentStatus('Paid');
         setPaidAmount(0);
-        setHamaliAmount(0);
-        setTransportAmount(0);
         setItems([]);
       }
       setErrors({});
@@ -288,10 +282,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   const commissionRate = normalizeCommissionPercent(settings.commission_rate);
   const commissionAmount = round2((amountAfterDiscount * commissionRate) / 100);
 
-  const hamali = Number(hamaliAmount) || 0;
-  const transport = Number(transportAmount) || 0;
-
-  const finalAmount = Number((amountAfterDiscount + commissionAmount + hamali + transport).toFixed(2));
+  const finalAmount = Number((amountAfterDiscount + commissionAmount).toFixed(2));
 
   const paid = Number(paidAmount) || 0;
   const remainingAmount = Number((finalAmount - paid).toFixed(2));
@@ -363,8 +354,8 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
       discount_amount: discountAmount,
       commission_rate: commissionRate,
       commission_amount: commissionAmount,
-      hamali_amount: hamali,
-      transport_amount: transport,
+      hamali_amount: 0,
+      transport_amount: 0,
       final_amount: finalAmount,
       paid_amount: paid,
       remaining_amount: remainingAmount,
@@ -379,6 +370,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
           quantity: Number(it.quantity),
           rate: Number(it.rate),
           total: Number(it.total),
+          item_date: it.item_date || null
         })),
     };
 
@@ -580,13 +572,11 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
             {/* Left side: Notes */}
             <div className="form-group">
               <label className="form-label">{t('billing.notes')}</label>
-              <textarea
-                className="form-input form-textarea"
+              <MarathiInput
+                id="bill-notes-input"
                 placeholder={t('billing.notesPlaceholder')}
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={5}
-                style={{ resize: 'vertical' }}
+                onChange={setNotes}
               />
             </div>
 
@@ -634,32 +624,6 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="text-muted">{t('billing.commissionAmount')}:</span>
                 <span style={{ color: 'var(--color-text-primary)' }}>₹{commissionAmount.toFixed(2)} ({formatCommissionPercent(commissionRate)})</span>
-              </div>
-
-              {/* Hamali & Transport Inputs */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                <span className="text-muted">{t('billing.hamali') || 'Hamali Charges'}:</span>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={hamaliAmount}
-                  min="0"
-                  step="any"
-                  onChange={(e) => setHamaliAmount(Number(e.target.value) || 0)}
-                  style={{ width: 100, padding: '4px 8px', textAlign: 'right' }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                <span className="text-muted">{t('billing.transport') || 'Transport'}:</span>
-                <input
-                  type="number"
-                  className="form-input"
-                  value={transportAmount}
-                  min="0"
-                  step="any"
-                  onChange={(e) => setTransportAmount(Number(e.target.value) || 0)}
-                  style={{ width: 100, padding: '4px 8px', textAlign: 'right' }}
-                />
               </div>
 
               {/* Grand / Final Total */}

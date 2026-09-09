@@ -231,14 +231,13 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
             <label className="form-label" htmlFor="veg-keywords">
               {t('vegetables.searchKeywords')}
             </label>
-            <input
+            <MarathiInput
               id="veg-keywords"
               name="search_keywords"
-              type="text"
-              className="form-input"
-              placeholder={t('vegetables.searchKeywordsPlaceholder')}
               value={form.search_keywords}
-              onChange={handleChange}
+              onChange={(val) => setForm((p) => ({ ...p, search_keywords: val }))}
+              placeholder={t('vegetables.searchKeywordsPlaceholder')}
+              label={t('transliteration.suggestionsLabel')}
             />
             <span className="field-hint">{t('vegetables.searchKeywordsHelp')}</span>
           </div>
@@ -248,14 +247,13 @@ export default function VegetableModal({ isOpen, onClose, onSubmit, vegetable })
             <label className="form-label" htmlFor="veg-notes">
               {t('vegetables.notes')}
             </label>
-            <textarea
+            <MarathiInput
               id="veg-notes"
               name="notes"
-              rows={2}
-              className="form-input form-textarea"
-              placeholder={t('vegetables.notesPlaceholder')}
               value={form.notes}
-              onChange={handleChange}
+              onChange={(val) => setForm((p) => ({ ...p, notes: val }))}
+              placeholder={t('vegetables.notesPlaceholder')}
+              label={t('transliteration.suggestionsLabel')}
             />
           </div>
 

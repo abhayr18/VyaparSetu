@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import useSettings from '../hooks/useSettings';
 import { useTranslation } from '../hooks/useTranslation';
+import MarathiInput from '../components/MarathiInput';
 import {
   AlertIcon,
   CheckIcon,
@@ -100,7 +101,7 @@ export default function SettingsPage() {
         default_payment_mode: settings.default_payment_mode || 'Cash',
         language:             settings.language || 'en',
         units:                parseArraySetting(settings.units, DEFAULT_UNITS),
-        categories:           parseArraySetting(settings.categories, DEFAULT_CATEGORIES),
+        categories:               parseArraySetting(settings.categories, DEFAULT_CATEGORIES),
       });
     }
   }, [settings]);
@@ -255,28 +256,24 @@ export default function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               <div className="form-group">
                 <label htmlFor="vendor_name" className="form-label">{t('settings.businessName')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="vendor_name"
                   name="vendor_name"
                   value={form.vendor_name}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, vendor_name: val }))}
                   placeholder={t('settings.businessNamePlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
 
               <div className="form-group">
                 <label htmlFor="tagline" className="form-label">{t('settings.tagline')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="tagline"
                   name="tagline"
                   value={form.tagline}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, tagline: val }))}
                   placeholder={t('settings.taglinePlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
@@ -285,28 +282,24 @@ export default function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               <div className="form-group">
                 <label htmlFor="owner_name" className="form-label">{t('settings.ownerName')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="owner_name"
                   name="owner_name"
                   value={form.owner_name}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, owner_name: val }))}
                   placeholder={t('settings.ownerNamePlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
 
               <div className="form-group">
                 <label htmlFor="city" className="form-label">{t('settings.city')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="city"
                   name="city"
                   value={form.city}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, city: val }))}
                   placeholder={t('settings.cityPlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
@@ -347,28 +340,24 @@ export default function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               <div className="form-group">
                 <label htmlFor="market_name" className="form-label">{t('settings.marketName')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="market_name"
                   name="market_name"
                   value={form.market_name}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, market_name: val }))}
                   placeholder={t('settings.marketNamePlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
 
               <div className="form-group">
                 <label htmlFor="gala_number" className="form-label">{t('settings.galaNumber')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="gala_number"
                   name="gala_number"
                   value={form.gala_number}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, gala_number: val }))}
                   placeholder={t('settings.galaNumberPlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
               </div>
@@ -376,15 +365,12 @@ export default function SettingsPage() {
 
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="address" className="form-label">{t('settings.address')}</label>
-              <textarea
+              <MarathiInput
                 id="address"
                 name="address"
                 value={form.address}
-                onChange={handleChange}
+                onChange={(val) => setForm(p => ({ ...p, address: val }))}
                 placeholder={t('settings.addressPlaceholder')}
-                className="form-input"
-                rows="2"
-                style={{ fontFamily: 'inherit', resize: 'vertical' }}
                 disabled={saving}
               />
             </div>
@@ -447,19 +433,11 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, maxWidth: 380 }}>
-                <input
-                  type="text"
+                <MarathiInput
+                  id="new-unit-input"
                   value={newUnitInput}
-                  onChange={(e) => setNewUnitInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddUnit();
-                    }
-                  }}
+                  onChange={setNewUnitInput}
                   placeholder={t('settings.addUnitPlaceholder')}
-                  className="form-input"
-                  style={{ padding: '6px 12px', fontSize: '0.88rem' }}
                 />
                 <button
                   type="button"
@@ -522,19 +500,11 @@ export default function SettingsPage() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, maxWidth: 440 }}>
-                <input
-                  type="text"
+                <MarathiInput
+                  id="new-category-input"
                   value={newCategoryInput}
-                  onChange={(e) => setNewCategoryInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddCategory();
-                    }
-                  }}
+                  onChange={setNewCategoryInput}
                   placeholder={t('settings.addCategoryPlaceholder')}
-                  className="form-input"
-                  style={{ padding: '6px 12px', fontSize: '0.88rem' }}
                 />
                 <button
                   type="button"
@@ -559,14 +529,12 @@ export default function SettingsPage() {
           <div className="settings-section-body">
             <div className="form-group">
               <label htmlFor="devotion_text" className="form-label">{t('settings.devotionText')}</label>
-              <input
-                type="text"
+              <MarathiInput
                 id="devotion_text"
                 name="devotion_text"
                 value={form.devotion_text}
-                onChange={handleChange}
+                onChange={(val) => setForm(p => ({ ...p, devotion_text: val }))}
                 placeholder={t('settings.devotionTextPlaceholder')}
-                className="form-input"
                 disabled={saving}
               />
               <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
@@ -577,14 +545,12 @@ export default function SettingsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label htmlFor="bill_footer_note" className="form-label">{t('settings.billFooterNote')}</label>
-                <input
-                  type="text"
+                <MarathiInput
                   id="bill_footer_note"
                   name="bill_footer_note"
                   value={form.bill_footer_note}
-                  onChange={handleChange}
+                  onChange={(val) => setForm(p => ({ ...p, bill_footer_note: val }))}
                   placeholder={t('settings.billFooterNotePlaceholder')}
-                  className="form-input"
                   disabled={saving}
                 />
                 <p style={{ margin: '4px 0 0', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>

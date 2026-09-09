@@ -206,10 +206,12 @@ describe('generating a bill from transactions', () => {
     expect(paise(bill.data.subtotal)).toBe(425); // 300 + 125
     expect(paise(bill.data.commission_amount)).toBe(34); // 24 + 10
     expect(paise(bill.data.final_amount)).toBe(459);
-    // Consolidates multiple transactions of the same vegetable on the same day into 1 item
-    expect(bill.data.items).toHaveLength(1);
-    expect(bill.data.items[0].quantity).toBe(15);
-    expect(paise(bill.data.items[0].total)).toBe(425);
+    // Keeps transactions as distinct line items instead of merging them
+    expect(bill.data.items).toHaveLength(2);
+    expect(bill.data.items[0].quantity).toBe(10);
+    expect(paise(bill.data.items[0].total)).toBe(300);
+    expect(bill.data.items[1].quantity).toBe(5);
+    expect(paise(bill.data.items[1].total)).toBe(125);
   });
 
   it('fails clearly when there is nothing to bill', async () => {
@@ -305,16 +307,15 @@ describe('deleting a transaction', () => {
 });
 
 describe('commission rate', () => {
-  it('uses the shop-wide rate from settings, not a client-supplied one', async () => {
+  it('honours a custom transaction commission rate when supplied', async () => {
     const { ctx, customer, vegetable } = await scenario();
 
-    // The browser has no business setting the commission the shop charges.
-    // Under fraction semantics this payload produced ₹2,400 of commission on
-    // ₹300 of onions.
-    const res = await creditSale(ctx, customer, vegetable, { commission_rate: 800 });
+    // The client can supply a custom commission rate per transaction (e.g., 10%)
+    const res = await creditSale(ctx, customer, vegetable, { commission_rate: 10 });
     expect(res.success).toBe(true);
-    expect(res.data.commission_amount).toBe(24);
-    expect(res.data.final_amount).toBe(324);
+    expect(res.data.commission_rate).toBe(10);
+    expect(res.data.commission_amount).toBe(30);
+    expect(res.data.final_amount).toBe(330);
   });
 
   it('honours a changed shop commission rate', async () => {

@@ -21,6 +21,9 @@ router.get('/:id/ledger', ctrl.getLedger);
 // POST   /api/customers/bulk         ← must be BEFORE /:id
 router.post('/bulk', ctrl.bulkImport);
 
+// POST   /api/customers/deduplicate  ← must be BEFORE /:id
+router.post('/deduplicate', ctrl.deduplicate);
+
 // GET    /api/customers/:id
 router.get('/:id', ctrl.getById);
 

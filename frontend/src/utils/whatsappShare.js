@@ -70,124 +70,12 @@ export function blobToBase64(blob) {
  */
 export function generateBillWhatsAppMessage(bill, language, t) {
   if (!bill) return '';
-  const isMarathi = language === 'mr';
-  const customerName = bill.customer_name || '';
-  const billNumber   = bill.bill_number || '';
-  const periodLabel  = formatBillPeriod(bill, isMarathi);
+  const customerName = bill.customer_name ? `नमस्कार ${bill.customer_name},` : 'नमस्कार,';
+  const billInfo = bill.bill_number ? ` (बिल क्र: ${bill.bill_number})` : '';
 
-  const subtotal         = grossSubtotal(bill).toFixed(2);
-  const discountAmount   = Number(bill.discount_amount || 0).toFixed(2);
-  const discountValue    = Number(bill.discount_value || 0);
-  const discountType     = bill.discount_type || 'fixed';
-  const finalAmountNum   = Number(bill.final_amount || 0);
-  const paidAmountNum    = Number(bill.paid_amount || 0);
-  const remainingAmountNum = Number(bill.remaining_amount || 0);
-
-  const customerBalance  = Number(bill.customer_credit_balance || 0);
-  const previousBalanceNum = Math.max(0, Math.round((customerBalance - remainingAmountNum) * 100) / 100);
-  const totalPayableNum  = Math.round((finalAmountNum + previousBalanceNum) * 100) / 100;
-  const netDueNum        = Math.round((previousBalanceNum + remainingAmountNum) * 100) / 100;
-
-  const finalAmount      = finalAmountNum.toFixed(2);
-  const previousBalance  = previousBalanceNum.toFixed(2);
-  const totalPayable     = totalPayableNum.toFixed(2);
-  const paidAmount       = paidAmountNum.toFixed(2);
-  const netRemaining     = netDueNum.toFixed(2);
-
-  const statusKey        = `billing.status${bill.payment_status}`;
-  const statusTranslated = t(statusKey) || bill.payment_status;
-
-  const displayItems = grossItems(bill.items, bill);
-
-  function lineFor(item, idx) {
-    const vegName = item.vegetable_name || '';
-    const qty     = item.quantity;
-    const rate    = Number(item.rate).toFixed(2);
-    const total   = Number(item.total).toFixed(2);
-    const unit    = item.vegetable_unit ? t(`vegetables.units.${item.vegetable_unit}`) : '';
-    return `${idx}. ${vegName} - ${qty} ${unit} x ₹${rate} = ₹${total}`;
-  }
-
-  // Always group items datewise so each day's purchases are shown with date header and subtotal
-  const dayGroups = groupItemsByDate(displayItems, bill.date);
-
-  let itemsListText;
-  if (dayGroups) {
-    let lineNo = 0;
-    itemsListText = dayGroups
-      .map((group) => {
-        const heading = group.date
-          ? formatBillDate(group.date, isMarathi)
-          : (isMarathi ? 'नोंद नाही' : 'Not recorded');
-        const lines = group.items.map((item) => lineFor(item, (lineNo += 1))).join('\n');
-        const dayTotal = isMarathi ? 'दिवसाची बेरीज' : "Day's Total";
-        return `📅 ${heading}\n${lines}\n${dayTotal}: ₹${group.subtotal.toFixed(2)}`;
-      })
-      .join('\n\n');
-  } else {
-    itemsListText = displayItems.map((item, idx) => lineFor(item, idx + 1)).join('\n');
-  }
-
-  const dateLabel = isMarathi
-    ? (dayGroups ? 'कालावधी' : 'दिनांक')
-    : (dayGroups ? 'Period' : 'Date');
-
-  if (isMarathi) {
-    const discountText = Number(discountAmount) > 0
-      ? `सवलत ${discountType === 'percentage' ? `(${discountValue}%)` : '(Fixed)'}: -₹${discountAmount}\n`
-      : '';
-    const prevDuesText = previousBalanceNum > 0
-      ? `मागील बाकी: ₹${previousBalance}\n`
-      : '';
-    const billNoText = billNumber
-      ? `बिल क्रमांक: ${billNumber}\n`
-      : `दस्तऐवज: खाते उतारा (Statement)\n`;
-
-    return `नमस्कार ${customerName},
-आपला तपशील खालीलप्रमाणे आहे:
-
-${billNoText}${dateLabel}: ${periodLabel}
-
-भाज्या:
-${itemsListText}
-
-एकूण: ₹${subtotal}
-${discountText}कालावधी / आजचे बिल: ₹${finalAmount}
-${prevDuesText}एकूण देय रक्कम: ₹${totalPayable}
-भरलेली रक्कम: ₹${paidAmount}
-एकूण शिल्लक बाकी: ₹${netRemaining}
-पेमेंट स्थिती: ${statusTranslated}
-
-धन्यवाद.`;
-  } else {
-    // English
-    const discountText = Number(discountAmount) > 0
-      ? `Discount ${discountType === 'percentage' ? `(${discountValue}%)` : '(Fixed)'}: -₹${discountAmount}\n`
-      : '';
-    const prevDuesText = previousBalanceNum > 0
-      ? `Previous Outstanding: ₹${previousBalance}\n`
-      : '';
-    const billNoText = billNumber
-      ? `Bill No: ${billNumber}\n`
-      : `Document: Customer Statement\n`;
-
-    return `Hello ${customerName},
-Here is your summary:
-
-${billNoText}${dateLabel}: ${periodLabel}
-
-Vegetables:
-${itemsListText}
-
-Subtotal: ₹${subtotal}
-${discountText}Period / Today Bill: ₹${finalAmount}
-${prevDuesText}Total Payable: ₹${totalPayable}
-Amount Paid: ₹${paidAmount}
-Total Remaining Dues: ₹${netRemaining}
-Payment Status: ${statusTranslated}
-
-Thank you.`;
-  }
+  return `${customerName}
+आपल्या बिलाची PDF प्रत सोबत जोडली आहे${billInfo}.
+धन्यवाद!`;
 }
 
 /**

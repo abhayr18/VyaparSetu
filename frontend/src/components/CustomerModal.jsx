@@ -16,7 +16,7 @@ import { useState, useEffect } from 'react';
 import MarathiInput from './MarathiInput';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertIcon } from './Icons';
-import { getLocalDateString } from '../utils/dates';
+import { getLocalDateString, formatDDMMYYYY, parseDDMMYYYY } from '../utils/dates';
 
 const EMPTY_FORM = {
   name: '',
@@ -36,22 +36,30 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
   const [saving, setSaving]   = useState(false);
   const [apiError, setApiError] = useState('');
 
-  // Populate form when editing
+  // Populate form when editing or adding
   useEffect(() => {
     if (isOpen) {
-      setForm(customer
-        ? {
-            name: customer.name,
-            mobile: customer.mobile,
-            address: customer.address || '',
-            notes: customer.notes || '',
-            // Never prefilled on an edit: this field opens a ledger, it does not
-            // display one. What the customer owes now lives in their passbook.
-            opening_balance: '',
-            opening_balance_date: getLocalDateString(),
-          }
-        : { ...EMPTY_FORM, opening_balance_date: getLocalDateString() }
-      );
+      if (customer) {
+        let obDate = '';
+        if (customer.opening_balance_date) {
+          obDate = String(customer.opening_balance_date).slice(0, 10);
+        }
+        setForm({
+          name: customer.name || '',
+          mobile: customer.mobile || '',
+          address: customer.address || '',
+          notes: customer.notes || '',
+          opening_balance:
+            customer.opening_balance !== undefined &&
+            customer.opening_balance !== null &&
+            Number(customer.opening_balance) > 0
+              ? String(customer.opening_balance)
+              : '',
+          opening_balance_date: obDate || getLocalDateString(),
+        });
+      } else {
+        setForm({ ...EMPTY_FORM, opening_balance_date: getLocalDateString() });
+      }
       setErrors({});
       setApiError('');
     }
@@ -67,8 +75,6 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
       errs.mobile = t('customers.mobileInvalid');
     }
 
-    // Blank is the normal case — most customers start at zero. Anything typed has to
-    // be a real amount, because it becomes debt the moment it is saved.
     const opening = form.opening_balance.trim();
     if (opening !== '') {
       const amount = Number(opening);
@@ -94,23 +100,15 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     setSaving(true);
     setApiError('');
 
+    const opening = form.opening_balance.trim();
     const payload = {
       name:    form.name.trim(),
       mobile:  form.mobile.trim(),
       address: form.address.trim(),
       notes:   form.notes.trim(),
+      opening_balance: opening !== '' ? opening : '0',
+      opening_balance_date: form.opening_balance_date || undefined,
     };
-
-    // Only sent in Add mode, and only when filled in. An opening balance can be set
-    // once and is then corrected through the ledger, so there is nothing here to
-    // resend on an edit — and resending it would look like a second opening.
-    const opening = form.opening_balance.trim();
-    if (!isEdit && opening !== '') {
-      payload.opening_balance = opening;
-      if (form.opening_balance_date) {
-        payload.opening_balance_date = form.opening_balance_date;
-      }
-    }
 
     const result = await onSubmit(payload);
 
@@ -189,14 +187,13 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
             <label className="form-label" htmlFor="customer-address">
               {t('customers.address')}
             </label>
-            <input
+            <MarathiInput
               id="customer-address"
               name="address"
-              type="text"
-              className="form-input"
-              placeholder={t('customers.addressPlaceholder')}
               value={form.address}
-              onChange={handleChange}
+              onChange={(val) => setForm((prev) => ({ ...prev, address: val }))}
+              placeholder={t('customers.addressPlaceholder')}
+              label={t('transliteration.suggestionsLabel')}
             />
           </div>
 
@@ -205,61 +202,123 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
             <label className="form-label" htmlFor="customer-notes">
               {t('customers.notes')}
             </label>
-            <textarea
+            <MarathiInput
               id="customer-notes"
               name="notes"
-              rows={2}
-              className="form-input form-textarea"
-              placeholder={t('customers.notesPlaceholder')}
               value={form.notes}
-              onChange={handleChange}
+              onChange={(val) => setForm((prev) => ({ ...prev, notes: val }))}
+              placeholder={t('customers.notesPlaceholder')}
+              label={t('transliteration.suggestionsLabel')}
             />
           </div>
 
-          {/* ── Opening Balance (Add only) ────────────────────────────────── */}
-          {/* For customers arriving from a paper notebook already owing money. It
-              goes straight onto their ledger as an opening entry — no bill is
-              fabricated, so sales and commission reports stay truthful. */}
-          {!isEdit && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14, marginBottom: 16 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" htmlFor="customer-opening-balance">
-                  {t('customers.openingBalance')}
-                </label>
-                <input
-                  id="customer-opening-balance"
-                  name="opening_balance"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  className={`form-input${errors.opening_balance ? ' input-error' : ''}`}
-                  placeholder="0.00"
-                  value={form.opening_balance}
-                  onChange={handleChange}
-                />
-                {errors.opening_balance
-                  ? <span className="field-error">{errors.opening_balance}</span>
-                  : <span className="field-hint">{t('customers.openingBalanceHint')}</span>}
-              </div>
+          {/* ── Opening Balance & Date ─────────────────────────────────── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14, marginBottom: 16 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" htmlFor="customer-opening-balance">
+                {t('customers.openingBalance')}
+              </label>
+              <input
+                id="customer-opening-balance"
+                name="opening_balance"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                className={`form-input${errors.opening_balance ? ' input-error' : ''}`}
+                placeholder="0.00"
+                value={form.opening_balance}
+                onChange={handleChange}
+              />
+              {errors.opening_balance
+                ? <span className="field-error">{errors.opening_balance}</span>
+                : <span className="field-hint">{t('customers.openingBalanceHint')}</span>}
+            </div>
 
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label" htmlFor="customer-opening-balance-date">
-                  {t('customers.openingBalanceDate')}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label className="form-label" htmlFor="customer-opening-balance-date" style={{ margin: 0 }}>
+                  {t('customers.openingBalanceDate')} <span style={{ fontSize: '0.75rem', color: '#6366f1' }}>(DD/MM/YYYY)</span>
                 </label>
+                <span style={{ fontSize: '0.75rem', color: '#1d4ed8', fontWeight: 700, background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>
+                  {formatDDMMYYYY(form.opening_balance_date || getLocalDateString())}
+                </span>
+              </div>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <input
                   id="customer-opening-balance-date"
-                  name="opening_balance_date"
+                  name="opening_balance_date_text"
+                  type="text"
+                  placeholder="DD/MM/YYYY"
+                  className="form-input"
+                  value={formatDDMMYYYY(form.opening_balance_date || getLocalDateString())}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const iso = parseDDMMYYYY(val);
+                    setForm((prev) => ({
+                      ...prev,
+                      opening_balance_date: iso || val
+                    }));
+                  }}
+                  onBlur={(e) => {
+                    const iso = parseDDMMYYYY(e.target.value);
+                    setForm((prev) => ({
+                      ...prev,
+                      opening_balance_date: iso || getLocalDateString()
+                    }));
+                  }}
+                  style={{ paddingRight: '2.4rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      document.getElementById('hidden-ob-date-picker')?.showPicker?.();
+                    } catch {
+                      document.getElementById('hidden-ob-date-picker')?.focus();
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '1.1rem',
+                    padding: '2px 4px',
+                    lineHeight: 1
+                  }}
+                  title="कॅलेंडर उघडा (Open Calendar)"
+                  tabIndex={-1}
+                >
+                  📅
+                </button>
+                <input
+                  id="hidden-ob-date-picker"
                   type="date"
                   max={getLocalDateString()}
-                  className="form-input"
-                  value={form.opening_balance_date || getLocalDateString()}
-                  onChange={handleChange}
+                  value={parseDDMMYYYY(form.opening_balance_date) || form.opening_balance_date || getLocalDateString()}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setForm((prev) => ({ ...prev, opening_balance_date: e.target.value }));
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    opacity: 0,
+                    pointerEvents: 'none',
+                    width: 0,
+                    height: 0
+                  }}
+                  tabIndex={-1}
+                  aria-hidden="true"
                 />
-                <span className="field-hint">{t('customers.openingBalanceDateHint')}</span>
               </div>
+              <span className="field-hint">
+                {t('customers.openingBalanceDateHint')} ({formatDDMMYYYY(form.opening_balance_date || getLocalDateString())})
+              </span>
             </div>
-          )}
+          </div>
 
           {/* ── Actions ──────────────────────────────────────────────────── */}
           <div className="modal-actions">

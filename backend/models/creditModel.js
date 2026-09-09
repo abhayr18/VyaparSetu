@@ -320,6 +320,66 @@ function recordOpeningBalance({ customer_id, amount, note, date, created_at }) {
   });
 }
 
+function updateOpeningBalance({ customer_id, amount, date }) {
+  const newPaise = toPaise(amount);
+  const formattedDate = formatOpeningBalanceDate(date);
+
+  return transaction(() => {
+    const rows = execSelect(
+      `SELECT id, amount, created_at FROM credit_transactions
+       WHERE customer_id = ? AND transaction_type = 'OPENING_BALANCE'
+       LIMIT 1`,
+      [customer_id]
+    );
+
+    if (rows.length > 0) {
+      const existing = rows[0];
+      const oldPaise = existing.amount || 0;
+      const diffPaise = newPaise - oldPaise;
+
+      if (formattedDate) {
+        execRun(
+          `UPDATE credit_transactions
+           SET amount = ?, created_at = ?
+           WHERE id = ?`,
+          [newPaise, formattedDate, existing.id]
+        );
+      } else {
+        execRun(
+          `UPDATE credit_transactions
+           SET amount = ?
+           WHERE id = ?`,
+          [newPaise, existing.id]
+        );
+      }
+
+      if (diffPaise !== 0) {
+        execRun(
+          `UPDATE customers
+           SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [diffPaise, customer_id]
+        );
+      }
+
+      const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
+      const balanceAfter = balanceRow[0]?.credit_balance || 0;
+      return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
+    } else if (newPaise > 0) {
+      return recordOpeningBalance({
+        customer_id,
+        amount,
+        date,
+        note: 'Opening balance (brought forward)',
+      });
+    }
+
+    const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
+    const balanceAfter = balanceRow[0]?.credit_balance || 0;
+    return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
+  });
+}
+
 module.exports = {
   getSummary,
   getCustomersWithBalance,
@@ -328,5 +388,6 @@ module.exports = {
   recordPayment,
   recordAdjustment,
   hasOpeningBalance,
-  recordOpeningBalance
+  recordOpeningBalance,
+  updateOpeningBalance,
 };

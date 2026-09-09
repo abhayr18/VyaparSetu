@@ -4,6 +4,7 @@
  */
 
 import * as XLSX from 'xlsx';
+import { formatDDMMYYYY } from './dates';
 
 // ─── Header Normalizer ────────────────────────────────────────────────────────
 function normalizeKey(str) {
@@ -23,6 +24,7 @@ const VEG_HEADER_MAP = {
     'भाजीनाव',
     'भाजी',
     'नाव',
+    'भाजीचेनावname',
   ],
   rate: [
     'rate',
@@ -31,11 +33,13 @@ const VEG_HEADER_MAP = {
     'दर',
     'भाव',
     'किंमत',
+    'दरrate',
   ],
   unit: [
     'unit',
     'एकक',
     'माप',
+    'एककunit',
   ],
   search_keywords: [
     'searchkeywords',
@@ -44,6 +48,7 @@ const VEG_HEADER_MAP = {
     'शोधकीवर्ड',
     'पर्यायीनावे',
     'कीवर्ड',
+    'शोधकीवर्डsearchkeywords',
   ],
   notes: [
     'notes',
@@ -51,6 +56,7 @@ const VEG_HEADER_MAP = {
     'remark',
     'टिप्पणी',
     'माहिती',
+    'टिप्पणीnotes',
   ],
 };
 
@@ -64,6 +70,7 @@ const CUSTOMER_HEADER_MAP = {
     'ग्राहकनाव',
     'ग्राहक',
     'नाव',
+    'ग्राहकाचेनावcustomername',
   ],
   mobile: [
     'mobile',
@@ -75,6 +82,7 @@ const CUSTOMER_HEADER_MAP = {
     'मोबाईलक्रमांक',
     'फोन',
     'संपर्क',
+    'मोबाईलmobilenumber10digits',
   ],
   address: [
     'address',
@@ -83,23 +91,7 @@ const CUSTOMER_HEADER_MAP = {
     'पत्ता',
     'गाव',
     'ठिकाण',
-  ],
-  notes: [
-    'notes',
-    'note',
-    'remark',
-    'टिप्पणी',
-    'माहिती',
-  ],
-  opening_balance: [
-    'openingbalance',
-    'balance',
-    'credit',
-    'udhar',
-    'आरंभीचीशिल्लक',
-    'उधारी',
-    'उधारीशिल्लक',
-    'शिल्लक',
+    'पत्ताaddress',
   ],
   opening_balance_date: [
     'openingbalancedate',
@@ -108,22 +100,80 @@ const CUSTOMER_HEADER_MAP = {
     'date',
     'udhardate',
     'आरंभीचीतारीख',
+    'आरंभीचीतारीखopeningdateyyyymmdd',
+    'आरंभीचीतारीखopeningdateddmmyyyy',
+    'आरंभीचीतारीखopeningdate',
+    'सुरुवातीच्याबाकीचीतारीख',
+    'सुरुवातीचीतारीख',
     'बाकीतारीख',
     'उधारीतारीख',
     'आरंभीचीबाकीतारीख',
-    'सुरुवातीच्याबाकीचीतारीख',
     'तारीख',
     'दिनांक',
+  ],
+  opening_balance: [
+    'openingbalance',
+    'openingbalance₹',
+    'balance',
+    'credit',
+    'udhar',
+    'आरंभीचीउधारी',
+    'आरंभीचीउधारीopeningbalance₹',
+    'आरंभीचीउधारीopeningbalance',
+    'सुरुवातीचीउधारी',
+    'सुरुवातीचीबाकी',
+    'आरंभीचीशिल्लक',
+    'उधारी',
+    'उधारीशिल्लक',
+    'शिल्लक',
+  ],
+  notes: [
+    'notes',
+    'note',
+    'remark',
+    'remarks',
+    'टिप्पणी',
+    'माहिती',
+    'टिप्पणीnotes',
   ],
 };
 
 function matchField(rawHeader, headerMap) {
-  const norm = normalizeKey(rawHeader);
+  if (!rawHeader) return null;
+  const str = String(rawHeader).trim();
+  const norm = normalizeKey(str);
+
+  // 1. Direct normalized match against full string
   for (const [field, aliases] of Object.entries(headerMap)) {
     if (aliases.some((alias) => norm === normalizeKey(alias))) {
       return field;
     }
   }
+
+  // 2. Break down bilingual / formatted headers like "आरंभीची तारीख (Opening Date YYYY-MM-DD)" or "दर / Rate (₹)"
+  const parts = str.split(/[\(\)\[\]\/|]+/).map((p) => p.trim()).filter(Boolean);
+  for (const part of parts) {
+    const partNorm = normalizeKey(part);
+    if (!partNorm) continue;
+    for (const [field, aliases] of Object.entries(headerMap)) {
+      if (aliases.some((alias) => partNorm === normalizeKey(alias))) {
+        return field;
+      }
+    }
+  }
+
+  // 3. Substring matching (checking if alias is contained in header or any of its segments)
+  for (const [field, aliases] of Object.entries(headerMap)) {
+    for (const alias of aliases) {
+      const aliasNorm = normalizeKey(alias);
+      if (aliasNorm.length >= 4) {
+        if (norm.includes(aliasNorm) || parts.some((p) => normalizeKey(p).includes(aliasNorm))) {
+          return field;
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -267,13 +317,13 @@ export function generateCustomersSampleTemplate() {
       'मोबाईल (Mobile Number - 10 Digits)',
       'पत्ता (Address)',
       'आरंभीची उधारी (Opening Balance ₹)',
-      'आरंभीची तारीख (Opening Date YYYY-MM-DD)',
+      'आरंभीची तारीख (Opening Date DD/MM/YYYY)',
       'टिप्पणी (Notes)',
     ],
-    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 1500, '2026-08-01', 'नियमित हॉटेल ग्राहक'],
+    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 1500, '01/08/2026', 'नियमित हॉटेल ग्राहक'],
     ['सुरेश जाधव', '9876543211', 'मार्केट यार्ड, पुणे', 0, '', 'रोख व उधारी'],
-    ['गणेश शिंदे', '9876543212', 'कोथरूड', 500, '2026-08-15', ''],
-    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 2400, '2026-08-10', 'आठवड्यातून एकदा हिशोब'],
+    ['गणेश शिंदे', '9876543212', 'कोथरूड', 500, '15/08/2026', ''],
+    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 2400, '10/08/2026', 'आठवड्यातून एकदा हिशोब'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -496,9 +546,12 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
   if (fieldMapping.mobile === undefined) fieldMapping.mobile = 1;
   if (fieldMapping.address === undefined) fieldMapping.address = 2;
   if (fieldMapping.opening_balance === undefined) fieldMapping.opening_balance = 3;
+  if (fieldMapping.opening_balance_date === undefined && headers.length >= 6) {
+    fieldMapping.opening_balance_date = 4;
+  }
   if (fieldMapping.notes === undefined) {
-    // If opening_balance_date was mapped to col 4, notes could be col 5
-    if (fieldMapping.opening_balance_date === 4) {
+    // If opening_balance_date was mapped to col 4, notes is col 5
+    if (fieldMapping.opening_balance_date === 4 || headers.length >= 6) {
       fieldMapping.notes = 5;
     } else {
       fieldMapping.notes = 4;
@@ -506,8 +559,18 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
   }
 
   const existingMobilesMap = new Set(
-    existingCustomers.map((c) => String(c.mobile || '').trim())
+    existingCustomers
+      .filter((c) => c.mobile && String(c.mobile).trim())
+      .map((c) => String(c.mobile).trim())
   );
+  const existingNamesMap = new Set(
+    existingCustomers
+      .filter((c) => c.name && String(c.name).trim())
+      .map((c) => String(c.name).trim().toLowerCase())
+  );
+
+  const seenInFileMobiles = new Set();
+  const seenInFileNames = new Set();
 
   const items = [];
   let validCount = 0;
@@ -521,10 +584,12 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
     }
 
     const rawName = String(row[fieldMapping.name] ?? '').trim();
-    // Clean mobile number (remove spaces, dashes, +91 if present)
+    // Clean mobile number (remove spaces, dashes, +91, leading zero if 11 digits)
     let rawMobile = String(row[fieldMapping.mobile] ?? '').replace(/\D/g, '');
     if (rawMobile.length === 12 && rawMobile.startsWith('91')) {
       rawMobile = rawMobile.slice(2);
+    } else if (rawMobile.length === 11 && rawMobile.startsWith('0')) {
+      rawMobile = rawMobile.slice(1);
     }
     const rawAddress = String(row[fieldMapping.address] ?? '').trim();
     const rawNotes = String(row[fieldMapping.notes] ?? '').trim();
@@ -552,7 +617,15 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
       }
     }
 
-    const isExisting = rawMobile ? existingMobilesMap.has(rawMobile) : false;
+    const lowerName = rawName.toLowerCase();
+    const isExisting = (rawMobile && existingMobilesMap.has(rawMobile)) ||
+                       (lowerName && existingNamesMap.has(lowerName)) ||
+                       (rawMobile && seenInFileMobiles.has(rawMobile)) ||
+                       (lowerName && seenInFileNames.has(lowerName));
+
+    if (rawMobile) seenInFileMobiles.add(rawMobile);
+    if (lowerName) seenInFileNames.add(lowerName);
+
     if (isExisting) duplicateCount++;
 
     const isValid = rowErrors.length === 0;
@@ -583,6 +656,7 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
     },
   };
 }
+
 
 /**
  * Export All-In-One Master Business Record to a comprehensive multi-tab Excel Workbook (.xlsx)
@@ -632,8 +706,6 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     ['कालावधीतील उधारी विक्री (Period Credit Sales ₹)', Number(summary.credit_sales || 0)],
     ['एकूण चालू उधारी शिल्लक (Total Outstanding Dues ₹)', Number(summary.total_credit_outstanding || 0)],
     ['एकूण कमिशन उत्पन्न (Total Commission Earned ₹)', Number(summary.total_commission || 0)],
-    ['एकूण हमाली खर्च (Total Hamali ₹)', Number(summary.total_hamali || 0)],
-    ['एकूण गाडीभाडे (Total Transport ₹)', Number(summary.total_transport || 0)],
     ['एकूण नोंदणीकृत ग्राहक (Active Customers Count)', Number(summary.total_customers_count || customers.length)],
     ['भाजीपाला कॅटलॉग वस्तू (Vegetable Catalog Items)', Number(summary.total_vegetables_count || vegCatalog.length)],
     ['विक्री झालेले एकूण प्रमाण (Total Volume Sold)', Number(summary.total_vegetables_volume || 0)],
@@ -656,9 +728,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
       'उप-एकूण / Subtotal (₹)',
       'सूट / Discount (₹)',
       'कमिशन / Commission (₹)',
-      'हमाली / Hamali (₹)',
-      'गाडीभाडे / Transport (₹)',
-      'एकूण रक्कम / Grand Total (₹)',
+      'एकूण देय रक्कम / Grand Total (₹)',
       'भरलेली रक्कम / Paid (₹)',
       'उधारी शिल्लक / Remaining (₹)',
       'स्थिती / Payment Status',
@@ -678,8 +748,6 @@ export function exportAllInOneReportToExcel(reportData, filename) {
       Number(b.subtotal || 0),
       Number(b.discount_amount || 0),
       Number(b.commission_amount || 0),
-      Number(b.hamali_amount || 0),
-      Number(b.transport_amount || 0),
       Number(b.final_amount || 0),
       Number(b.paid_amount || 0),
       Number(b.remaining_amount || 0),
@@ -879,3 +947,226 @@ export function exportAllInOneReportToExcel(reportData, filename) {
   // Write and download Excel workbook
   XLSX.writeFile(wb, nameToUse);
 }
+
+/**
+ * Dedicated Customer-Wise Daily Report Excel Exporter
+ * Generates an itemized customer produce breakdown + customer summary + KPIs sheet
+ *
+ * @param {Object} reportData Data from /api/reports/daily or /api/reports/sales-range
+ * @param {string} [selectedDate]
+ */
+export function exportDailyReportToExcel(reportData, selectedDate) {
+  if (!reportData) return;
+
+  const shop = reportData.shop || {};
+  const summary = reportData.summary || {};
+  const customers = reportData.customers || [];
+  const dateStr = selectedDate || reportData.meta?.startDate || new Date().toISOString().slice(0, 10);
+
+  const wb = XLSX.utils.book_new();
+
+  // ─── Sheet 1: ग्राहकनिहाय दैनिक खरेदी व उधारी (Customer Detailed Purchases) ───────────
+  const detailRows = [
+    [`${shop.vendor_name || 'व्यापारसेतू'} - दैनिक ग्राहक भाजीपाला विक्री व उधारी अहवाल`],
+    [`दिनांक (Date): ${formatDDMMYYYY(dateStr)} | मालक: ${shop.owner_name || ''} | संपर्क: ${shop.mobile_number || ''}`],
+    [],
+    [
+      'अ.क्र (Sr)',
+      'ग्राहकाचे नाव (Customer Name)',
+      'मोबाईल (Mobile)',
+      'भाजीपाला (Vegetable)',
+      'प्रमाण / वजन (Qty/Weight)',
+      'दर / Rate (₹)',
+      'रक्कम / Amount (₹)',
+      'आजचे बिल / Today Bill (₹)',
+      'मागील बाकी / Prev Udhar (₹)',
+      'एकूण देय / Total Due (₹)',
+      'आज जमा / Paid Today (₹)',
+      'चालू बाकी / Closing Udhar (₹)',
+      'पावती क्र. (Bill No)'
+    ]
+  ];
+
+  let totalItemsAmount = 0;
+  let totalBillsAmount = 0;
+  let totalPaidAmount = 0;
+  let totalClosingUdhar = 0;
+
+  let rowIdx = 1;
+  customers.forEach((c) => {
+    const items = c.items && c.items.length > 0 ? c.items : [];
+    const totalDue = Number((c.previous_balance + c.today_bill_total).toFixed(2));
+    totalBillsAmount += c.today_bill_total;
+    totalPaidAmount += c.today_paid;
+    totalClosingUdhar += c.closing_balance;
+
+    if (items.length === 0) {
+      detailRows.push([
+        rowIdx++,
+        c.customer_name,
+        c.customer_mobile || '-',
+        '— (फक्त जमा/बाकी)',
+        '-',
+        '-',
+        0,
+        c.today_bill_total,
+        c.previous_balance,
+        totalDue,
+        c.today_paid,
+        c.closing_balance,
+        c.bill_numbers?.join(', ') || '-'
+      ]);
+    } else {
+      items.forEach((it, itIdx) => {
+        totalItemsAmount += it.base_amount || 0;
+        detailRows.push([
+          itIdx === 0 ? rowIdx++ : '',
+          itIdx === 0 ? c.customer_name : '',
+          itIdx === 0 ? (c.customer_mobile || '-') : '',
+          it.vegetable_name || '-',
+          `${it.weight || 0} ${it.unit || 'kg'}`,
+          it.rate || 0,
+          it.base_amount || 0,
+          itIdx === 0 ? c.today_bill_total : '',
+          itIdx === 0 ? c.previous_balance : '',
+          itIdx === 0 ? totalDue : '',
+          itIdx === 0 ? c.today_paid : '',
+          itIdx === 0 ? c.closing_balance : '',
+          it.bill_number || '-'
+        ]);
+      });
+    }
+  });
+
+  detailRows.push([]);
+  detailRows.push([
+    'एकूण (Grand Total)',
+    `${customers.length} ग्राहक (Customers)`,
+    '',
+    '',
+    '',
+    '',
+    Number(totalItemsAmount.toFixed(2)),
+    Number(totalBillsAmount.toFixed(2)),
+    '',
+    '',
+    Number(totalPaidAmount.toFixed(2)),
+    Number(totalClosingUdhar.toFixed(2)),
+    ''
+  ]);
+
+  const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+  wsDetail['!cols'] = [
+    { wch: 8 },  // Sr
+    { wch: 22 }, // Customer Name
+    { wch: 14 }, // Mobile
+    { wch: 20 }, // Vegetable
+    { wch: 16 }, // Qty/Weight
+    { wch: 12 }, // Rate
+    { wch: 14 }, // Amount
+    { wch: 16 }, // Today's Bill
+    { wch: 16 }, // Prev Udhar
+    { wch: 14 }, // Total Due
+    { wch: 14 }, // Paid Today
+    { wch: 18 }, // Closing Udhar
+    { wch: 14 }, // Bill No
+  ];
+  XLSX.utils.book_append_sheet(wb, wsDetail, 'Daily Customer Sales');
+
+  // ─── Sheet 2: ग्राहक गोषवारा (Customer Summary) ──────────────────────────────
+  const summaryRows = [
+    [`${shop.vendor_name || 'व्यापारसेतू'} - ग्राहकनिहाय दैनिक गोषवारा`],
+    [`दिनांक (Date): ${formatDDMMYYYY(dateStr)}`],
+    [],
+    [
+      'अ.क्र (Sr)',
+      'ग्राहकाचे नाव (Customer Name)',
+      'मोबाईल (Mobile)',
+      'वस्तू संख्या (Item Count)',
+      'आजची खरेदी / Base (₹)',
+      'कमिशन / Comm (₹)',
+      'आजचे बिल / Today Bill (₹)',
+      'मागील बाकी / Prev Udhar (₹)',
+      'एकूण देय / Total Due (₹)',
+      'आज जमा / Paid Today (₹)',
+      'चालू बाकी / Closing Udhar (₹)'
+    ]
+  ];
+
+  let sumBase = 0, sumComm = 0, sumBills = 0, sumPaid = 0, sumClosing = 0;
+  customers.forEach((c, idx) => {
+    sumBase += c.today_base_purchase || 0;
+    sumComm += c.today_commission || 0;
+    sumBills += c.today_bill_total || 0;
+    sumPaid += c.today_paid || 0;
+    sumClosing += c.closing_balance || 0;
+
+    summaryRows.push([
+      idx + 1,
+      c.customer_name,
+      c.customer_mobile || '-',
+      c.items?.length || 0,
+      c.today_base_purchase || 0,
+      c.today_commission || 0,
+      c.today_bill_total || 0,
+      c.previous_balance || 0,
+      Number((c.previous_balance + c.today_bill_total).toFixed(2)),
+      c.today_paid || 0,
+      c.closing_balance || 0
+    ]);
+  });
+
+  summaryRows.push([]);
+  summaryRows.push([
+    'एकूण (Total)',
+    `${customers.length} ग्राहक`,
+    '',
+    '',
+    Number(sumBase.toFixed(2)),
+    Number(sumComm.toFixed(2)),
+    Number(sumBills.toFixed(2)),
+    '',
+    '',
+    Number(sumPaid.toFixed(2)),
+    Number(sumClosing.toFixed(2))
+  ]);
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary['!cols'] = [
+    { wch: 8 },  // Sr
+    { wch: 24 }, // Name
+    { wch: 15 }, // Mobile
+    { wch: 14 }, // Items
+    { wch: 16 }, // Base
+    { wch: 14 }, // Comm
+    { wch: 16 }, // Bill
+    { wch: 16 }, // Prev Udhar
+    { wch: 16 }, // Total Due
+    { wch: 16 }, // Paid
+    { wch: 18 }, // Closing Udhar
+  ];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Customer Summary');
+
+  // ─── Sheet 3: दिवसाचा एकूण गोषवारा (Day Financial KPIs) ─────────────────────
+  const kpiRows = [
+    [`=== ${shop.vendor_name || 'व्यापारसेतू'} : दैनिक व्यापार निर्देशक (${formatDDMMYYYY(dateStr)}) ===`],
+    [],
+    ['एकूण उलाढाल / निव्वळ विक्री (Total Net Sales ₹)', Number(summary.total_sales || sumBills)],
+    ['एकूण खरेदी रक्कम (Base Purchases ₹)', Number(summary.total_subtotal || sumBase)],
+    ['एकूण कमिशन उत्पन्न (Total Commission Earned ₹)', Number(summary.total_commission || sumComm)],
+    ['आज रोख जमा (Cash Collection ₹)', Number(summary.cash_collection || 0)],
+    ['आज UPI जमा (UPI Collection ₹)', Number(summary.upi_collection || 0)],
+    ['एकूण आज जमा रक्कम (Total Paid Today ₹)', Number(summary.total_paid || sumPaid)],
+    ['आजची उधारी विक्री (Today Credit Sales ₹)', Number(summary.credit_sales || 0)],
+    ['एकूण दुकानाची येणे बाकी / चालू उधारी (Total Outstanding Udhar ₹)', Number(summary.total_outstanding || 0)],
+    ['आज खरेदी केलेले ग्राहक (Active Customers Today)', customers.length],
+    ['तयार झालेले बिल संख्या (Invoices Generated)', Number(summary.total_bills || 0)],
+  ];
+  const wsKpis = XLSX.utils.aoa_to_sheet(kpiRows);
+  wsKpis['!cols'] = [{ wch: 48 }, { wch: 24 }];
+  XLSX.utils.book_append_sheet(wb, wsKpis, 'Day KPIs Summary');
+
+  const filename = `VyapaarSetu_Daily_Report_${dateStr}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+

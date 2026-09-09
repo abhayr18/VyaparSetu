@@ -29,11 +29,12 @@ import { useBills } from '../hooks/useBills';
 import { useTranslation } from '../hooks/useTranslation';
 import DeleteConfirmModal from '../components/DeleteConfirmModal';
 import ReceiptPrint from '../components/ReceiptPrint';
+import BillModal from '../components/BillModal';
 import MarathiInput from '../components/MarathiInput';
 import { formatBillPeriod, isPeriodBill } from '../utils/billDisplay';
 import {
   ReceiptIcon, SearchIcon, AlertIcon, HistoryIcon,
-  EyeIcon, TrashIcon, CheckIcon, ChartIcon, CalendarIcon
+  EyeIcon, TrashIcon, CheckIcon, ChartIcon, CalendarIcon, EditIcon
 } from '../components/Icons';
 
 function hasDevanagari(str) { return /[\u0900-\u097F]/.test(str); }
@@ -71,6 +72,7 @@ export default function BillingPage() {
     endDate,
     setEndDate,
     deleteBill,
+    updateBill,
   } = useBills();
   const isMarathi = language === 'mr';
 
@@ -78,6 +80,7 @@ export default function BillingPage() {
   const [deleteTarget, setDeleteTarget]     = useState(null);
   const [deleteLoading, setDeleteLoading]   = useState(false);
   const [printTarget, setPrintTarget]       = useState(null);
+  const [editingBill, setEditingBill]       = useState(null);
   const [toast, setToast]                   = useState({ message: '', type: 'success' });
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -89,6 +92,16 @@ export default function BillingPage() {
 
   const openDelete = useCallback((b) => setDeleteTarget(b), []);
   const openView   = useCallback((b) => setPrintTarget(b), []);
+
+  async function handleUpdateBill(payload) {
+    if (!editingBill) return { success: false, error: 'No bill selected' };
+    const res = await updateBill(editingBill.id, payload);
+    if (res?.success) {
+      showToast(t('billing.billUpdated') || 'बिल यशस्वीरित्या बदलले');
+      setEditingBill(null);
+    }
+    return res;
+  }
 
   /**
    * `?bill=<id>` opens that bill's viewer straight away.
@@ -414,6 +427,15 @@ export default function BillingPage() {
                         <button className="btn-icon" onClick={() => openView(bill)} title={t('billing.viewBill')} id={`view-btn-${bill.id}`} style={{ background: 'var(--color-success-bg)' }}>
                           <EyeIcon style={{ color: 'var(--color-success)' }} />
                         </button>
+                        <button
+                          className="btn-icon"
+                          onClick={() => setEditingBill(bill)}
+                          title={t('billing.editBill') || t('common.edit') || 'बदला'}
+                          id={`edit-btn-${bill.id}`}
+                          style={{ background: 'var(--color-primary-light, #e0f2fe)' }}
+                        >
+                          <EditIcon style={{ color: 'var(--color-primary, #0284c7)' }} />
+                        </button>
                         <button className="btn-icon btn-icon-delete" onClick={() => openDelete(bill)} title={t('common.delete')} id={`delete-btn-${bill.id}`}>
                           <TrashIcon />
                         </button>
@@ -428,7 +450,21 @@ export default function BillingPage() {
       </div>
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
-      <ReceiptPrint isOpen={Boolean(printTarget)} onClose={() => setPrintTarget(null)} bill={printTarget} />
+      <ReceiptPrint
+        isOpen={Boolean(printTarget)}
+        onClose={() => setPrintTarget(null)}
+        bill={printTarget}
+        onEdit={(b) => {
+          setPrintTarget(null);
+          setEditingBill(b);
+        }}
+      />
+      <BillModal
+        isOpen={Boolean(editingBill)}
+        onClose={() => setEditingBill(null)}
+        bill={editingBill}
+        onSubmit={handleUpdateBill}
+      />
       <DeleteConfirmModal
         isOpen={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}

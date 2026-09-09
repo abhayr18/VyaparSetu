@@ -43,7 +43,7 @@ function toRupees(v) {
  *   - bill_items.quantity, transactions.weight — kilograms
  */
 const MONEY_FIELDS = {
-  customers: ['credit_balance'],
+  customers: ['credit_balance', 'opening_balance'],
   vegetables: ['rate'],
   bills: [
     'subtotal',
