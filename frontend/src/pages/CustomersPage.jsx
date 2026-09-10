@@ -66,6 +66,15 @@ function CustomerRow({ customer, onEdit, onDelete, onHistory, t }) {
             {customer.address && (
               <div className="customer-address">{customer.address}</div>
             )}
+            {customer.search_keywords && (
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                {customer.search_keywords.split(',').slice(0, 3).map((kw, i) => (
+                  <span key={i} className="keyword-chip" style={{ fontSize: '0.72rem', padding: '1px 6px' }}>
+                    {kw.trim()}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </td>

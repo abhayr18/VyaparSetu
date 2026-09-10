@@ -48,12 +48,28 @@ async function recordOpeningBalance(req, res) {
   res.status(400).json({ success: false, error: result.error });
 }
 
+async function recordDiscount(req, res) {
+  const payload = req.body;
+  const result = await creditService.recordDiscount(payload);
+  if (result.success) return res.status(201).json({ success: true, data: result.data });
+  res.status(400).json({ success: false, error: result.error });
+}
+
+async function undoPayment(req, res) {
+  const { id } = req.params;
+  const result = await creditService.undoPayment(id);
+  if (result.success) return res.json({ success: true, data: result.data });
+  res.status(400).json({ success: false, error: result.error });
+}
+
 module.exports = {
   getSummary,
   getCustomers,
   getCustomerById,
   getTransactions,
   collectPayment,
+  recordDiscount,
+  undoPayment,
   adjustCredit,
   recordOpeningBalance
 };

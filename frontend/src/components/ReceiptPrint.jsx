@@ -40,12 +40,17 @@ export default function ReceiptPrint({ isOpen, onClose, bill, onEdit }) {
       backgroundColor: '#ffffff',
     });
 
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
+    const imgData = canvas.toDataURL('image/jpeg', 0.88);
+    const pdf = new jsPDF({
+      orientation: 'p',
+      unit: 'mm',
+      format: 'a4',
+      compress: true,
+    });
     const imgWidth = 190; // Fit inside page width with 10mm margins on A4 (210mm)
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight, undefined, 'FAST');
     return pdf.output('blob');
   };
 

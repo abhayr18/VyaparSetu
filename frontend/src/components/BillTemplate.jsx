@@ -326,7 +326,7 @@ export default function BillTemplate({ bill }) {
       >
         <div style={{ display: 'flex', gap: '8px' }}>
           <span style={{ fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>
-            {isMarathi ? 'मालधण्याचे नाव :' : 'Customer Name :'}
+            {isMarathi ? 'व्यापाऱ्याचे नाव :' : 'Customer Name :'}
           </span>
           <span style={{ borderBottom: '1px dotted #555', flex: 1, paddingBottom: '2px' }}>
             {bill.customer_name}
@@ -335,7 +335,7 @@ export default function BillTemplate({ bill }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '10px' }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>
-              {isMarathi ? 'मोबाईल / गाव :' : 'Mobile / Place :'}
+              {isMarathi ? 'मोबाईल :' : 'Mobile :'}
             </span>
             <span style={{ borderBottom: '1px dotted #555', flex: 1, paddingBottom: '2px' }}>
               {bill.customer_mobile || '—'}
@@ -343,9 +343,7 @@ export default function BillTemplate({ bill }) {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <span style={{ fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>
-              {dayGroups
-                ? (isMarathi ? 'कालावधी :' : 'Period :')
-                : (isMarathi ? 'दिनांक :' : 'Date :')}
+              {isMarathi ? 'दिनांक :' : 'Date :'}
             </span>
             <span style={{ borderBottom: '1px dotted #555', paddingBottom: '2px', whiteSpace: 'nowrap' }}>
               {periodLabel}

@@ -32,10 +32,10 @@ export function useCustomers() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   // ─── Frontend fuzzy filtering (instant, offline) ──────────────────────────
-  // Searches name, mobile, and address with fuzzy matching + normalization.
+  // Searches name, mobile, address, and search_keywords with fuzzy matching + normalization.
   const customers = useMemo(() => {
     if (!searchQuery.trim()) return allCustomers;
-    return applyFuzzyFilter(allCustomers, searchQuery, ['name', 'mobile', 'address']);
+    return applyFuzzyFilter(allCustomers, searchQuery, ['name', 'mobile', 'address', 'search_keywords']);
   }, [allCustomers, searchQuery]);
 
   // ─── CRUD Operations ──────────────────────────────────────────────────────

@@ -6,7 +6,7 @@
 
 import { useReports } from '../hooks/useReports';
 import { useTranslation } from '../hooks/useTranslation';
-import { useState } from 'react';
+import React, { useState, Fragment } from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { reportsApi } from '../services/apiService';
@@ -26,6 +26,15 @@ import {
 } from '../components/Icons';
 import { formatDDMMYYYY, formatStoredTime } from '../utils/dates';
 
+function getDayName(dateStr, isMr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const daysMr = ['रविवार', 'सोमवार', 'मंगळवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार'];
+  const daysEn = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return isMr ? daysMr[d.getDay()] : daysEn[d.getDay()];
+}
+
 export default function ReportsPage() {
   const { t, language } = useTranslation();
   const {
@@ -44,6 +53,7 @@ export default function ReportsPage() {
   } = useReports();
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfProgressText, setPdfProgressText] = useState('');
   const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   const handleDownloadMasterExcel = async () => {
@@ -79,45 +89,77 @@ export default function ReportsPage() {
 
     try {
       setIsGeneratingPdf(true);
+      setPdfProgressText('Preparing...');
       document.body.classList.add('pdf-mode');
 
       // Allow DOM to update
       await new Promise((resolve) => setTimeout(resolve, 60));
 
+      setPdfProgressText('Rendering table...');
       const canvas = await html2canvas(reportElement, {
-        scale: 2,
+        scale: 1.25, // Optimized scale: fast rasterization while keeping crisp readable text on A4
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
+        removeContainer: true,
+        imageTimeout: 0,
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4',
+        compress: true,
+      });
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      let heightLeft = pdfHeight;
-      let position = 0;
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      // First page
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
+      // Calculate pixels per mm to slice canvas cleanly per page
+      const pxPerMm = canvas.width / pdfWidth;
+      const pageHeightInPx = Math.floor(pageHeight * pxPerMm);
+      const totalPages = Math.ceil(canvas.height / pageHeightInPx);
 
-      // subsequent pages if any
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+      for (let page = 0; page < totalPages; page++) {
+        setPdfProgressText(`Page ${page + 1}/${totalPages}...`);
+        await new Promise((resolve) => setTimeout(resolve, 0)); // yield to UI thread so progress updates smoothly
+
+        if (page > 0) {
+          pdf.addPage();
+        }
+
+        const sourceY = page * pageHeightInPx;
+        const sourceHeight = Math.min(pageHeightInPx, canvas.height - sourceY);
+
+        // Render only the slice for this page to avoid duplicating entire canvas
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sourceHeight;
+
+        const ctx = pageCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+
+        ctx.drawImage(
+          canvas,
+          0, sourceY, canvas.width, sourceHeight,
+          0, 0, canvas.width, sourceHeight
+        );
+
+        // JPEG at 0.85 quality keeps each page ~80-150KB instead of multi-megabyte uncompressed PNG
+        const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.85);
+        const slicePdfHeight = (sourceHeight * pdfWidth) / canvas.width;
+
+        pdf.addImage(pageImgData, 'JPEG', 0, 0, pdfWidth, slicePdfHeight, undefined, 'FAST');
       }
 
+      setPdfProgressText('Saving...');
       pdf.save(`VyapaarSetu_Master_Report_${reportType}_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
       console.error('Failed to generate PDF', err);
     } finally {
       document.body.classList.remove('pdf-mode');
       setIsGeneratingPdf(false);
+      setPdfProgressText('');
     }
   };
 
@@ -726,9 +768,14 @@ export default function ReportsPage() {
                     <table className="data-table" style={{ margin: 0, width: '100%' }}>
                       <thead>
                         <tr style={{ background: '#f8fafc' }}>
-                          <th className="table-th" style={{ width: 50, textAlign: 'center' }}>
+                          <th className="table-th" style={{ width: 45, textAlign: 'center' }}>
                             {language === 'mr' ? 'अ.क्र' : 'Sr.'}
                           </th>
+                          {reportType === 'range' && (
+                            <th className="table-th" style={{ width: 100, whiteSpace: 'nowrap' }}>
+                              {language === 'mr' ? 'दिनांक (Date)' : 'Date'}
+                            </th>
+                          )}
                           <th className="table-th">
                             {language === 'mr' ? 'शेतमालाचे नांव (Produce / Vegetable)' : 'Produce / Vegetable'}
                           </th>
@@ -745,28 +792,60 @@ export default function ReportsPage() {
                       </thead>
                       <tbody>
                         {c.items && c.items.length > 0 ? (
-                          c.items.map((it, itIdx) => (
-                            <tr className="table-row" key={it.id || itIdx}>
-                              <td className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
-                                {itIdx + 1}
-                              </td>
-                              <td className="table-cell" style={{ fontWeight: 600 }}>
-                                {it.vegetable_name}
-                              </td>
-                              <td className="table-cell" style={{ textAlign: 'right', fontWeight: 600 }}>
-                                {it.weight} {it.unit || 'kg'}
-                              </td>
-                              <td className="table-cell" style={{ textAlign: 'right' }}>
-                                ₹{Number(it.rate).toFixed(2)}
-                              </td>
-                              <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700 }}>
-                                ₹{Number(it.base_amount || 0).toFixed(2)}
-                              </td>
-                            </tr>
-                          ))
+                          (() => {
+                            const sortedItems = [...c.items].sort((a, b) => {
+                              const da = a.transaction_date || '';
+                              const db = b.transaction_date || '';
+                              return da.localeCompare(db);
+                            });
+
+                            let lastDate = null;
+
+                            return sortedItems.map((it, itIdx) => {
+                              const itemDate = it.transaction_date || '';
+                              const showDateHeader = reportType === 'range' && itemDate && itemDate !== lastDate;
+                              if (showDateHeader) {
+                                lastDate = itemDate;
+                              }
+
+                              return (
+                                <React.Fragment key={it.id || itIdx}>
+                                  {showDateHeader && (
+                                    <tr style={{ background: '#f1f5f9', borderTop: '2px solid var(--color-border)' }}>
+                                      <td colSpan={6} style={{ padding: '6px 14px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                                        📅 {formatDDMMYYYY(itemDate)} {getDayName(itemDate, language === 'mr') ? `(${getDayName(itemDate, language === 'mr')})` : ''}
+                                      </td>
+                                    </tr>
+                                  )}
+                                  <tr className="table-row">
+                                    <td className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                                      {itIdx + 1}
+                                    </td>
+                                    {reportType === 'range' && (
+                                      <td className="table-cell" style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', color: 'var(--color-primary)', fontWeight: 600 }}>
+                                        {itemDate ? formatDDMMYYYY(itemDate) : '-'}
+                                      </td>
+                                    )}
+                                    <td className="table-cell" style={{ fontWeight: 600 }}>
+                                      {it.vegetable_name}
+                                    </td>
+                                    <td className="table-cell" style={{ textAlign: 'right', fontWeight: 600 }}>
+                                      {it.weight} {it.unit || 'kg'}
+                                    </td>
+                                    <td className="table-cell" style={{ textAlign: 'right' }}>
+                                      ₹{Number(it.rate).toFixed(2)}
+                                    </td>
+                                    <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700 }}>
+                                      ₹{Number(it.base_amount || 0).toFixed(2)}
+                                    </td>
+                                  </tr>
+                                </React.Fragment>
+                              );
+                            });
+                          })()
                         ) : (
                           <tr>
-                            <td colSpan={5} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '14px' }}>
+                            <td colSpan={reportType === 'range' ? 6 : 5} className="table-cell" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: '14px' }}>
                               {language === 'mr' ? 'या दिवशी भाजी खरेदी नाही (फक्त जमा रक्कम / मागील बाकी नोंद)' : 'No produce purchase on this day (Payment or balance record only)'}
                             </td>
                           </tr>
@@ -1011,39 +1090,121 @@ export default function ReportsPage() {
       }
       case 'credit': {
         const list = data.customers || [];
+        const recoveries = data.recoveries || [];
+        const totalRecovered = recoveries.reduce((s, r) => s + Number(r.amount || 0), 0);
         return (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="table-th">{t('customers.name')}</th>
-                <th className="table-th">{t('customers.mobile')}</th>
-                <th className="table-th" style={{ textAlign: 'right' }}>{t('credit.balanceAfter')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((c) => (
-                <tr className="table-row" key={c.id}>
-                  <td className="table-cell" style={{ fontWeight: 600 }}>{c.name}</td>
-                  <td className="table-cell" style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PhoneIcon style={{ width: '12px', height: '12px' }} /> {c.mobile}</span>
-                  </td>
-                  <td className="table-cell" style={{ textAlign: 'right' }}>
-                    <span className="badge badge-warning">₹{Number(c.credit_balance).toFixed(2)}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: 'var(--color-bg-light)', fontWeight: 700 }}>
-                <td className="table-cell" colSpan={2} style={{ textAlign: 'right' }}>Total Outstanding:</td>
-                <td className="table-cell" style={{ textAlign: 'right' }}>
-                  <span className="badge badge-warning" style={{ background: 'transparent', padding: 0 }}>
-                    ₹{list.reduce((s, c) => s + Number(c.credit_balance), 0).toFixed(2)}
-                  </span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* 1. Recovery on this date list */}
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <CheckIcon style={{ width: 16, height: 16, color: 'var(--color-success)' }} />
+                  {t('credit.recoveryListTitle') || 'या तारखेला झालेली वसुली (ग्राहकनिहाय)'}
+                </h3>
+                <span className="badge badge-success" style={{ fontWeight: 700 }}>
+                  एकूण वसुली: ₹{totalRecovered.toFixed(2)} ({recoveries.length} ग्राहक)
+                </span>
+              </div>
+
+              {recoveries.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                  {t('credit.noRecoveriesOnDate') || 'या तारखेला कोणतीही वसुली नोंदवली नाही.'}
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th className="table-th">{t('credit.recoveredFrom') || 'ग्राहक'}</th>
+                        <th className="table-th">{t('customers.mobile')}</th>
+                        <th className="table-th">{t('credit.paymentMode')}</th>
+                        <th className="table-th">{t('credit.recoveredTime') || 'वेळ'}</th>
+                        <th className="table-th">{t('credit.note')}</th>
+                        <th className="table-th" style={{ textAlign: 'right' }}>{t('credit.recoveredAmount') || 'वसुली रक्कम'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recoveries.map((r) => (
+                        <tr className="table-row" key={r.id}>
+                          <td className="table-cell" style={{ fontWeight: 600 }}>{r.customer_name}</td>
+                          <td className="table-cell" style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PhoneIcon style={{ width: '12px', height: '12px' }} /> {r.customer_mobile || '—'}</span>
+                          </td>
+                          <td className="table-cell">
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 10, fontSize: '0.72rem', fontWeight: 600,
+                              background: r.payment_mode === 'UPI' ? '#eff6ff' : '#f0fdf4',
+                              color: r.payment_mode === 'UPI' ? '#1d4ed8' : '#15803d',
+                            }}>
+                              {r.payment_mode}
+                            </span>
+                          </td>
+                          <td className="table-cell" style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                            {r.created_at ? new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                          </td>
+                          <td className="table-cell" style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                            {r.note || '—'}
+                          </td>
+                          <td className="table-cell" style={{ textAlign: 'right', fontWeight: 700, color: 'var(--color-success)' }}>
+                            ₹{Number(r.amount).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'var(--color-bg-light)', fontWeight: 700 }}>
+                        <td className="table-cell" colSpan={5} style={{ textAlign: 'right' }}>एकूण वसुली (Total Recovery):</td>
+                        <td className="table-cell" style={{ textAlign: 'right', color: 'var(--color-success)', fontSize: '0.9rem' }}>
+                          ₹{totalRecovered.toFixed(2)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Customer Outstanding Balance Listing */}
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                {t('credit.customersWithBalance') || 'उधार शिल्लक असलेले ग्राहक (Outstanding Balances)'}
+              </h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th className="table-th">{t('customers.name')}</th>
+                      <th className="table-th">{t('customers.mobile')}</th>
+                      <th className="table-th" style={{ textAlign: 'right' }}>{t('credit.balanceAfter')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {list.map((c) => (
+                      <tr className="table-row" key={c.id}>
+                        <td className="table-cell" style={{ fontWeight: 600 }}>{c.name}</td>
+                        <td className="table-cell" style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PhoneIcon style={{ width: '12px', height: '12px' }} /> {c.mobile}</span>
+                        </td>
+                        <td className="table-cell" style={{ textAlign: 'right' }}>
+                          <span className="badge badge-warning">₹{Number(c.credit_balance).toFixed(2)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: 'var(--color-bg-light)', fontWeight: 700 }}>
+                      <td className="table-cell" colSpan={2} style={{ textAlign: 'right' }}>Total Outstanding:</td>
+                      <td className="table-cell" style={{ textAlign: 'right' }}>
+                        <span className="badge badge-warning" style={{ background: 'transparent', padding: 0 }}>
+                          ₹{list.reduce((s, c) => s + Number(c.credit_balance), 0).toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
         );
       }
       case 'commission': {
@@ -1091,7 +1252,7 @@ export default function ReportsPage() {
     if (reportType === 'daily' || reportType === 'range') {
       return Boolean((data.bills && data.bills.length > 0) || (data.customers && data.customers.length > 0));
     }
-    if (reportType === 'credit') return Boolean(data.customers && data.customers.length > 0);
+    if (reportType === 'credit') return Boolean((data.customers && data.customers.length > 0) || (data.recoveries && data.recoveries.length > 0) || data.summary);
     if (reportType === 'commission') return Boolean(data.billWise && data.billWise.length > 0);
     return Array.isArray(data) ? data.length > 0 : Boolean(data);
   };
@@ -1192,7 +1353,7 @@ export default function ReportsPage() {
             ) : (
               <FolderIcon style={{ width: '15px', height: '15px' }} />
             )}
-            {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
+            {isGeneratingPdf ? (pdfProgressText || 'Generating...') : 'Download PDF'}
           </button>
         </div>
       </div>

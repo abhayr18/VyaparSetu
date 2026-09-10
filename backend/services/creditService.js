@@ -155,12 +155,56 @@ async function recordOpeningBalance({ customer_id, amount, note }) {
   }
 }
 
+async function recordDiscount({ customer_id, amount, note }) {
+  if (!customer_id) return { success: false, error: 'Customer required' };
+
+  const amt = Number(amount);
+  if (isNaN(amt) || amt <= 0) {
+    return { success: false, error: 'Discount amount must be greater than 0' };
+  }
+
+  try {
+    const cust = customerModel.findById(customer_id);
+    if (!cust) return { success: false, error: 'Customer not found' };
+
+    const pending = Number(Number(cust.credit_balance).toFixed(2));
+    const discountAmt = Number(amt.toFixed(2));
+
+    if (discountAmt > pending) {
+      return { success: false, error: `Discount amount (₹${discountAmt}) cannot exceed customer's outstanding balance (₹${pending})` };
+    }
+
+    const result = creditModel.recordDiscount({
+      customer_id,
+      amount: discountAmt,
+      note: note ? note.trim() : 'Discount / सूट'
+    });
+
+    return { success: true, data: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+async function undoPayment(transactionId) {
+  if (!transactionId) return { success: false, error: 'Transaction ID required' };
+
+  try {
+    const result = creditModel.undoPayment(transactionId);
+    return { success: true, data: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   getSummary,
   getCustomersWithBalance,
   getCustomerDetails,
   getCustomerTransactions,
   collectPayment,
+  recordDiscount,
+  undoPayment,
   adjustCredit,
   recordOpeningBalance
 };

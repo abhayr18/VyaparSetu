@@ -16,7 +16,7 @@ const { splitSigned } = require('../utils/creditLedger');
  */
 function findAll() {
   return execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -37,7 +37,7 @@ function findAll() {
  */
 function findById(id) {
   const rows = execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -70,7 +70,7 @@ function findByMobile(mobile, excludeId = null) {
 }
 
 /**
- * Search customers by name or mobile (case-insensitive LIKE).
+ * Search customers by name, mobile, or search_keywords (case-insensitive LIKE).
  * @param {string} query
  * @returns {Array}
  */
@@ -78,7 +78,7 @@ function search(query) {
   const cleanQuery = (query || '').trim();
   const like = `%${cleanQuery}%`;
   return execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -87,19 +87,20 @@ function search(query) {
        FROM credit_transactions
        WHERE transaction_type = 'OPENING_BALANCE'
      ) ot ON ot.customer_id = c.id
-     WHERE (c.name LIKE ? OR (c.mobile != '' AND c.mobile LIKE ?)) AND c.is_deleted = 0
+     WHERE (c.name LIKE ? OR (c.mobile != '' AND c.mobile LIKE ?) OR (c.search_keywords != '' AND c.search_keywords LIKE ?)) AND c.is_deleted = 0
      ORDER BY c.name ASC`,
-    [like, like]
+    [like, like, like]
   ).map((c) => rowToRupees(c, 'customers'));
 }
 
 /**
  * Insert a new customer or reactivate a deleted one.
- * @param {{ name, mobile, address, notes }} data
+ * @param {{ name, mobile, address, search_keywords, notes }} data
  * @returns {Object} The newly created/updated customer
  */
-function create({ name, mobile = '', address = '', notes = '' }) {
+function create({ name, mobile = '', address = '', search_keywords = '', notes = '' }) {
   const cleanMobile = (mobile || '').trim();
+  const cleanKeywords = (search_keywords || '').trim();
 
   if (cleanMobile) {
     // Check if a record already exists with this mobile (even if deleted)
@@ -110,9 +111,9 @@ function create({ name, mobile = '', address = '', notes = '' }) {
       const existingId = rows[0].id;
       execRun(
         `UPDATE customers
-         SET name = ?, address = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+         SET name = ?, address = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [name.trim(), (address || '').trim(), (notes || '').trim(), existingId]
+        [name.trim(), (address || '').trim(), cleanKeywords, (notes || '').trim(), existingId]
       );
       return findById(existingId);
     }
@@ -120,9 +121,9 @@ function create({ name, mobile = '', address = '', notes = '' }) {
 
   // Insert fresh record
   const result = execRun(
-    `INSERT INTO customers (name, mobile, address, notes, credit_balance)
-     VALUES (?, ?, ?, ?, 0)`,
-    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim()]
+    `INSERT INTO customers (name, mobile, address, search_keywords, notes, credit_balance)
+     VALUES (?, ?, ?, ?, ?, 0)`,
+    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim()]
   );
 
   return findById(result.lastInsertRowid);
@@ -131,16 +132,17 @@ function create({ name, mobile = '', address = '', notes = '' }) {
 /**
  * Update an existing customer.
  * @param {number} id
- * @param {{ name, mobile, address, notes }} data
+ * @param {{ name, mobile, address, search_keywords, notes }} data
  * @returns {Object|null} Updated customer or null if not found
  */
-function update(id, { name, mobile = '', address = '', notes = '' }) {
+function update(id, { name, mobile = '', address = '', search_keywords = '', notes = '' }) {
   const cleanMobile = (mobile || '').trim();
+  const cleanKeywords = (search_keywords || '').trim();
   execRun(
     `UPDATE customers
-     SET name = ?, mobile = ?, address = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+     SET name = ?, mobile = ?, address = ?, search_keywords = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), cleanMobile, (address || '').trim(), (notes || '').trim(), id]
+    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim(), id]
   );
   return findById(id);
 }
@@ -258,6 +260,7 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
 
         const address = (item.address || '').trim();
         const notes = (item.notes || '').trim();
+        const keywords = (item.search_keywords || item.keywords || '').trim();
         const openingRaw = item.opening_balance;
         const openingDate = item.opening_balance_date || item.date || null;
         let opening = 0;
@@ -285,11 +288,12 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
                SET name = ?,
                    mobile = CASE WHEN ? != '' THEN ? ELSE mobile END,
                    address = CASE WHEN ? != '' THEN ? ELSE address END,
+                   search_keywords = CASE WHEN ? != '' THEN ? ELSE search_keywords END,
                    notes = CASE WHEN ? != '' THEN ? ELSE notes END,
                    is_deleted = 0,
                    updated_at = CURRENT_TIMESTAMP
                WHERE id = ?`,
-              [name, mobile, mobile, address, address, notes, notes, existing.id]
+              [name, mobile, mobile, address, address, keywords, keywords, notes, notes, existing.id]
             );
 
             if (existing.is_deleted === 1) {
@@ -311,9 +315,9 @@ function bulkUpsert(items, { updateExisting = true } = {}) {
           }
         } else {
           const res = execRun(
-            `INSERT INTO customers (name, mobile, address, notes, credit_balance)
-             VALUES (?, ?, ?, ?, 0)`,
-            [name, mobile, address, notes]
+            `INSERT INTO customers (name, mobile, address, search_keywords, notes, credit_balance)
+             VALUES (?, ?, ?, ?, ?, 0)`,
+            [name, mobile, address, keywords, notes]
           );
 
           const newId = res.lastInsertRowid;

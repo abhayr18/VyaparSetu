@@ -33,7 +33,9 @@ function CustomerSearchSelect({ customers, selectedId, onChange, placeholder, t,
 
   const filtered = customers.filter(c => {
     const term = search.toLowerCase();
-    return c.name.toLowerCase().includes(term) || c.mobile.includes(term);
+    return c.name.toLowerCase().includes(term) ||
+      (c.mobile && c.mobile.includes(term)) ||
+      (c.search_keywords && c.search_keywords.toLowerCase().includes(term));
   });
 
   return (
@@ -122,7 +124,9 @@ function CustomerSearchSelect({ customers, selectedId, onChange, placeholder, t,
                   }}
                 >
                   <div style={{ fontWeight: 600 }}>{c.name}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{c.mobile}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                    {c.mobile}{c.search_keywords ? ` • ${c.search_keywords}` : ''}
+                  </div>
                 </li>
               ))
             )}
@@ -151,6 +155,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   const [notes, setNotes]                 = useState('');
   const [discountType, setDiscountType]   = useState('fixed');
   const [discountValue, setDiscountValue] = useState(0);
+  const [customCommissionRate, setCustomCommissionRate] = useState('');
   const [paymentType, setPaymentType]     = useState('Cash');
   const [paymentStatus, setPaymentStatus] = useState('Paid');
   const [paidAmount, setPaidAmount]       = useState(0);
@@ -169,6 +174,11 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
         setNotes(bill.notes || '');
         setDiscountType(bill.discount_type || 'fixed');
         setDiscountValue(bill.discount_value || 0);
+        setCustomCommissionRate(
+          bill.commission_rate !== undefined && bill.commission_rate !== null
+            ? String(bill.commission_rate)
+            : String(settings?.commission_rate ?? 8)
+        );
         setPaymentType(bill.payment_type || 'Cash');
         setPaymentStatus(bill.payment_status || 'Paid');
         setPaidAmount(bill.paid_amount || 0);
@@ -179,6 +189,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
         setNotes('');
         setDiscountType('fixed');
         setDiscountValue(0);
+        setCustomCommissionRate(String(settings?.commission_rate ?? 8));
         setPaymentType('Cash');
         setPaymentStatus('Paid');
         setPaidAmount(0);
@@ -187,7 +198,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
       setErrors({});
       setApiError('');
     }
-  }, [isOpen, bill]);
+  }, [isOpen, bill, settings]);
 
   // Modal visibility will be checked right before returning JSX.
   // ─── Line Item Operations ─────────────────────────────────────────────────
@@ -277,9 +288,13 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   }
 
   const amountAfterDiscount = Number((subtotal - discountAmount).toFixed(2));
-  // The shop's configured rate, not a hardcoded 8%. The server recalculates from
-  // the same setting, so this preview matches the saved bill.
-  const commissionRate = normalizeCommissionPercent(settings.commission_rate);
+  // Use custom commission rate entered by user, or bill's rate, or shop setting
+  const parsedComm = parseFloat(customCommissionRate);
+  const commissionRate = (!isNaN(parsedComm) && parsedComm >= 0)
+    ? parsedComm
+    : (isEdit && bill?.commission_rate !== undefined && bill?.commission_rate !== null
+        ? normalizeCommissionPercent(bill.commission_rate)
+        : normalizeCommissionPercent(settings?.commission_rate));
   const commissionAmount = round2((amountAfterDiscount * commissionRate) / 100);
 
   const finalAmount = Number((amountAfterDiscount + commissionAmount).toFixed(2));
@@ -354,8 +369,8 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
       discount_amount: discountAmount,
       commission_rate: commissionRate,
       commission_amount: commissionAmount,
-      hamali_amount: 0,
-      transport_amount: 0,
+      hamali_amount: Number(bill?.hamali_amount || 0),
+      transport_amount: Number(bill?.transport_amount || 0),
       final_amount: finalAmount,
       paid_amount: paid,
       remaining_amount: remainingAmount,
@@ -620,10 +635,26 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
                 <span>₹{amountAfterDiscount.toFixed(2)}</span>
               </div>
 
-              {/* Commission at the shop's configured rate */}
+              {/* Commission at the configured/editable rate */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="text-muted">{t('billing.commissionAmount')}:</span>
-                <span style={{ color: 'var(--color-text-primary)' }}>₹{commissionAmount.toFixed(2)} ({formatCommissionPercent(commissionRate)})</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="text-muted">{t('billing.commissionAmount')}:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={customCommissionRate}
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      onChange={(e) => setCustomCommissionRate(e.target.value)}
+                      style={{ width: 65, padding: '3px 6px', fontSize: '0.85rem', textAlign: 'right' }}
+                      title={t('billing.commissionRate') || 'Commission Rate %'}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>%</span>
+                  </div>
+                </div>
+                <span style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>₹{commissionAmount.toFixed(2)}</span>
               </div>
 
               {/* Grand / Final Total */}

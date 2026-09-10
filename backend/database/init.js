@@ -66,15 +66,16 @@ function createBaselineSchema(db) {
   // ─── Module 1: Customers ───────────────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      name           TEXT    NOT NULL,
-      mobile         TEXT    DEFAULT '',
-      address        TEXT    DEFAULT '',
-      notes          TEXT    DEFAULT '',
-      credit_balance INTEGER DEFAULT 0,
-      is_deleted     INTEGER DEFAULT 0,
-      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      name            TEXT    NOT NULL,
+      mobile          TEXT    DEFAULT '',
+      address         TEXT    DEFAULT '',
+      search_keywords TEXT    DEFAULT '',
+      notes           TEXT    DEFAULT '',
+      credit_balance  INTEGER DEFAULT 0,
+      is_deleted      INTEGER DEFAULT 0,
+      created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 

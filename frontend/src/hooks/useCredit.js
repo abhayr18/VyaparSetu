@@ -72,7 +72,7 @@ export function useCredit() {
   // Offline fuzzy filtering for customers with outstanding balance
   const customers = useMemo(() => {
     if (!searchQuery.trim()) return allCustomers;
-    return applyFuzzyFilter(allCustomers, searchQuery, ['name', 'mobile']);
+    return applyFuzzyFilter(allCustomers, searchQuery, ['name', 'mobile', 'search_keywords']);
   }, [allCustomers, searchQuery]);
 
   // Receive a payment from a customer
@@ -133,6 +133,43 @@ export function useCredit() {
     }
   }
 
+  // Apply a discount to a customer's udhar
+  async function recordDiscount({ customer_id, amount, note }) {
+    try {
+      const res = await creditApi.recordDiscount({ customer_id, amount, note });
+      if (res.success) {
+        await fetchSummary();
+        await fetchCustomers();
+        if (activeCustomerId === customer_id) {
+          await fetchTransactions(customer_id);
+        }
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Failed to apply discount' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Undo / delete a payment or discount transaction
+  async function undoPayment(transactionId, customer_id) {
+    try {
+      const res = await creditApi.undoPayment(transactionId);
+      if (res.success) {
+        await fetchSummary();
+        await fetchCustomers();
+        const cid = customer_id || activeCustomerId;
+        if (cid) {
+          await fetchTransactions(cid);
+        }
+        return { success: true };
+      }
+      return { success: false, error: res.error || 'Failed to undo transaction' };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
   return {
     summary,
     customers,
@@ -149,6 +186,8 @@ export function useCredit() {
     fetchCustomers,
     fetchTransactions,
     collectPayment,
+    recordDiscount,
+    undoPayment,
     adjustCredit,
     recordOpeningBalance
   };

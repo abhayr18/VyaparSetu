@@ -581,6 +581,174 @@ const MIGRATIONS = [
       logger.info('  ~ customers table migrated to allow optional mobile numbers');
     },
   },
+
+  {
+    version: 12,
+    name: 'reconcile-and-sync-bill-transactions',
+    up(db) {
+      // 1. Clean up orphaned transactions that point to a non-existent bill
+      db.exec(`
+        UPDATE transactions
+        SET bill_id = NULL
+        WHERE bill_id IS NOT NULL
+          AND bill_id NOT IN (SELECT id FROM bills)
+      `);
+
+      // 2. Synchronize transactions for all existing bills
+      const bills = db.prepare(`SELECT * FROM bills`).all();
+
+      for (const bill of bills) {
+        const billItems = db.prepare(`SELECT * FROM bill_items WHERE bill_id = ? ORDER BY id ASC`).all(bill.id);
+        if (billItems.length === 0) continue;
+
+        // Check if transactions for this bill already match
+        const txs = db.prepare(`SELECT * FROM transactions WHERE bill_id = ? ORDER BY id ASC`).all(bill.id);
+
+        // Detect if bill commission rate was corrupted (e.g. from 7% to 8%) by legacy bill edit
+        let commRate = Number(bill.commission_rate || 8.0);
+        if (txs.length > 0) {
+          const txRates = [...new Set(txs.map((t) => Number(t.commission_rate)).filter((r) => !isNaN(r) && r >= 0))];
+          if (txRates.length === 1 && txRates[0] !== commRate && commRate === 8.0) {
+            commRate = txRates[0];
+
+            // Recompute bill totals with restored commission rate
+            const subtotalPaise = Number(bill.subtotal || 0);
+            const discountPaise = Number(bill.discount_amount || 0);
+            const basePaise = Math.max(0, subtotalPaise - discountPaise);
+            const commPaise = Math.round((basePaise * commRate) / 100);
+            const hamaliPaise = Number(bill.hamali_amount || 0);
+            const transPaise = Number(bill.transport_amount || 0);
+            const finalPaise = basePaise + commPaise + hamaliPaise + transPaise;
+            const paidPaise = Number(bill.paid_amount || 0);
+            const remPaise = Math.max(0, finalPaise - paidPaise);
+
+            db.prepare(`
+              UPDATE bills
+              SET commission_rate = ?, commission_amount = ?, final_amount = ?, remaining_amount = ?
+              WHERE id = ?
+            `).run(commRate, commPaise, finalPaise, remPaise, bill.id);
+
+            // Re-align any credit ledger row for this bill
+            db.prepare(`
+              UPDATE credit_transactions
+              SET amount = ?
+              WHERE bill_id = ? AND transaction_type = 'CREDIT_ADDED'
+            `).run(remPaise, bill.id);
+
+            bill.commission_rate = commRate;
+            bill.commission_amount = commPaise;
+            bill.final_amount = finalPaise;
+            bill.remaining_amount = remPaise;
+          }
+        }
+
+        let matches = txs.length === billItems.length;
+        if (matches) {
+          for (let i = 0; i < billItems.length; i++) {
+            const bi = billItems[i];
+            const tx = txs[i];
+            if (
+              tx.customer_id !== bill.customer_id ||
+              tx.vegetable_id !== bi.vegetable_id ||
+              Math.abs(Number(tx.weight) - Number(bi.quantity)) > 0.001 ||
+              Number(tx.rate) !== Number(bi.rate) ||
+              Number(tx.base_amount) !== Number(bi.total) ||
+              Number(tx.commission_rate) !== commRate
+            ) {
+              matches = false;
+              break;
+            }
+          }
+        }
+
+        // If transactions exist for this bill but do not match (e.g. from an earlier edit), re-sync them
+        if (txs.length > 0 && !matches) {
+          db.prepare(`DELETE FROM transactions WHERE bill_id = ?`).run(bill.id);
+
+          const paymentType = bill.payment_type || 'Credit';
+          const paymentMode = paymentType === 'Credit' ? 'Credit' : 'Cash';
+          const finalAmt = Number(bill.final_amount || 0);
+          const paidAmt = Number(bill.paid_amount || 0);
+
+          for (const bi of billItems) {
+            const qty = Number(bi.quantity || 0);
+            const rate = Number(bi.rate || 0);
+            const basePaise = Number(bi.total || Math.round(qty * rate * 100));
+            const commPaise = Math.round((basePaise * commRate) / 100);
+            const itemFinalPaise = basePaise + commPaise;
+
+            let itemPaidPaise = 0;
+            let itemRemPaise = itemFinalPaise;
+            if (paymentType === 'Paid' || (finalAmt > 0 && paidAmt >= finalAmt)) {
+              itemPaidPaise = itemFinalPaise;
+              itemRemPaise = 0;
+            } else if (paymentType === 'Partial' && finalAmt > 0 && paidAmt > 0) {
+              const ratio = Math.min(1, paidAmt / finalAmt);
+              itemPaidPaise = Math.round(itemFinalPaise * ratio);
+              itemRemPaise = itemFinalPaise - itemPaidPaise;
+            }
+
+            db.prepare(`
+              INSERT INTO transactions (
+                customer_id, vegetable_id, vegetable_name_snapshot, weight, unit,
+                rate, base_amount, commission_rate, commission_amount, final_amount,
+                payment_type, payment_mode, paid_amount, remaining_amount,
+                transaction_date, bill_id, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `).run(
+              bill.customer_id,
+              bi.vegetable_id,
+              bi.vegetable_name || '',
+              qty,
+              'kg',
+              rate,
+              basePaise,
+              commRate,
+              commPaise,
+              itemFinalPaise,
+              paymentType,
+              paymentMode,
+              itemPaidPaise,
+              itemRemPaise,
+              bi.item_date || bill.date,
+              bill.id,
+              bi.created_at || bill.created_at
+            );
+          }
+        }
+      }
+
+      // 3. Reconcile customer credit_balance against the sum of credit_transactions
+      const customers = db.prepare(`SELECT id, credit_balance FROM customers WHERE is_deleted = 0`).all();
+      for (const cust of customers) {
+        const rows = db.prepare(`SELECT transaction_type, amount FROM credit_transactions WHERE customer_id = ?`).all(cust.id);
+        let ledgerPaise = 0;
+        for (const r of rows) {
+          const amt = Number(r.amount || 0);
+          if (r.transaction_type === 'CREDIT_ADDED' || r.transaction_type === 'OPENING_BALANCE' || r.transaction_type === 'CREDIT_ADJUSTMENT') {
+            ledgerPaise += amt;
+          } else if (r.transaction_type === 'PAYMENT_RECEIVED' || r.transaction_type === 'DISCOUNT') {
+            ledgerPaise -= amt;
+          }
+        }
+        ledgerPaise = Math.max(0, ledgerPaise);
+        if (Number(cust.credit_balance) !== ledgerPaise) {
+          db.prepare(`UPDATE customers SET credit_balance = ? WHERE id = ?`).run(ledgerPaise, cust.id);
+        }
+      }
+
+      logger.info('  ~ bills and transactions synchronized and customer credit balances reconciled');
+    },
+  },
+
+  {
+    version: 13,
+    name: 'customers-add-search-keywords',
+    up(db) {
+      addColumnIfMissing(db, 'customers', 'search_keywords', "TEXT DEFAULT ''");
+      logger.info('  ~ added search_keywords column to customers');
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

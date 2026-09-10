@@ -104,7 +104,8 @@ export default function TransactionsPage() {
     updateTransaction,
     generateBill,
     generateStatement,
-    deleteTransaction
+    deleteTransaction,
+    onBillUpdated
   } = useTransactions();
 
   // The commission rate is a shop-wide setting. It is read here so the live totals
@@ -181,6 +182,7 @@ export default function TransactionsPage() {
         onUpdateTransaction={updateTransaction}
         onGenerateBill={generateBill}
         onGenerateStatement={generateStatement}
+        onBillUpdated={onBillUpdated}
         commissionRate={settings.commission_rate}
       />
 

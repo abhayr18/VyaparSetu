@@ -110,6 +110,7 @@ export default function ImportCustomersModal({
           name: item.name,
           mobile: item.mobile,
           address: item.address,
+          search_keywords: item.search_keywords,
           notes: item.notes,
           opening_balance: item.opening_balance,
           opening_balance_date: item.opening_balance_date,
@@ -320,6 +321,7 @@ export default function ImportCustomersModal({
                       <th style={{ padding: '8px 10px' }}>{t('customers.name') || 'Name'}</th>
                       <th style={{ padding: '8px 10px' }}>{t('customers.mobile') || 'Mobile'}</th>
                       <th style={{ padding: '8px 10px' }}>{t('customers.address') || 'Address'}</th>
+                      <th style={{ padding: '8px 10px' }}>{t('customers.searchKeywords') || 'Keywords'}</th>
                       <th style={{ padding: '8px 10px' }}>{t('customers.openingBalance') || 'Opening Udhar'}</th>
                       <th style={{ padding: '8px 10px' }}>Status</th>
                     </tr>
@@ -331,6 +333,7 @@ export default function ImportCustomersModal({
                         <td style={{ padding: '6px 10px', fontWeight: 600 }}>{item.name || '—'}</td>
                         <td style={{ padding: '6px 10px' }}>{item.mobile || '—'}</td>
                         <td style={{ padding: '6px 10px', color: 'var(--color-text-muted)' }}>{item.address || '—'}</td>
+                        <td style={{ padding: '6px 10px', color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>{item.search_keywords || '—'}</td>
                         <td style={{ padding: '6px 10px' }}>
                           {item.opening_balance > 0 ? (
                             <div>

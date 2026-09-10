@@ -1,8 +1,9 @@
 // frontend/src/hooks/useReports.js
 import { useState, useCallback, useEffect } from 'react';
 import { reportsApi } from '../services/apiService';
+import { getLocalDateString } from '../utils/dates';
 
-const TODAY_STR = new Date().toISOString().substring(0, 10);
+const TODAY_STR = getLocalDateString();
 
 export function useReports() {
   const [reportType, setReportType] = useState('daily');

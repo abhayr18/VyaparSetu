@@ -1,13 +1,13 @@
 // backend/models/creditModel.js
 const { execSelect, execRun, transaction } = require('../database/db');
 const { toPaise, toRupees, rowToRupees } = require('../utils/money');
-const { signedSumSql } = require('../utils/creditLedger');
+const { signedSumSql, signedAmount } = require('../utils/creditLedger');
 const { localDateSql, TODAY_LOCAL_SQL } = require('../utils/businessDay');
 
 /** Get credit metrics summary */
 function getSummary() {
-  // Total outstanding balance across all customers
-  const outstandingRes = execSelect(`SELECT SUM(credit_balance) AS total_outstanding FROM customers`);
+  // Total outstanding balance across all active customers
+  const outstandingRes = execSelect(`SELECT SUM(credit_balance) AS total_outstanding FROM customers WHERE is_deleted = 0`);
   const totalOutstanding = outstandingRes[0]?.total_outstanding || 0.0;
 
   // Today's credit added.
@@ -47,7 +47,7 @@ function getSummary() {
 /** Get customers with active credit balance */
 function getCustomersWithBalance() {
   return execSelect(
-    `SELECT id, name, mobile, address, credit_balance, updated_at
+    `SELECT id, name, mobile, address, search_keywords, credit_balance, updated_at
      FROM customers
      WHERE credit_balance > 0
      ORDER BY credit_balance DESC, name ASC`
@@ -175,6 +175,83 @@ function settleDebtsFifo(customerId, amountPaise) {
   }
 }
 
+/**
+ * Reverses settled debts in reverse chronological LIFO order (newest first).
+ */
+function unsettleDebtsLifo(customerId, amountPaise) {
+  if (!amountPaise || amountPaise <= 0) return;
+
+  // 1. Unsettle transactions in reverse chronological order (newest first)
+  const paidTxs = execSelect(
+    `SELECT id, paid_amount, remaining_amount, final_amount
+     FROM transactions
+     WHERE customer_id = ? AND paid_amount > 0
+     ORDER BY transaction_date DESC, id DESC`,
+    [customerId]
+  );
+
+  let txUnpayLeft = amountPaise;
+  for (const tx of paidTxs) {
+    if (txUnpayLeft <= 0) break;
+    const txPaid = Number(tx.paid_amount || 0);
+    const unpay = Math.min(txUnpayLeft, txPaid);
+    const newPaid = txPaid - unpay;
+    const newRem = Number(tx.remaining_amount || 0) + unpay;
+    const newType = newRem === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Credit');
+
+    execRun(
+      `UPDATE transactions
+       SET paid_amount = ?, remaining_amount = ?, payment_type = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [newPaid, newRem, newType, tx.id]
+    );
+    txUnpayLeft -= unpay;
+  }
+
+  // 2. Unsettle bills in reverse chronological order (newest first)
+  const paidBills = execSelect(
+    `SELECT id, paid_amount, remaining_amount, final_amount
+     FROM bills
+     WHERE customer_id = ? AND paid_amount > 0
+     ORDER BY date DESC, id DESC`,
+    [customerId]
+  );
+
+  let billUnpayLeft = amountPaise;
+  for (const bill of paidBills) {
+    if (billUnpayLeft <= 0) break;
+    const billPaid = Number(bill.paid_amount || 0);
+    const unpay = Math.min(billUnpayLeft, billPaid);
+    const newPaid = billPaid - unpay;
+    const newRem = Number(bill.remaining_amount || 0) + unpay;
+    const newStatus = newRem === 0 ? 'Paid' : (newPaid > 0 ? 'Partial' : 'Credit');
+
+    execRun(
+      `UPDATE bills
+       SET paid_amount = ?, remaining_amount = ?, payment_status = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [newPaid, newRem, newStatus, bill.id]
+    );
+    billUnpayLeft -= unpay;
+  }
+}
+
+/** Recalculate balance_after_transaction for all transactions of a customer */
+function recalculateCustomerBalances(customerId) {
+  const allTxs = execSelect(
+    `SELECT id, transaction_type, amount FROM credit_transactions
+     WHERE customer_id = ?
+     ORDER BY CASE WHEN transaction_type = 'OPENING_BALANCE' THEN 0 ELSE 1 END ASC,
+              created_at ASC, id ASC`,
+    [customerId]
+  );
+  let running = 0;
+  for (const t of allTxs) {
+    running += signedAmount(t.transaction_type, t.amount);
+    execRun(`UPDATE credit_transactions SET balance_after_transaction = ? WHERE id = ?`, [running, t.id]);
+  }
+}
+
 /** Transactional payment registration */
 function recordPayment({ customer_id, amount, payment_mode, note }) {
   return transaction(() => {
@@ -201,6 +278,76 @@ function recordPayment({ customer_id, amount, payment_mode, note }) {
     settleDebtsFifo(customer_id, amountPaise);
 
     return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
+  });
+}
+
+/** Transactional discount registration in Udhar ledger */
+function recordDiscount({ customer_id, amount, note }) {
+  return transaction(() => {
+    const amountPaise = toPaise(amount);
+
+    // Deduct from customer credit balance
+    execRun(
+      `UPDATE customers SET credit_balance = credit_balance - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [amountPaise, customer_id]
+    );
+
+    // Retrieve balance after (stored as paise)
+    const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customer_id]);
+    const balanceAfter = balanceRow[0]?.credit_balance || 0;
+
+    // Insert transaction with type 'DISCOUNT'
+    execRun(
+      `INSERT INTO credit_transactions (customer_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
+       VALUES (?, 'DISCOUNT', ?, 'Other', ?, ?)`,
+      [customer_id, amountPaise, note || 'Discount / सूट', balanceAfter]
+    );
+
+    // Settle bills and transactions in FIFO order
+    settleDebtsFifo(customer_id, amountPaise);
+
+    return { customer_id, balance_after_transaction: toRupees(balanceAfter) };
+  });
+}
+
+/** Undo / remove a received payment or discount */
+function undoPayment(transactionId) {
+  return transaction(() => {
+    const txRow = execSelect(
+      `SELECT * FROM credit_transactions WHERE id = ?`,
+      [transactionId]
+    );
+    if (!txRow || txRow.length === 0) {
+      throw new Error('Transaction not found');
+    }
+    const tx = txRow[0];
+    if (!['PAYMENT_RECEIVED', 'DISCOUNT'].includes(tx.transaction_type)) {
+      throw new Error(`Cannot undo transaction of type ${tx.transaction_type}`);
+    }
+
+    const customerId = tx.customer_id;
+    const amountPaise = Number(tx.amount || 0);
+
+    // 1. Restore customer balance
+    execRun(
+      `UPDATE customers SET credit_balance = credit_balance + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [amountPaise, customerId]
+    );
+
+    // 2. Delete the payment / discount row
+    execRun(`DELETE FROM credit_transactions WHERE id = ?`, [transactionId]);
+
+    // 3. Recalculate running balance_after_transaction for remaining rows
+    recalculateCustomerBalances(customerId);
+
+    // 4. Reverse the debt settlement in LIFO order
+    unsettleDebtsLifo(customerId, amountPaise);
+
+    // Get current balance
+    const balanceRow = execSelect(`SELECT credit_balance FROM customers WHERE id = ?`, [customerId]);
+    const balanceAfter = balanceRow[0]?.credit_balance || 0;
+
+    return { customer_id: customerId, balance_after_transaction: toRupees(balanceAfter) };
   });
 }
 
@@ -386,6 +533,8 @@ module.exports = {
   getCustomerTransactions,
   findBalanceMismatches,
   recordPayment,
+  recordDiscount,
+  undoPayment,
   recordAdjustment,
   hasOpeningBalance,
   recordOpeningBalance,

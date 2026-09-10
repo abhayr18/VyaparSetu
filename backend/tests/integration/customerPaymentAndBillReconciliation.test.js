@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { freshDb } from '../helpers/testDb';
+import { todayLocal } from '../../utils/businessDay';
 
 describe('Customer Payment and Bill Reconciliation', () => {
   it('accurately calculates previous balance, payment received, total payable, and net dues', async () => {
@@ -15,7 +16,7 @@ describe('Customer Payment and Bill Reconciliation', () => {
     const veg1 = ctx.vegetableModel.create({ name: 'Methi', unit: 'kg', default_rate: 27 });
     const veg2 = ctx.vegetableModel.create({ name: 'Kothimbir', unit: 'kg', default_rate: 22.5 });
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = todayLocal();
 
     // 2. Add transactions: Methi (2916 total) and Kothimbir (243 total)
     // Rate 27, weight 100 -> base 2700 + 8% comm (216) = 2916

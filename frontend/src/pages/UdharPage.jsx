@@ -38,8 +38,9 @@ function CustomerAvatar({ name, size = 36 }) {
   );
 }
 
-// ─── Payment Modal ─────────────────────────────────────────────────────────────
-function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSubmit, t }) {
+// ─── Payment / Discount Modal ───────────────────────────────────────────────
+function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSubmit, t, initialMode = 'payment' }) {
+  const [modalMode, setModalMode]       = useState(initialMode); // 'payment' | 'discount'
   const [customerId, setCustomerId]     = useState('');
   const [amount, setAmount]             = useState('');
   const [paymentMode, setPaymentMode]   = useState('Cash');
@@ -49,10 +50,11 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
 
   useEffect(() => {
     if (isOpen) {
+      setModalMode(initialMode || 'payment');
       setCustomerId(preselectedCustomerId || '');
       setAmount(''); setPaymentMode('Cash'); setNote(''); setErrors({});
     }
-  }, [isOpen, preselectedCustomerId]);
+  }, [isOpen, preselectedCustomerId, initialMode]);
 
   if (!isOpen) return null;
 
@@ -66,7 +68,7 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
     if (!amount) errs.amount = t('credit.amountRequired');
     else if (isNaN(amt) || amt <= 0) errs.amount = t('credit.amountInvalid');
     else if (amt > Number(maxAmount.toFixed(2))) errs.amount = `${t('credit.amountExceeds')} (Max: ₹${maxAmount.toFixed(2)})`;
-    if (!paymentMode) errs.payment_mode = t('credit.paymentModeRequired');
+    if (modalMode === 'payment' && !paymentMode) errs.payment_mode = t('credit.paymentModeRequired');
     return errs;
   }
 
@@ -75,11 +77,19 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     setSaving(true);
-    const res = await onSubmit({ customer_id: Number(customerId), amount: Number(amount), payment_mode: paymentMode, note: note.trim() });
+    const payload = {
+      customer_id: Number(customerId),
+      amount: Number(amount),
+      payment_mode: modalMode === 'discount' ? 'Other' : paymentMode,
+      note: note.trim()
+    };
+    const res = await onSubmit(payload, modalMode);
     setSaving(false);
-    if (res.success) onClose();
-    else setErrors({ api: res.error });
+    if (res?.success) onClose();
+    else setErrors({ api: res?.error || 'Operation failed' });
   }
+
+  const isDiscount = modalMode === 'discount';
 
   return (
     <>
@@ -87,11 +97,60 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
       <div className="modal modal-sm" role="dialog" aria-modal="true">
         <div className="modal-header">
           <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ReceiptIcon style={{ color: 'var(--color-primary)' }} />
-            {t('credit.receivePayment')}
+            {isDiscount ? (
+              <span style={{ color: '#059669', fontWeight: 800, fontSize: '1.2rem' }}>%</span>
+            ) : (
+              <ReceiptIcon style={{ color: 'var(--color-primary)' }} />
+            )}
+            {isDiscount ? (t('credit.giveDiscount') || 'सूट / डिस्काउंट द्या') : t('credit.receivePayment')}
           </h2>
           <button className="modal-close-btn" onClick={onClose}>✕</button>
         </div>
+
+        {/* Mode Switcher Tabs */}
+        <div style={{ display: 'flex', gap: 6, margin: '6px 0 14px', background: 'var(--color-bg-light)', padding: 4, borderRadius: 8 }}>
+          <button
+            type="button"
+            onClick={() => { setModalMode('payment'); setErrors({}); }}
+            style={{
+              flex: 1, padding: '6px 12px', border: 'none', borderRadius: 6,
+              fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer',
+              background: !isDiscount ? 'var(--color-surface)' : 'transparent',
+              color: !isDiscount ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+              boxShadow: !isDiscount ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+            }}
+          >
+            <ReceiptIcon style={{ width: 14, height: 14 }} />
+            {t('credit.tabPayments') || 'पेमेंट जमा'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setModalMode('discount'); setErrors({}); }}
+            style={{
+              flex: 1, padding: '6px 12px', border: 'none', borderRadius: 6,
+              fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer',
+              background: isDiscount ? 'var(--color-surface)' : 'transparent',
+              color: isDiscount ? '#059669' : 'var(--color-text-secondary)',
+              boxShadow: isDiscount ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+              transition: 'all 0.15s ease',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+            }}
+          >
+            <span style={{ fontWeight: 800 }}>%</span>
+            {t('credit.tabDiscount') || 'सूट / डिस्काउंट'}
+          </button>
+        </div>
+
+        {isDiscount && (
+          <div style={{
+            background: '#ecfdf5', color: '#065f46', padding: '8px 12px', borderRadius: 6,
+            fontSize: '0.76rem', marginBottom: 12, border: '1px solid #a7f3d0', lineHeight: 1.4
+          }}>
+            💡 {t('credit.discountNote') || 'ही सूट ग्राहकाच्या उधारीतून वजा होईल व आजच्या रोख वसुलीत (Today\'s Recovery) जमा होणार नाही.'}
+          </div>
+        )}
 
         {errors.api && (
           <div className="form-api-error"><AlertIcon /> {errors.api}</div>
@@ -119,11 +178,11 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
 
           <div className="form-group">
             <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>{t('credit.amount')} *</span>
+              <span>{isDiscount ? (t('credit.discountAmount') || 'सूट रक्कम') : t('credit.amount')} *</span>
               {activeCustomer && (
                 <button type="button" onClick={() => setAmount(maxAmount.toFixed(2))}
-                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>
-                  Pay Full (₹{maxAmount.toFixed(2)})
+                  style={{ background: 'none', border: 'none', color: isDiscount ? '#059669' : 'var(--color-primary)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>
+                  {isDiscount ? `Full Dues (₹${maxAmount.toFixed(2)})` : `Pay Full (₹${maxAmount.toFixed(2)})`}
                 </button>
               )}
             </label>
@@ -137,14 +196,16 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
             {errors.amount && <span className="field-error">{errors.amount}</span>}
           </div>
 
-          <div className="form-group">
-            <label className="form-label">{t('credit.paymentMode')} *</label>
-            <select className="form-input form-select" value={paymentMode} onChange={e => setPaymentMode(e.target.value)} disabled={!customerId}>
-              <option value="Cash">{t('credit.modeCash')}</option>
-              <option value="UPI">{t('credit.modeUPI')}</option>
-              <option value="Other">{t('credit.modeOther')}</option>
-            </select>
-          </div>
+          {!isDiscount && (
+            <div className="form-group">
+              <label className="form-label">{t('credit.paymentMode')} *</label>
+              <select className="form-input form-select" value={paymentMode} onChange={e => setPaymentMode(e.target.value)} disabled={!customerId}>
+                <option value="Cash">{t('credit.modeCash')}</option>
+                <option value="UPI">{t('credit.modeUPI')}</option>
+                <option value="Other">{t('credit.modeOther')}</option>
+              </select>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">{t('credit.note')}</label>
@@ -152,15 +213,16 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
               id="payment-note-input"
               value={note}
               onChange={setNote}
-              placeholder={t('credit.notePlaceholder')}
+              placeholder={isDiscount ? 'उदा. ५०० रुपये सूट दिली' : t('credit.notePlaceholder')}
               disabled={!customerId}
             />
           </div>
 
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose} disabled={saving}>{t('common.cancel')}</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || !customerId}>
-              {saving ? t('common.loading') : t('credit.savePayment')}
+            <button type="submit" className={isDiscount ? "btn btn-success" : "btn btn-primary"} disabled={saving || !customerId}
+              style={isDiscount ? { background: '#059669', borderColor: '#059669', color: '#fff' } : {}}>
+              {saving ? t('common.loading') : (isDiscount ? (t('credit.saveDiscount') || 'सूट नोंदवा') : t('credit.savePayment'))}
             </button>
           </div>
         </form>
@@ -177,22 +239,45 @@ export default function UdharPage() {
     searchQuery, setSearchQuery,
     activeCustomerId, setActiveCustomerId,
     activeCustomer, transactions, transactionsLoading,
-    collectPayment
+    collectPayment,
+    recordDiscount,
+    undoPayment
   } = useCredit();
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [txFilter, setTxFilter]                 = useState('all'); // all | payments | credits
+  const [modalInitialMode, setModalInitialMode] = useState('payment'); // 'payment' | 'discount'
+  const [txFilter, setTxFilter]                 = useState('all'); // all | payments | discounts | credits
   const [toast, setToast] = useState({ message: '', type: 'success' });
+  const [undoTarget, setUndoTarget] = useState(null);
+  const [undoing, setUndoing] = useState(false);
 
   function showToast(message, type = 'success') {
     setToast({ message, type });
     setTimeout(() => setToast({ message: '', type: 'success' }), 3500);
   }
 
-  async function handlePaymentSubmit(data) {
+  async function handlePaymentSubmit(data, mode = 'payment') {
+    if (mode === 'discount') {
+      const res = await recordDiscount(data);
+      if (res?.success) { showToast(t('credit.discountSuccess') || 'सूट यशस्वीरित्या नोंदवली.'); return { success: true }; }
+      return res;
+    }
     const res = await collectPayment(data);
-    if (res.success) { showToast(t('credit.paymentSuccess')); return { success: true }; }
+    if (res?.success) { showToast(t('credit.paymentSuccess')); return { success: true }; }
     return res;
+  }
+
+  async function handleConfirmUndo() {
+    if (!undoTarget) return;
+    setUndoing(true);
+    const res = await undoPayment(undoTarget.id, activeCustomerId);
+    setUndoing(false);
+    if (res?.success) {
+      showToast(t('credit.undoSuccess') || 'व्यवहार पूर्ववत (Undo) करण्यात आला.');
+      setUndoTarget(null);
+    } else {
+      showToast(res?.error || t('credit.undoError') || 'पूर्ववत करता आला नाही.', 'error');
+    }
   }
 
   function hasDevanagari(str) { return /[\u0900-\u097F]/.test(str); }
@@ -211,11 +296,26 @@ export default function UdharPage() {
           <h1 className="page-title">{t('credit.title')}</h1>
           <p className="page-desc">{t('credit.subtitle')}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setPaymentModalOpen(true)} id="receive-payment-btn"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <ReceiptIcon style={{ width: '16px', height: '16px' }} />
-          {t('credit.receivePayment')}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-outline"
+            onClick={() => { setModalInitialMode('discount'); setPaymentModalOpen(true); }}
+            id="give-discount-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#059669', borderColor: '#059669', fontWeight: 600 }}
+          >
+            <span style={{ fontWeight: 800 }}>%</span>
+            {t('credit.giveDiscount') || 'सूट / डिस्काउंट द्या'}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => { setModalInitialMode('payment'); setPaymentModalOpen(true); }}
+            id="receive-payment-btn"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
+            <ReceiptIcon style={{ width: '16px', height: '16px' }} />
+            {t('credit.receivePayment')}
+          </button>
+        </div>
       </div>
 
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
@@ -346,10 +446,22 @@ export default function UdharPage() {
                     <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-error)', lineHeight: 1 }}>
                       ₹{Number(activeCustomer.credit_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                     </div>
-                    <button className="btn btn-outline" onClick={() => setPaymentModalOpen(true)}
-                      style={{ marginTop: 8, padding: '4px 12px', fontSize: '0.78rem' }}>
-                      + {t('credit.receivePayment')}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => { setModalInitialMode('discount'); setPaymentModalOpen(true); }}
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', color: '#059669', borderColor: '#059669', fontWeight: 600 }}
+                      >
+                        % {t('credit.giveDiscount') || 'सूट (Discount)'}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => { setModalInitialMode('payment'); setPaymentModalOpen(true); }}
+                        style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+                      >
+                        + {t('credit.receivePayment')}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -365,9 +477,10 @@ export default function UdharPage() {
                 {transactions.length > 0 && (
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
                     {[
-                      { key: 'all',      label: 'All',              count: transactions.length },
-                      { key: 'payments', label: 'Payments Received', count: transactions.filter(t => t.transaction_type === 'PAYMENT_RECEIVED').length },
-                      { key: 'credits',  label: 'Credit Added',      count: transactions.filter(t => t.transaction_type === 'CREDIT_ADDED').length },
+                      { key: 'all',       label: 'All',               count: transactions.length },
+                      { key: 'payments',  label: 'Payments Received', count: transactions.filter(t => t.transaction_type === 'PAYMENT_RECEIVED').length },
+                      { key: 'discounts', label: 'Discounts (सूट)',   count: transactions.filter(t => t.transaction_type === 'DISCOUNT').length },
+                      { key: 'credits',   label: 'Credit Added',       count: transactions.filter(t => t.transaction_type === 'CREDIT_ADDED').length },
                     ].map(({ key, label, count }) => (
                       <button
                         key={key}
@@ -414,7 +527,7 @@ export default function UdharPage() {
                         Credit: ₹{totalCredit.toFixed(2)}
                       </span>
                       <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>
-                        Received: ₹{totalRecovered.toFixed(2)}
+                        Received / Deducted: ₹{totalRecovered.toFixed(2)}
                       </span>
                     </div>
                   );
@@ -432,7 +545,9 @@ export default function UdharPage() {
                   ? transactions
                   : txFilter === 'payments'
                     ? transactions.filter(t => t.transaction_type === 'PAYMENT_RECEIVED')
-                    : transactions.filter(t => t.transaction_type === 'CREDIT_ADDED');
+                    : txFilter === 'discounts'
+                      ? transactions.filter(t => t.transaction_type === 'DISCOUNT')
+                      : transactions.filter(t => t.transaction_type === 'CREDIT_ADDED');
 
                 if (filtered.length === 0) return (
                   <div style={{ textAlign: 'center', padding: '30px 20px', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
@@ -449,24 +564,25 @@ export default function UdharPage() {
                           <th style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--color-text-muted)', textAlign: 'left', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Type</th>
                           <th style={{ padding: '8px 20px', fontWeight: 700, color: 'var(--color-text-muted)', textAlign: 'right', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Amount</th>
                           <th style={{ padding: '8px 20px', fontWeight: 700, color: 'var(--color-text-muted)', textAlign: 'right', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Balance</th>
+                          <th style={{ padding: '8px 16px', fontWeight: 700, color: 'var(--color-text-muted)', textAlign: 'center', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filtered.map(tx => {
-                          const isPayment = tx.transaction_type === 'PAYMENT_RECEIVED';
-                          const isCredit  = tx.transaction_type === 'CREDIT_ADDED';
-                          const isOpening = tx.transaction_type === 'OPENING_BALANCE';
-                          const typeColor = isPayment ? 'var(--color-success)' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
-                          // Debt carried over from the notebook is named as such rather
-                          // than lumped in with adjustments — a vendor defending a
-                          // balance needs to see which of the two a row is.
-                          const typeLabel = isCredit
+                          const isPayment  = tx.transaction_type === 'PAYMENT_RECEIVED';
+                          const isDiscount = tx.transaction_type === 'DISCOUNT';
+                          const isCredit   = tx.transaction_type === 'CREDIT_ADDED';
+                          const isOpening  = tx.transaction_type === 'OPENING_BALANCE';
+                          const typeColor  = isPayment ? 'var(--color-success)' : isDiscount ? '#059669' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
+                          const typeLabel  = isCredit
                             ? t('credit.typeCreditAdded')
                             : isPayment
                               ? t('credit.typePaymentReceived')
-                              : isOpening
-                                ? t('credit.typeOpeningBalance')
-                                : t('credit.typeCreditAdjustment');
+                              : isDiscount
+                                ? (t('credit.typeDiscount') || 'सूट (Discount)')
+                                : isOpening
+                                  ? t('credit.typeOpeningBalance')
+                                  : t('credit.typeCreditAdjustment');
                           return (
                             <tr key={tx.id} style={{ borderBottom: '1px solid var(--color-border-light)' }}>
                               <td style={{ padding: '9px 20px', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
@@ -481,12 +597,14 @@ export default function UdharPage() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                   <span style={{
                                     width: 18, height: 18, borderRadius: '50%',
-                                    background: isPayment ? 'var(--color-success-bg)' : 'var(--color-error-bg)',
+                                    background: isPayment ? 'var(--color-success-bg)' : isDiscount ? '#ecfdf5' : 'var(--color-error-bg)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                   }}>
                                     {isPayment
                                       ? <CheckIcon style={{ width: 10, height: 10, color: 'var(--color-success)' }} />
-                                      : <ChartIcon style={{ width: 10, height: 10, color: 'var(--color-error)' }} />
+                                      : isDiscount
+                                        ? <span style={{ fontSize: '0.65rem', fontWeight: 800, color: '#059669' }}>%</span>
+                                        : <ChartIcon style={{ width: 10, height: 10, color: 'var(--color-error)' }} />
                                     }
                                   </span>
                                   <div>
@@ -496,7 +614,7 @@ export default function UdharPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td style={{ padding: '9px 20px', textAlign: 'right', fontWeight: 700, color: isPayment ? 'var(--color-success)' : 'var(--color-text-primary)' }}>
+                              <td style={{ padding: '9px 20px', textAlign: 'right', fontWeight: 700, color: (isPayment || isDiscount) ? 'var(--color-success)' : 'var(--color-text-primary)' }}>
                                 {(() => {
                                   // Sign and magnitude from the same signed amount, so a
                                   // written-off adjustment reads −₹500.00 instead of the
@@ -507,6 +625,26 @@ export default function UdharPage() {
                               </td>
                               <td style={{ padding: '9px 20px', textAlign: 'right', fontWeight: 600 }}>
                                 ₹{Number(tx.balance_after_transaction).toFixed(2)}
+                              </td>
+                              <td style={{ padding: '9px 16px', textAlign: 'center' }}>
+                                {(isPayment || isDiscount) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setUndoTarget(tx)}
+                                    className="btn btn-ghost"
+                                    title={t('credit.undoPayment') || 'Undo'}
+                                    style={{
+                                      padding: '3px 8px',
+                                      fontSize: '0.72rem',
+                                      color: 'var(--color-error)',
+                                      border: '1px solid var(--color-border)',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    ↺ {t('credit.undoPayment') || 'Undo'}
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -535,8 +673,64 @@ export default function UdharPage() {
           customers={customers}
           preselectedCustomerId={activeCustomerId}
           onSubmit={handlePaymentSubmit}
+          initialMode={modalInitialMode}
           t={t}
         />
+      )}
+
+      {/* Undo Confirmation Modal */}
+      {undoTarget && (
+        <>
+          <div className="modal-backdrop" onClick={() => !undoing && setUndoTarget(null)} />
+          <div className="modal modal-sm" role="dialog" aria-modal="true">
+            <div className="modal-header">
+              <h2 className="modal-title" style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertIcon style={{ width: 18, height: 18 }} />
+                {t('credit.undoPayment') || 'पूर्ववत करा (Undo)'}
+              </h2>
+              <button className="modal-close-btn" onClick={() => !undoing && setUndoTarget(null)}>✕</button>
+            </div>
+            <div style={{ padding: '14px 0', fontSize: '0.88rem' }}>
+              <p style={{ margin: '0 0 12px', lineHeight: 1.5 }}>
+                {t('credit.undoConfirm') || 'तुम्हाला खात्री आहे का की हा व्यवहार पूर्ववत (Undo) करायचा आहे? यामुळे ग्राहकाची बाकी पूर्ववत वाढेल.'}
+              </p>
+              <div style={{
+                background: 'var(--color-bg-light)', padding: 12, borderRadius: 8,
+                fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: 6,
+                border: '1px solid var(--color-border)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-text-muted)' }}>व्यवहार:</span>
+                  <span style={{ fontWeight: 600 }}>{undoTarget.transaction_type === 'DISCOUNT' ? 'सूट (Discount)' : 'पेमेंट (Payment)'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--color-text-muted)' }}>रक्कम:</span>
+                  <span style={{ fontWeight: 700, color: 'var(--color-error)' }}>₹{Number(undoTarget.amount).toFixed(2)}</span>
+                </div>
+                {undoTarget.note && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--color-text-muted)' }}>टीप:</span>
+                    <span>{undoTarget.note}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setUndoTarget(null)} disabled={undoing}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-error"
+                onClick={handleConfirmUndo}
+                disabled={undoing}
+                style={{ background: 'var(--color-error)', color: '#fff' }}
+              >
+                {undoing ? t('common.loading') : (t('credit.undoPayment') || 'पूर्ववत करा')}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

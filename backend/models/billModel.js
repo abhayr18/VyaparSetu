@@ -275,17 +275,28 @@ function update(id, data) {
   const oldBill = findById(id);
   if (!oldBill) throw new Error('Bill not found');
 
-  // A consolidated bill's debt belongs to its transactions, so this bill must not
-  // reverse or re-book it.
-  const originatedOwnCredit = selfBookedCredit(id) > 0;
-
   return transaction(() => {
-    if (originatedOwnCredit) {
+    // 1. Revert all CREDIT_ADDED debt currently recorded for this bill.
+    // Covers standalone bills, consolidated bills (whose credit rows carry this bill_id),
+    // and bills previously edited.
+    const bookedRows = execSelect(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM credit_transactions
+       WHERE bill_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+      [id]
+    );
+    const prevCreditPaise = Number(bookedRows[0]?.total || 0);
+
+    if (prevCreditPaise > 0) {
       execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
-        selfBookedCredit(id),
+        prevCreditPaise,
         oldBill.customer_id,
       ]);
-      deleteSelfBookedLedgerRows(id);
+      execRun(
+        `DELETE FROM credit_transactions
+         WHERE bill_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+        [id]
+      );
     }
 
     const fields = [];
@@ -326,13 +337,86 @@ function update(id, data) {
         : Number(oldBill.remaining_amount) || 0;
     const billNum = data.bill_number || oldBill.bill_number;
 
-    if (originatedOwnCredit && newRem > 0) {
+    if (newRem > 0) {
       bookCreditRow({
         customerId: newCustId,
         billId: id,
         amount: newRem,
         note: `Bill #${billNum} updated`,
       });
+    }
+
+    // Synchronize transactions table if transactions exist for this bill so all modules
+    // (CustomerDailyPurchase, Reports, Excel, etc.) reflect the edited bill line items.
+    const existingTxRows = execSelect(
+      `SELECT id FROM transactions WHERE bill_id = ?`,
+      [id]
+    );
+
+    if (existingTxRows.length > 0) {
+      const itemsToSync = data.items || getByBillId(id);
+      const targetCustId = newCustId;
+      const targetDate = data.date || oldBill.date;
+      const targetPaymentType = data.payment_type || oldBill.payment_type || 'Credit';
+      const targetPaymentMode = targetPaymentType === 'Credit' ? 'Credit' : 'Cash';
+      const targetCommRate = data.commission_rate !== undefined
+        ? normalizeCommissionPercent(data.commission_rate)
+        : normalizeCommissionPercent(oldBill.commission_rate);
+      const targetPaid = data.paid_amount !== undefined ? Number(data.paid_amount) : Number(oldBill.paid_amount || 0);
+      const targetFinal = data.final_amount !== undefined ? Number(data.final_amount) : Number(oldBill.final_amount || 0);
+
+      // Delete stale transactions tied to this bill
+      execRun(`DELETE FROM transactions WHERE bill_id = ?`, [id]);
+
+      // Insert updated transactions reflecting the bill's current items
+      if (itemsToSync && itemsToSync.length > 0) {
+        for (const it of itemsToSync) {
+          const itemQty = Number(it.quantity || 0);
+          const itemRate = Number(it.rate || 0);
+          const itemBaseRupees = Number(it.total !== undefined ? it.total : Math.round(itemQty * itemRate * 100) / 100);
+          const itemCommRupees = Math.round(((itemBaseRupees * targetCommRate) / 100) * 100) / 100;
+          const itemFinalRupees = Math.round((itemBaseRupees + itemCommRupees) * 100) / 100;
+
+          let itemPaidRupees = 0;
+          let itemRemRupees = itemFinalRupees;
+          if (targetPaymentType === 'Paid' || (targetFinal > 0 && targetPaid >= targetFinal)) {
+            itemPaidRupees = itemFinalRupees;
+            itemRemRupees = 0;
+          } else if (targetPaymentType === 'Partial' && targetFinal > 0 && targetPaid > 0) {
+            const ratio = Math.min(1, targetPaid / targetFinal);
+            itemPaidRupees = Math.round(itemFinalRupees * ratio * 100) / 100;
+            itemRemRupees = Math.round((itemFinalRupees - itemPaidRupees) * 100) / 100;
+          }
+
+          execRun(
+            `INSERT INTO transactions (
+              customer_id, vegetable_id, vegetable_name_snapshot, weight, unit,
+              rate, base_amount, commission_rate, commission_amount, final_amount,
+              payment_type, payment_mode, paid_amount, remaining_amount,
+              transaction_date, bill_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              targetCustId,
+              it.vegetable_id,
+              it.vegetable_name || '',
+              itemQty,
+              it.vegetable_unit || it.unit || 'kg',
+              toPaise(itemRate),
+              toPaise(itemBaseRupees),
+              targetCommRate,
+              toPaise(itemCommRupees),
+              toPaise(itemFinalRupees),
+              targetPaymentType,
+              targetPaymentMode,
+              toPaise(itemPaidRupees),
+              toPaise(itemRemRupees),
+              it.item_date || targetDate,
+              id,
+              it.created_at || oldBill.created_at || new Date().toISOString()
+            ]
+          );
+        }
+      }
     }
 
     return findById(id);

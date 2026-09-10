@@ -8,6 +8,8 @@ router.get('/customers', creditController.getCustomers);
 router.get('/customer/:customerId', creditController.getCustomerById);
 router.get('/customer/:customerId/transactions', creditController.getTransactions);
 router.post('/payment', creditController.collectPayment);
+router.delete('/payment/:id', creditController.undoPayment);
+router.post('/discount', creditController.recordDiscount);
 router.post('/adjustment', creditController.adjustCredit);
 router.post('/opening-balance', creditController.recordOpeningBalance);
 

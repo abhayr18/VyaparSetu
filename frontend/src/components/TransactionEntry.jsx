@@ -214,6 +214,7 @@ export default function TransactionEntry({
       setPaidInput('');
       setPaymentType('Credit');
       setPaymentMode('Cash');
+      setCustomCommRate(String(commissionRate || DEFAULT_COMMISSION_PERCENT));
       setErrors({});
 
       // Clear customer autocomplete

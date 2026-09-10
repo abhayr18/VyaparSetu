@@ -53,8 +53,8 @@ function getById(req, res, next) {
  */
 function create(req, res, next) {
   try {
-    const { name, mobile, address, notes, opening_balance, opening_balance_date } = req.body;
-    const customer = customerService.createCustomer({ name, mobile, address, notes, opening_balance, opening_balance_date });
+    const { name, mobile, address, search_keywords, notes, opening_balance, opening_balance_date } = req.body;
+    const customer = customerService.createCustomer({ name, mobile, address, search_keywords, notes, opening_balance, opening_balance_date });
     res.status(201).json({ success: true, data: customer, message: 'Customer created successfully.' });
   } catch (err) {
     next(err);
@@ -70,11 +70,12 @@ function update(req, res, next) {
     if (isNaN(id)) {
       return res.status(400).json({ success: false, message: 'Invalid customer ID.' });
     }
-    const { name, mobile, address, notes, opening_balance, opening_balance_date } = req.body;
+    const { name, mobile, address, search_keywords, notes, opening_balance, opening_balance_date } = req.body;
     const customer = customerService.updateCustomer(id, {
       name,
       mobile,
       address,
+      search_keywords,
       notes,
       opening_balance,
       opening_balance_date,

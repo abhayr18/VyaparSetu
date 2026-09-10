@@ -535,15 +535,16 @@ function BillRow({ bill, onView }) {
 }
 
 function TxRow({ tx }) {
-  const isPayment = tx.transaction_type === 'PAYMENT_RECEIVED';
-  const isCredit  = tx.transaction_type === 'CREDIT_ADDED';
-  const isOpening = tx.transaction_type === 'OPENING_BALANCE';
-  const color     = isPayment ? 'var(--color-success)' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
-  const bg        = isPayment ? 'var(--color-success-bg)' : (isCredit || isOpening) ? 'var(--color-error-bg)' : 'var(--color-bg-light)';
+  const isPayment  = tx.transaction_type === 'PAYMENT_RECEIVED';
+  const isDiscount = tx.transaction_type === 'DISCOUNT';
+  const isCredit   = tx.transaction_type === 'CREDIT_ADDED';
+  const isOpening  = tx.transaction_type === 'OPENING_BALANCE';
+  const color      = isPayment ? 'var(--color-success)' : isDiscount ? '#059669' : (isCredit || isOpening) ? 'var(--color-error)' : 'var(--color-text-secondary)';
+  const bg         = isPayment ? 'var(--color-success-bg)' : isDiscount ? '#ecfdf5' : (isCredit || isOpening) ? 'var(--color-error-bg)' : 'var(--color-bg-light)';
   // Named explicitly rather than falling through to "Adjustment": the vendor needs to
   // be able to tell debt carried over from the notebook apart from a correction they
   // made, and those two read very differently when a customer disputes a balance.
-  const label     = isPayment ? 'Payment Received' : isCredit ? 'Credit Added' : isOpening ? 'Opening Balance' : 'Adjustment';
+  const label      = isPayment ? 'Payment Received' : isDiscount ? 'Discount' : isCredit ? 'Credit Added' : isOpening ? 'Opening Balance' : 'Adjustment';
   // Sign and magnitude derived from the same signed amount, so a written-off adjustment
   // reads −₹500.00 rather than the +₹-500.00 a type-based sign produced.
   const { sign, magnitude } = displayAmount(tx.transaction_type, tx.amount);

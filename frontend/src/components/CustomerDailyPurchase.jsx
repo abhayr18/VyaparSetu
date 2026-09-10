@@ -44,6 +44,7 @@ export default function CustomerDailyPurchase({
   onUpdateTransaction,
   onGenerateBill,
   onGenerateStatement,
+  onBillUpdated,
   commissionRate,
 }) {
   const { t } = useTranslation();
@@ -66,6 +67,9 @@ export default function CustomerDailyPurchase({
         setGeneratedBill(res.data.data);
         setEditingBill(null);
         setIsBillModalOpen(true);
+        if (typeof onBillUpdated === 'function') {
+          onBillUpdated(res.data.data);
+        }
         return { success: true, data: res.data.data };
       }
       return { success: false, error: res.data?.error || 'Failed to update bill' };

@@ -22,6 +22,7 @@ const EMPTY_FORM = {
   name: '',
   mobile: '',
   address: '',
+  search_keywords: '',
   notes: '',
   opening_balance: '',
   opening_balance_date: '',
@@ -48,6 +49,7 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
           name: customer.name || '',
           mobile: customer.mobile || '',
           address: customer.address || '',
+          search_keywords: customer.search_keywords || '',
           notes: customer.notes || '',
           opening_balance:
             customer.opening_balance !== undefined &&
@@ -102,10 +104,11 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
 
     const opening = form.opening_balance.trim();
     const payload = {
-      name:    form.name.trim(),
-      mobile:  form.mobile.trim(),
-      address: form.address.trim(),
-      notes:   form.notes.trim(),
+      name:            form.name.trim(),
+      mobile:          form.mobile.trim(),
+      address:         form.address.trim(),
+      search_keywords: form.search_keywords.trim(),
+      notes:           form.notes.trim(),
       opening_balance: opening !== '' ? opening : '0',
       opening_balance_date: form.opening_balance_date || undefined,
     };
@@ -195,6 +198,22 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
               placeholder={t('customers.addressPlaceholder')}
               label={t('transliteration.suggestionsLabel')}
             />
+          </div>
+
+          {/* ── Search Keywords / Aliases ─────────────────────────────────── */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="customer-keywords">
+              {t('customers.searchKeywords')}
+            </label>
+            <MarathiInput
+              id="customer-keywords"
+              name="search_keywords"
+              value={form.search_keywords}
+              onChange={(val) => setForm((prev) => ({ ...prev, search_keywords: val }))}
+              placeholder={t('customers.searchKeywordsPlaceholder')}
+              label={t('transliteration.suggestionsLabel')}
+            />
+            <span className="field-hint">{t('customers.searchKeywordsHelp')}</span>
           </div>
 
           {/* ── Notes ────────────────────────────────────────────────────── */}

@@ -6,6 +6,25 @@
 import * as XLSX from 'xlsx';
 import { formatDDMMYYYY } from './dates';
 
+/**
+ * Sanitizes worksheet title according to Microsoft Excel specifications:
+ * - Maximum length 31 characters
+ * - No forbidden characters: \ / ? * : [ ]
+ */
+export function sanitizeSheetName(name, fallback = 'Sheet') {
+  if (!name) return fallback;
+  const cleaned = String(name).replace(/[\\/?*:[\]]/g, '').trim();
+  return cleaned.slice(0, 31) || fallback;
+}
+
+/**
+ * Appends a worksheet to a workbook safely enforcing Excel's 31-character limit.
+ */
+export function appendSheetSafely(wb, ws, name) {
+  const safeName = sanitizeSheetName(name);
+  XLSX.utils.book_append_sheet(wb, ws, safeName);
+}
+
 // ─── Header Normalizer ────────────────────────────────────────────────────────
 function normalizeKey(str) {
   return String(str || '')
@@ -92,6 +111,19 @@ const CUSTOMER_HEADER_MAP = {
     'गाव',
     'ठिकाण',
     'पत्ताaddress',
+  ],
+  search_keywords: [
+    'searchkeywords',
+    'keywords',
+    'aliases',
+    'alias',
+    'nickname',
+    'nicknames',
+    'शोधकीवर्ड',
+    'पर्यायीनावे',
+    'टोपणनाव',
+    'कीवर्ड',
+    'शोधकीवर्डsearchkeywords',
   ],
   opening_balance_date: [
     'openingbalancedate',
@@ -220,7 +252,7 @@ export function exportVegetablesToExcel(vegetables, filename) {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Vegetables');
+  appendSheetSafely(wb, ws, 'Vegetables');
   XLSX.writeFile(wb, nameToUse);
 }
 
@@ -239,6 +271,7 @@ export function exportCustomersToExcel(customers, filename) {
       'मोबाईल (Mobile Number)',
       'उधारी शिल्लक / Credit (₹)',
       'पत्ता (Address)',
+      'शोध कीवर्ड (Search Keywords)',
       'टिप्पणी (Notes)',
       'नोंदणी तारीख (Registered Date)',
     ],
@@ -250,6 +283,7 @@ export function exportCustomersToExcel(customers, filename) {
       c.mobile || '',
       Number(c.credit_balance || 0),
       c.address || '',
+      c.search_keywords || '',
       c.notes || '',
       c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN') : '',
     ]);
@@ -262,12 +296,13 @@ export function exportCustomersToExcel(customers, filename) {
     { wch: 16 }, // Mobile
     { wch: 18 }, // Credit Balance
     { wch: 26 }, // Address
+    { wch: 28 }, // Keywords
     { wch: 22 }, // Notes
     { wch: 18 }, // Registered Date
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Customers');
+  appendSheetSafely(wb, ws, 'Customers');
   XLSX.writeFile(wb, nameToUse);
 }
 
@@ -303,7 +338,7 @@ export function generateVegetablesSampleTemplate() {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Vegetables_Template');
+  appendSheetSafely(wb, ws, 'Vegetables_Template');
   XLSX.writeFile(wb, 'VyapaarSetu_Vegetables_Template.xlsx');
 }
 
@@ -316,14 +351,15 @@ export function generateCustomersSampleTemplate() {
       'ग्राहकाचे नाव (Customer Name)',
       'मोबाईल (Mobile Number - 10 Digits)',
       'पत्ता (Address)',
+      'शोध कीवर्ड (Search Keywords)',
       'आरंभीची उधारी (Opening Balance ₹)',
       'आरंभीची तारीख (Opening Date DD/MM/YYYY)',
       'टिप्पणी (Notes)',
     ],
-    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 1500, '01/08/2026', 'नियमित हॉटेल ग्राहक'],
-    ['सुरेश जाधव', '9876543211', 'मार्केट यार्ड, पुणे', 0, '', 'रोख व उधारी'],
-    ['गणेश शिंदे', '9876543212', 'कोथरूड', 500, '15/08/2026', ''],
-    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 2400, '10/08/2026', 'आठवड्यातून एकदा हिशोब'],
+    ['रमेश पाटील', '9876543210', 'हॉटेल निसर्ग, मेन रोड', 'ramu, hotel nisarga', 1500, '01/08/2026', 'नियमित हॉटेल ग्राहक'],
+    ['सुरेश जाधव', '9876543211', 'मार्केट यार्ड, पुणे', 'suresh, market yard', 0, '', 'रोख व उधारी'],
+    ['गणेश शिंदे', '9876543212', 'कोथरूड', 'ganesh, kothrud', 500, '15/08/2026', ''],
+    ['आनंद हॉटेल', '9876543213', 'शिवाजी चौक', 'anand hotel, shivaji chowk', 2400, '10/08/2026', 'आठवड्यातून एकदा हिशोब'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -331,13 +367,14 @@ export function generateCustomersSampleTemplate() {
     { wch: 26 },
     { wch: 28 },
     { wch: 26 },
+    { wch: 28 },
     { wch: 26 },
     { wch: 30 },
     { wch: 24 },
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Customers_Template');
+  appendSheetSafely(wb, ws, 'Customers_Template');
   XLSX.writeFile(wb, 'VyapaarSetu_Customers_Template.xlsx');
 }
 
@@ -592,6 +629,7 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
       rawMobile = rawMobile.slice(1);
     }
     const rawAddress = String(row[fieldMapping.address] ?? '').trim();
+    const rawKeywords = fieldMapping.search_keywords !== undefined ? String(row[fieldMapping.search_keywords] ?? '').trim() : '';
     const rawNotes = String(row[fieldMapping.notes] ?? '').trim();
     const rawOpening = row[fieldMapping.opening_balance];
     const rawOpeningDate = fieldMapping.opening_balance_date !== undefined ? row[fieldMapping.opening_balance_date] : null;
@@ -637,6 +675,7 @@ export async function parseCustomersExcelFile(file, existingCustomers = []) {
       name: rawName,
       mobile: rawMobile,
       address: rawAddress,
+      search_keywords: rawKeywords,
       notes: rawNotes,
       opening_balance: openingBalance,
       opening_balance_date: openingBalanceDate,
@@ -713,7 +752,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
   wsSummary['!cols'] = [{ wch: 48 }, { wch: 32 }];
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Executive Summary');
+  appendSheetSafely(wb, wsSummary, 'Executive Summary');
 
   // ─── Sheet 2: 🧾 Bills & Invoices ───────────────────────────────────────────
   const billRows = [
@@ -776,7 +815,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     { wch: 16 }, // Status
     { wch: 14 }, // Mode
   ];
-  XLSX.utils.book_append_sheet(wb, wsBills, 'Invoices & Bills');
+  appendSheetSafely(wb, wsBills, 'Invoices & Bills');
 
   // ─── Sheet 3: 👥 Customers & Credit ─────────────────────────────────────────
   const customerRows = [
@@ -822,7 +861,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     { wch: 16 },
     { wch: 24 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsCustomers, 'Customer Ledger');
+  appendSheetSafely(wb, wsCustomers, 'Customer Ledger');
 
   // ─── Sheet 4: 💰 Payment & Credit Ledger ────────────────────────────────────
   const ledgerRows = [
@@ -874,7 +913,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     { wch: 18 },
     { wch: 26 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsLedger, 'Passbook & Payments');
+  appendSheetSafely(wb, wsLedger, 'Passbook & Payments');
 
   // ─── Sheet 5: 🥕 Vegetable Sales Breakdown ──────────────────────────────────
   const vegSalesRows = [
@@ -908,7 +947,7 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     { wch: 18 },
     { wch: 18 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsVegSales, 'Vegetable Sales');
+  appendSheetSafely(wb, wsVegSales, 'Vegetable Sales');
 
   // ─── Sheet 6: 🥬 Vegetables Catalog ─────────────────────────────────────────
   const catalogRows = [
@@ -942,15 +981,23 @@ export function exportAllInOneReportToExcel(reportData, filename) {
     { wch: 32 },
     { wch: 24 },
   ];
-  XLSX.utils.book_append_sheet(wb, wsCatalog, 'Price Catalog');
+  appendSheetSafely(wb, wsCatalog, 'Price Catalog');
 
   // Write and download Excel workbook
   XLSX.writeFile(wb, nameToUse);
 }
 
+function getDayNameMarathi(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const days = ['रविवार', 'सोमवार', 'मंगळवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार'];
+  return days[d.getDay()] || '';
+}
+
 /**
- * Dedicated Customer-Wise Daily Report Excel Exporter
- * Generates an itemized customer produce breakdown + customer summary + KPIs sheet
+ * Dedicated Customer-Wise Daily & Range Report Excel Exporter
+ * Generates datewise partitioned sales sheets + customer itemized breakdown + day-by-day summary + customer summary + KPIs sheet
  *
  * @param {Object} reportData Data from /api/reports/daily or /api/reports/sales-range
  * @param {string} [selectedDate]
@@ -965,13 +1012,156 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
 
   const wb = XLSX.utils.book_new();
 
-  // ─── Sheet 1: ग्राहकनिहाय दैनिक खरेदी व उधारी (Customer Detailed Purchases) ───────────
+  // 1. Gather all transactions across all customers with their dates
+  const allTransactions = [];
+  customers.forEach((c) => {
+    (c.items || []).forEach((it) => {
+      const txDate = it.transaction_date || reportData.meta?.startDate || dateStr;
+      allTransactions.push({
+        customer_id: c.customer_id,
+        customer_name: c.customer_name,
+        customer_mobile: c.customer_mobile || '-',
+        vegetable_name: it.vegetable_name || '-',
+        weight: Number(it.weight || 0),
+        unit: it.unit || 'kg',
+        rate: Number(it.rate || 0),
+        base_amount: Number(it.base_amount || 0),
+        commission_rate: Number(it.commission_rate || 8),
+        commission_amount: Number(it.commission_amount || 0),
+        final_amount: Number(it.final_amount || it.base_amount || 0),
+        payment_type: it.payment_type || 'Credit',
+        bill_number: it.bill_number || '-',
+        transaction_date: txDate,
+      });
+    });
+  });
+
+  // ─── Sheet 1: 📅 तारीखनिहाय विक्री अहवाल (Datewise Sales & Transactions) ─────
+  const datewiseRows = [
+    [`${shop.vendor_name || 'व्यापारसेतू'} - तारीखनिहाय भाजीपाला विक्री अहवाल`],
+    [`कालावधी (Period): ${dateStr.includes('_to_') ? dateStr.replace('_to_', ' ते ') : formatDDMMYYYY(dateStr)} | मालक: ${shop.owner_name || ''} | संपर्क: ${shop.mobile_number || ''}`],
+    [],
+  ];
+
+  // Group transactions by date
+  const txByDate = {};
+  allTransactions.forEach((tx) => {
+    const d = tx.transaction_date || dateStr;
+    if (!txByDate[d]) txByDate[d] = [];
+    txByDate[d].push(tx);
+  });
+
+  const sortedDates = Object.keys(txByDate).sort();
+
+  let grandTotalWeight = 0;
+  let grandTotalBase = 0;
+  let grandTotalFinal = 0;
+
+  if (sortedDates.length === 0) {
+    datewiseRows.push(['या कालावधीत कोणतीही विक्री नोंदवलेली नाही (No transactions found in this period)']);
+  } else {
+    sortedDates.forEach((d) => {
+      const txs = txByDate[d] || [];
+      const dayWeight = txs.reduce((sum, tx) => sum + tx.weight, 0);
+      const dayBase = txs.reduce((sum, tx) => sum + tx.base_amount, 0);
+      const dayFinal = txs.reduce((sum, tx) => sum + tx.final_amount, 0);
+
+      grandTotalWeight += dayWeight;
+      grandTotalBase += dayBase;
+      grandTotalFinal += dayFinal;
+
+      const dayName = getDayNameMarathi(d);
+
+      // Date Partition Section Header
+      datewiseRows.push([
+        `📅 दिनांक: ${formatDDMMYYYY(d)} (${dayName || 'Date: ' + d}) | एकूण व्यवहार: ${txs.length} | एकूण विक्री: ₹ ${dayFinal.toFixed(2)}`,
+      ]);
+
+      // Table Headers for this Date
+      datewiseRows.push([
+        'अ.क्र (Sr)',
+        'दिनांक (Date)',
+        'ग्राहकाचे नाव (Customer Name)',
+        'मोबाईल (Mobile)',
+        'भाजीपाला (Vegetable)',
+        'प्रमाण / वजन (Qty/Weight)',
+        'दर / Rate (₹)',
+        'रक्कम / Amount (₹)',
+        'पावती क्र. (Bill No)',
+        'पेमेंट प्रकार (Payment)',
+      ]);
+
+      txs.forEach((tx, idx) => {
+        datewiseRows.push([
+          idx + 1,
+          formatDDMMYYYY(tx.transaction_date),
+          tx.customer_name,
+          tx.customer_mobile,
+          tx.vegetable_name,
+          `${tx.weight} ${tx.unit}`,
+          tx.rate,
+          tx.base_amount,
+          tx.bill_number,
+          tx.payment_type,
+        ]);
+      });
+
+      // Subtotal for this Date
+      datewiseRows.push([
+        `एकूण (${formatDDMMYYYY(d)})`,
+        formatDDMMYYYY(d),
+        `${new Set(txs.map((t) => t.customer_name)).size} ग्राहक`,
+        '',
+        `${txs.length} नोंदी`,
+        `${Number(dayWeight.toFixed(2))} kg`,
+        '',
+        Number(dayBase.toFixed(2)),
+        '',
+        '',
+      ]);
+
+      // Empty separator row between date partitions
+      datewiseRows.push([]);
+    });
+
+    // Grand Total Row across all dates
+    datewiseRows.push([
+      '=== सर्व दिवसांची एकूण विक्री (Grand Total) ===',
+      `${sortedDates.length} दिवस (Days)`,
+      `${customers.length} एकूण ग्राहक`,
+      '',
+      `${allTransactions.length} एकूण व्यवहार`,
+      `${Number(grandTotalWeight.toFixed(2))} kg`,
+      '',
+      Number(grandTotalBase.toFixed(2)),
+      '',
+      '',
+    ]);
+  }
+
+  const wsDatewise = XLSX.utils.aoa_to_sheet(datewiseRows);
+  wsDatewise['!cols'] = [
+    { wch: 8 },  // Sr
+    { wch: 14 }, // Date
+    { wch: 24 }, // Customer Name
+    { wch: 15 }, // Mobile
+    { wch: 22 }, // Vegetable
+    { wch: 16 }, // Qty/Weight
+    { wch: 12 }, // Rate
+    { wch: 14 }, // Amount
+    { wch: 15 }, // Bill No
+    { wch: 15 }, // Payment Type
+  ];
+  appendSheetSafely(wb, wsDatewise, 'तारीखनिहाय विक्री (Datewise)');
+
+  // ─── Sheet 2: 👥 ग्राहकनिहाय दैनिक खरेदी व उधारी (Customer Detailed Purchases) ─
   const detailRows = [
-    [`${shop.vendor_name || 'व्यापारसेतू'} - दैनिक ग्राहक भाजीपाला विक्री व उधारी अहवाल`],
-    [`दिनांक (Date): ${formatDDMMYYYY(dateStr)} | मालक: ${shop.owner_name || ''} | संपर्क: ${shop.mobile_number || ''}`],
+    [`${shop.vendor_name || 'व्यापारसेतू'} - ग्राहकनिहाय खरेदी, बिल व उधारी अहवाल`],
+    [`कालावधी (Period): ${dateStr.includes('_to_') ? dateStr.replace('_to_', ' ते ') : formatDDMMYYYY(dateStr)} | मालक: ${shop.owner_name || ''} | संपर्क: ${shop.mobile_number || ''}`],
     [],
     [
       'अ.क्र (Sr)',
+      'दिनांक (Date)',
       'ग्राहकाचे नाव (Customer Name)',
       'मोबाईल (Mobile)',
       'भाजीपाला (Vegetable)',
@@ -983,8 +1173,8 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
       'एकूण देय / Total Due (₹)',
       'आज जमा / Paid Today (₹)',
       'चालू बाकी / Closing Udhar (₹)',
-      'पावती क्र. (Bill No)'
-    ]
+      'पावती क्र. (Bill No)',
+    ],
   ];
 
   let totalItemsAmount = 0;
@@ -994,7 +1184,13 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
 
   let rowIdx = 1;
   customers.forEach((c) => {
-    const items = c.items && c.items.length > 0 ? c.items : [];
+    // Sort customer items by transaction_date so their purchases are ordered day-by-day
+    const items = [...(c.items || [])].sort((a, b) => {
+      const da = a.transaction_date || '';
+      const db = b.transaction_date || '';
+      return da.localeCompare(db);
+    });
+
     const totalDue = Number((c.previous_balance + c.today_bill_total).toFixed(2));
     totalBillsAmount += c.today_bill_total;
     totalPaidAmount += c.today_paid;
@@ -1003,9 +1199,10 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     if (items.length === 0) {
       detailRows.push([
         rowIdx++,
+        formatDDMMYYYY(dateStr.split('_to_')[0]),
         c.customer_name,
         c.customer_mobile || '-',
-        '— (फक्त जमा/बाकी)',
+        '— (फक्त जमा/बाकी नोंद)',
         '-',
         '-',
         0,
@@ -1014,13 +1211,15 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
         totalDue,
         c.today_paid,
         c.closing_balance,
-        c.bill_numbers?.join(', ') || '-'
+        c.bill_numbers?.join(', ') || '-',
       ]);
     } else {
       items.forEach((it, itIdx) => {
         totalItemsAmount += it.base_amount || 0;
+        const itemDateFormatted = it.transaction_date ? formatDDMMYYYY(it.transaction_date) : formatDDMMYYYY(dateStr.split('_to_')[0]);
         detailRows.push([
           itIdx === 0 ? rowIdx++ : '',
+          itemDateFormatted,
           itIdx === 0 ? c.customer_name : '',
           itIdx === 0 ? (c.customer_mobile || '-') : '',
           it.vegetable_name || '-',
@@ -1032,7 +1231,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
           itIdx === 0 ? totalDue : '',
           itIdx === 0 ? c.today_paid : '',
           itIdx === 0 ? c.closing_balance : '',
-          it.bill_number || '-'
+          it.bill_number || '-',
         ]);
       });
     }
@@ -1041,6 +1240,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
   detailRows.push([]);
   detailRows.push([
     'एकूण (Grand Total)',
+    '',
     `${customers.length} ग्राहक (Customers)`,
     '',
     '',
@@ -1052,12 +1252,13 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     '',
     Number(totalPaidAmount.toFixed(2)),
     Number(totalClosingUdhar.toFixed(2)),
-    ''
+    '',
   ]);
 
   const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
   wsDetail['!cols'] = [
     { wch: 8 },  // Sr
+    { wch: 14 }, // Date
     { wch: 22 }, // Customer Name
     { wch: 14 }, // Mobile
     { wch: 20 }, // Vegetable
@@ -1071,26 +1272,94 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 18 }, // Closing Udhar
     { wch: 14 }, // Bill No
   ];
-  XLSX.utils.book_append_sheet(wb, wsDetail, 'Daily Customer Sales');
+  appendSheetSafely(wb, wsDetail, 'ग्राहक तपशीलवार (Cust Sales)');
 
-  // ─── Sheet 2: ग्राहक गोषवारा (Customer Summary) ──────────────────────────────
+  // ─── Sheet 3: 📊 दैनिक गोषवारा (Day-by-Day Summary) ─────────────────────────
+  const daySummaryRows = [
+    [`${shop.vendor_name || 'व्यापारसेतू'} - दैनिक गोषवारा (Day-by-Day Summary)`],
+    [`कालावधी (Period): ${dateStr.includes('_to_') ? dateStr.replace('_to_', ' ते ') : formatDDMMYYYY(dateStr)}`],
+    [],
+    [
+      'अ.क्र (Sr)',
+      'दिनांक (Date)',
+      'वार (Day)',
+      'सक्रिय ग्राहक (Active Customers)',
+      'एकूण प्रमाण (Volume)',
+      'भाजीपाला खरेदी / Base (₹)',
+      'कमिशन / Comm (₹)',
+      'एकूण विक्री / Net Total (₹)',
+    ],
+  ];
+
+  let sumDayVol = 0, sumDayBase = 0, sumDayComm = 0, sumDayFinal = 0;
+  sortedDates.forEach((d, idx) => {
+    const txs = txByDate[d] || [];
+    const vol = txs.reduce((sum, tx) => sum + tx.weight, 0);
+    const base = txs.reduce((sum, tx) => sum + tx.base_amount, 0);
+    const comm = txs.reduce((sum, tx) => sum + tx.commission_amount, 0);
+    const final = txs.reduce((sum, tx) => sum + tx.final_amount, 0);
+    const uniqueCustCount = new Set(txs.map((tx) => tx.customer_id)).size;
+
+    sumDayVol += vol;
+    sumDayBase += base;
+    sumDayComm += comm;
+    sumDayFinal += final;
+
+    daySummaryRows.push([
+      idx + 1,
+      formatDDMMYYYY(d),
+      getDayNameMarathi(d),
+      uniqueCustCount,
+      `${vol.toFixed(2)} kg`,
+      Number(base.toFixed(2)),
+      Number(comm.toFixed(2)),
+      Number(final.toFixed(2)),
+    ]);
+  });
+
+  daySummaryRows.push([]);
+  daySummaryRows.push([
+    'एकूण (Total)',
+    `${sortedDates.length} दिवस`,
+    '',
+    `${customers.length} ग्राहक`,
+    `${sumDayVol.toFixed(2)} kg`,
+    Number(sumDayBase.toFixed(2)),
+    Number(sumDayComm.toFixed(2)),
+    Number(sumDayFinal.toFixed(2)),
+  ]);
+
+  const wsDaySummary = XLSX.utils.aoa_to_sheet(daySummaryRows);
+  wsDaySummary['!cols'] = [
+    { wch: 8 },  // Sr
+    { wch: 14 }, // Date
+    { wch: 14 }, // Day
+    { wch: 20 }, // Customers
+    { wch: 18 }, // Volume
+    { wch: 20 }, // Base
+    { wch: 16 }, // Comm
+    { wch: 20 }, // Net Total
+  ];
+  appendSheetSafely(wb, wsDaySummary, 'दैनिक गोषवारा (Day Summary)');
+
+  // ─── Sheet 4: 📋 ग्राहक गोषवारा (Customer Summary) ───────────────────────────
   const summaryRows = [
-    [`${shop.vendor_name || 'व्यापारसेतू'} - ग्राहकनिहाय दैनिक गोषवारा`],
-    [`दिनांक (Date): ${formatDDMMYYYY(dateStr)}`],
+    [`${shop.vendor_name || 'व्यापारसेतू'} - ग्राहकनिहाय गोषवारा`],
+    [`कालावधी (Period): ${dateStr.includes('_to_') ? dateStr.replace('_to_', ' ते ') : formatDDMMYYYY(dateStr)}`],
     [],
     [
       'अ.क्र (Sr)',
       'ग्राहकाचे नाव (Customer Name)',
       'मोबाईल (Mobile)',
       'वस्तू संख्या (Item Count)',
-      'आजची खरेदी / Base (₹)',
+      'खरेदी रक्कम / Base (₹)',
       'कमिशन / Comm (₹)',
-      'आजचे बिल / Today Bill (₹)',
+      'बिल रक्कम / Bill (₹)',
       'मागील बाकी / Prev Udhar (₹)',
       'एकूण देय / Total Due (₹)',
-      'आज जमा / Paid Today (₹)',
-      'चालू बाकी / Closing Udhar (₹)'
-    ]
+      'जमा रक्कम / Paid (₹)',
+      'चालू बाकी / Closing Udhar (₹)',
+    ],
   ];
 
   let sumBase = 0, sumComm = 0, sumBills = 0, sumPaid = 0, sumClosing = 0;
@@ -1112,7 +1381,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
       c.previous_balance || 0,
       Number((c.previous_balance + c.today_bill_total).toFixed(2)),
       c.today_paid || 0,
-      c.closing_balance || 0
+      c.closing_balance || 0,
     ]);
   });
 
@@ -1128,7 +1397,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     '',
     '',
     Number(sumPaid.toFixed(2)),
-    Number(sumClosing.toFixed(2))
+    Number(sumClosing.toFixed(2)),
   ]);
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
@@ -1145,28 +1414,28 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 16 }, // Paid
     { wch: 18 }, // Closing Udhar
   ];
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Customer Summary');
+  appendSheetSafely(wb, wsSummary, 'ग्राहक गोषवारा (Cust Summary)');
 
-  // ─── Sheet 3: दिवसाचा एकूण गोषवारा (Day Financial KPIs) ─────────────────────
+  // ─── Sheet 5: 📈 कालावधी आर्थिक निर्देशक (Period Financial KPIs) ──────────────
   const kpiRows = [
-    [`=== ${shop.vendor_name || 'व्यापारसेतू'} : दैनिक व्यापार निर्देशक (${formatDDMMYYYY(dateStr)}) ===`],
+    [`=== ${shop.vendor_name || 'व्यापारसेतू'} : व्यापार निर्देशक (${dateStr.includes('_to_') ? dateStr.replace('_to_', ' ते ') : formatDDMMYYYY(dateStr)}) ===`],
     [],
     ['एकूण उलाढाल / निव्वळ विक्री (Total Net Sales ₹)', Number(summary.total_sales || sumBills)],
     ['एकूण खरेदी रक्कम (Base Purchases ₹)', Number(summary.total_subtotal || sumBase)],
     ['एकूण कमिशन उत्पन्न (Total Commission Earned ₹)', Number(summary.total_commission || sumComm)],
-    ['आज रोख जमा (Cash Collection ₹)', Number(summary.cash_collection || 0)],
-    ['आज UPI जमा (UPI Collection ₹)', Number(summary.upi_collection || 0)],
-    ['एकूण आज जमा रक्कम (Total Paid Today ₹)', Number(summary.total_paid || sumPaid)],
-    ['आजची उधारी विक्री (Today Credit Sales ₹)', Number(summary.credit_sales || 0)],
+    ['रोख जमा (Cash Collection ₹)', Number(summary.cash_collection || 0)],
+    ['UPI जमा (UPI Collection ₹)', Number(summary.upi_collection || 0)],
+    ['एकूण जमा रक्कम (Total Paid ₹)', Number(summary.total_paid || sumPaid)],
+    ['कालावधीतील उधारी विक्री (Credit Sales ₹)', Number(summary.credit_sales || 0)],
     ['एकूण दुकानाची येणे बाकी / चालू उधारी (Total Outstanding Udhar ₹)', Number(summary.total_outstanding || 0)],
-    ['आज खरेदी केलेले ग्राहक (Active Customers Today)', customers.length],
+    ['सक्रिय ग्राहक संख्या (Active Customers Count)', customers.length],
     ['तयार झालेले बिल संख्या (Invoices Generated)', Number(summary.total_bills || 0)],
   ];
   const wsKpis = XLSX.utils.aoa_to_sheet(kpiRows);
   wsKpis['!cols'] = [{ wch: 48 }, { wch: 24 }];
-  XLSX.utils.book_append_sheet(wb, wsKpis, 'Day KPIs Summary');
+  appendSheetSafely(wb, wsKpis, 'आर्थिक निर्देशक (KPIs)');
 
-  const filename = `VyapaarSetu_Daily_Report_${dateStr}.xlsx`;
+  const filename = `VyapaarSetu_Sales_Report_${dateStr}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 

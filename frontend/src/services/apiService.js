@@ -140,6 +140,8 @@ export const creditApi = {
   getCustomerById: (customerId) => apiClient.get(`/api/credit/customer/${customerId}`),
   getTransactions: (customerId) => apiClient.get(`/api/credit/customer/${customerId}/transactions`),
   collectPayment: (data) => apiClient.post('/api/credit/payment', data),
+  undoPayment: (id) => apiClient.delete(`/api/credit/payment/${id}`),
+  recordDiscount: (data) => apiClient.post('/api/credit/discount', data),
   adjustCredit: (data) => apiClient.post('/api/credit/adjustment', data),
   /** POST /api/credit/opening-balance — for a notebook customer who already existed. */
   recordOpeningBalance: (data) => apiClient.post('/api/credit/opening-balance', data),

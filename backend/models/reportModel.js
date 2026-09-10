@@ -4,7 +4,7 @@ const { toRupees, rowToRupees } = require('../utils/money');
 const { localDateSql } = require('../utils/businessDay');
 
 /** Get sales summary + bills list + customer-wise vegetable breakdown for date range */
-function getSalesSummary(startDate, endDate) {
+function getSalesSummary(startDate, endDate = startDate) {
   // 1. Get aggregated summary statistics
   const summaryRes = execSelect(
     `SELECT 
@@ -31,7 +31,7 @@ function getSalesSummary(startDate, endDate) {
      WHERE b.date BETWEEN ? AND ?
      ORDER BY b.date DESC, b.id DESC`,
     [startDate, endDate]
-  );
+  ).map((b) => rowToRupees(b, 'bills'));
 
   const summary = summaryRes[0] || {};
 
@@ -62,6 +62,8 @@ function getSalesSummary(startDate, endDate) {
   );
 
   const customerBreakdown = activeCustRows.map((c) => {
+    const custBills = bills.filter((b) => b.customer_id === c.id);
+
     // Check transactions for this customer in range
     const txRows = execSelect(
       `SELECT t.*, b.bill_number
@@ -71,6 +73,8 @@ function getSalesSummary(startDate, endDate) {
        ORDER BY t.transaction_date ASC, t.created_at ASC, t.id ASC`,
       [c.id, startDate, endDate]
     ).map((t) => rowToRupees(t, 'transactions'));
+
+    const unbilledTx = txRows.filter((t) => !t.bill_id);
 
     let items = [];
     if (txRows.length > 0) {
@@ -88,10 +92,10 @@ function getSalesSummary(startDate, endDate) {
         bill_number: tx.bill_number || null,
         transaction_date: tx.transaction_date
       }));
-    } else {
+    } else if (custBills.length > 0) {
       // Manual bills or legacy bills without direct transaction rows
       const billItems = execSelect(
-        `SELECT bi.*, v.unit as vegetable_unit, b.bill_number, b.date, b.commission_rate
+        `SELECT bi.*, v.unit as vegetable_unit, b.bill_number, b.date, b.commission_rate, b.payment_type
          FROM bill_items bi
          JOIN bills b ON bi.bill_id = b.id
          LEFT JOIN vegetables v ON bi.vegetable_id = v.id
@@ -113,16 +117,26 @@ function getSalesSummary(startDate, endDate) {
           commission_rate: commRate,
           commission_amount: commAmt,
           final_amount: Number((bi.total + commAmt).toFixed(2)),
-          payment_type: 'Credit',
+          payment_type: bi.payment_type || 'Credit',
           bill_number: bi.bill_number || null,
-          transaction_date: bi.date
+          transaction_date: bi.item_date || bi.date
         };
       });
     }
 
-    const todayBasePurchase = Number(items.reduce((s, it) => s + (it.base_amount || 0), 0).toFixed(2));
-    const todayCommission = Number(items.reduce((s, it) => s + (it.commission_amount || 0), 0).toFixed(2));
-    const todayBillTotal = Number(items.reduce((s, it) => s + (it.final_amount || 0), 0).toFixed(2));
+    const billedFinalAmount = custBills.reduce((s, b) => s + Number(b.final_amount || 0), 0);
+    const billedBaseAmount = custBills.reduce((s, b) => s + Number(b.subtotal || 0), 0);
+    const billedCommission = custBills.reduce((s, b) => s + Number(b.commission_amount || 0), 0);
+    const billedPaidAmount = custBills.reduce((s, b) => s + Number(b.paid_amount || 0), 0);
+
+    const unbilledFinalAmount = unbilledTx.reduce((s, t) => s + Number(t.final_amount || 0), 0);
+    const unbilledBaseAmount = unbilledTx.reduce((s, t) => s + Number(t.base_amount || 0), 0);
+    const unbilledCommission = unbilledTx.reduce((s, t) => s + Number(t.commission_amount || 0), 0);
+    const unbilledPaidAmount = unbilledTx.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
+
+    const todayBasePurchase = Number((billedBaseAmount + unbilledBaseAmount).toFixed(2));
+    const todayCommission = Number((billedCommission + unbilledCommission).toFixed(2));
+    const todayBillTotal = Number((billedFinalAmount + unbilledFinalAmount).toFixed(2));
 
     // Payments received in this date window
     const payRows = execSelect(
@@ -133,20 +147,10 @@ function getSalesSummary(startDate, endDate) {
       [c.id, startDate, endDate]
     );
     const ledgerPaid = toRupees(payRows[0]?.total_paid || 0);
-
-    const billPayRows = execSelect(
-      `SELECT COALESCE(SUM(paid_amount), 0) AS bill_paid
-       FROM bills
-       WHERE customer_id = ? AND date BETWEEN ? AND ?`,
-      [c.id, startDate, endDate]
-    );
-    const billPaid = toRupees(billPayRows[0]?.bill_paid || 0);
-    const todayPaid = Number(Math.max(ledgerPaid, billPaid).toFixed(2));
+    const todayPaid = Number(Math.max(ledgerPaid, billedPaidAmount + unbilledPaidAmount).toFixed(2));
 
     const closingBalance = Number(toRupees(c.credit_balance).toFixed(2));
     const previousBalance = Math.max(0, Number((closingBalance + todayPaid - todayBillTotal).toFixed(2)));
-
-    const custBills = bills.filter((b) => b.customer_id === c.id);
 
     return {
       customer_id: c.id,
@@ -160,14 +164,16 @@ function getSalesSummary(startDate, endDate) {
       today_paid: todayPaid,
       closing_balance: closingBalance,
       bill_numbers: [...new Set(items.map((i) => i.bill_number).filter(Boolean))],
-      bills: custBills
+      bills: custBills,
+      unbilled_final: unbilledFinalAmount,
     };
   });
 
   const allDayFinalAmount = customerBreakdown.reduce((s, c) => s + c.today_bill_total, 0);
   const allDayPaid = customerBreakdown.reduce((s, c) => s + c.today_paid, 0);
-  const effectiveSales = Math.max(toRupees(summary.total_sales || 0), allDayFinalAmount);
-  const effectivePaid = Math.max(toRupees(summary.total_paid || 0), allDayPaid);
+  const totalUnbilledFinal = customerBreakdown.reduce((s, c) => s + (c.unbilled_final || 0), 0);
+  const effectiveSales = Number((toRupees(summary.total_sales || 0) + totalUnbilledFinal).toFixed(2));
+  const effectivePaid = Number(Math.max(toRupees(summary.total_paid || 0), allDayPaid).toFixed(2));
 
   return {
     shop: settingsObj,
@@ -190,7 +196,7 @@ function getSalesSummary(startDate, endDate) {
       total_outstanding: totalOutstanding,
       active_customers_count: customerBreakdown.length,
     },
-    bills: bills.map((b) => rowToRupees(b, 'bills')),
+    bills,
     customers: customerBreakdown,
   };
 }
@@ -281,12 +287,35 @@ function getCreditSummary(dateVal) {
      ORDER BY credit_balance DESC, name ASC`
   );
 
+  // Customer recoveries made on this specific date
+  const recoveries = execSelect(
+    `SELECT ct.id, ct.amount, ct.payment_mode, ct.note, ct.created_at,
+            c.id AS customer_id, c.name AS customer_name, c.mobile AS customer_mobile
+     FROM credit_transactions ct
+     JOIN customers c ON ct.customer_id = c.id
+     WHERE ct.transaction_type = 'PAYMENT_RECEIVED'
+       AND ${localDateSql('ct.created_at')} = ?
+     ORDER BY ct.created_at DESC, ct.id DESC`,
+    [dateVal]
+  ).map((r) => ({
+    id: r.id,
+    customer_id: r.customer_id,
+    customer_name: r.customer_name,
+    customer_mobile: r.customer_mobile,
+    payment_mode: r.payment_mode,
+    note: r.note,
+    created_at: r.created_at,
+    amount: toRupees(r.amount)
+  }));
+
   return {
     summary: {
       total_outstanding: toRupees(totalOutstanding),
       credit_added: toRupees(creditAdded),
-      credit_recovered: toRupees(creditRecovered)
+      credit_recovered: toRupees(creditRecovered),
+      recoveries_count: recoveries.length,
     },
+    recoveries,
     customers: customers.map((c) => rowToRupees(c, 'customers'))
   };
 }

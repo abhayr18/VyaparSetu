@@ -73,7 +73,7 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
   }, [selectedCustomer]);
 
   // Generate fuzzy customer matches
-  const filteredCustomers = applyFuzzyFilter(customers, query, ['name', 'mobile']);
+  const filteredCustomers = applyFuzzyFilter(customers, query, ['name', 'mobile', 'search_keywords']);
 
   // Generate Marathi transliteration pills for query
   useEffect(() => {
@@ -378,23 +378,49 @@ const CustomerAutocomplete = forwardRef(function CustomerAutocomplete(
                   transition: 'background 0.1s ease'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontWeight: isHighlighted || isSelected ? 700 : 600, fontSize: '0.95rem' }}>
-                    {cust.name}
-                  </span>
-                  {isSelected && (
-                    <span
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontWeight: isHighlighted || isSelected ? 700 : 600, fontSize: '0.95rem' }}>
+                      {cust.name}
+                    </span>
+                    {isSelected && (
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          padding: '1px 6px',
+                          background: isHighlighted ? 'rgba(255,255,255,0.25)' : '#dcfce7',
+                          color: isHighlighted ? '#ffffff' : '#15803d',
+                          borderRadius: '4px',
+                          fontWeight: 700
+                        }}
+                      >
+                        ✓ Selected
+                      </span>
+                    )}
+                  </div>
+                  {cust.search_keywords && (
+                    <div
                       style={{
-                        fontSize: '0.72rem',
-                        padding: '1px 6px',
-                        background: isHighlighted ? 'rgba(255,255,255,0.25)' : '#dcfce7',
-                        color: isHighlighted ? '#ffffff' : '#15803d',
-                        borderRadius: '4px',
-                        fontWeight: 700
+                        fontSize: '0.73rem',
+                        color: isHighlighted ? 'rgba(255,255,255,0.9)' : '#64748b',
+                        display: 'flex',
+                        gap: '4px',
+                        flexWrap: 'wrap'
                       }}
                     >
-                      ✓ Selected
-                    </span>
+                      {cust.search_keywords.split(',').slice(0, 3).map((kw, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            background: isHighlighted ? 'rgba(255,255,255,0.2)' : '#f1f5f9',
+                            padding: '1px 5px',
+                            borderRadius: '3px'
+                          }}
+                        >
+                          {kw.trim()}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <span

@@ -101,19 +101,24 @@ async function createNewBill(payload) {
     });
   }
 
-  // Fetch commission rate from settings, default to 8
+  // Fetch commission rate: payload rate > settings > default 8
   const { getSettingByKey } = require('./settingsService');
   let commissionRate = 8.0;
-  try {
-    const rateSetting = getSettingByKey('commission_rate');
-    if (rateSetting !== null && rateSetting !== undefined) {
-      const parsed = parseFloat(rateSetting);
-      if (!isNaN(parsed) && parsed >= 0) {
-        commissionRate = parsed;
+  if (payload.commission_rate !== undefined && payload.commission_rate !== null && String(payload.commission_rate).trim() !== '') {
+    const parsed = parseFloat(payload.commission_rate);
+    if (!isNaN(parsed) && parsed >= 0) commissionRate = parsed;
+  } else {
+    try {
+      const rateSetting = getSettingByKey('commission_rate');
+      if (rateSetting !== null && rateSetting !== undefined) {
+        const parsed = parseFloat(rateSetting);
+        if (!isNaN(parsed) && parsed >= 0) {
+          commissionRate = parsed;
+        }
       }
+    } catch (err) {
+      // fallback is already 8.0
     }
-  } catch (err) {
-    // fallback is already 8.0
   }
 
   // 4. Run billing calculations
@@ -189,19 +194,27 @@ async function updateExistingBill(id, payload) {
     });
   }
 
-  // Fetch commission rate from settings, default to 8
+  // Fetch commission rate: payload rate > existing bill rate > settings > default 8
   const { getSettingByKey } = require('./settingsService');
   let commissionRate = 8.0;
-  try {
-    const rateSetting = getSettingByKey('commission_rate');
-    if (rateSetting !== null && rateSetting !== undefined) {
-      const parsed = parseFloat(rateSetting);
-      if (!isNaN(parsed) && parsed >= 0) {
-        commissionRate = parsed;
+  if (payload.commission_rate !== undefined && payload.commission_rate !== null && String(payload.commission_rate).trim() !== '') {
+    const parsed = parseFloat(payload.commission_rate);
+    if (!isNaN(parsed) && parsed >= 0) commissionRate = parsed;
+  } else if (existing.commission_rate !== undefined && existing.commission_rate !== null) {
+    const parsed = parseFloat(existing.commission_rate);
+    if (!isNaN(parsed) && parsed >= 0) commissionRate = parsed;
+  } else {
+    try {
+      const rateSetting = getSettingByKey('commission_rate');
+      if (rateSetting !== null && rateSetting !== undefined) {
+        const parsed = parseFloat(rateSetting);
+        if (!isNaN(parsed) && parsed >= 0) {
+          commissionRate = parsed;
+        }
       }
+    } catch (err) {
+      // fallback is already 8.0
     }
-  } catch (err) {
-    // fallback is already 8.0
   }
 
   // 5. Run billing calculations
@@ -211,8 +224,8 @@ async function updateExistingBill(id, payload) {
     discount_value: payload.discount_value,
     paid_amount: payload.paid_amount,
     commission_rate: commissionRate,
-    hamali_amount: payload.hamali_amount,
-    transport_amount: payload.transport_amount
+    hamali_amount: payload.hamali_amount !== undefined ? payload.hamali_amount : existing.hamali_amount,
+    transport_amount: payload.transport_amount !== undefined ? payload.transport_amount : existing.transport_amount
   });
 
   // 6. Business logic validations

@@ -326,6 +326,14 @@ export function useTransactions() {
     }
   }
 
+  const handleBillUpdated = useCallback(() => {
+    loadMasterData();
+    loadPendingSettlements();
+    if (activeCustomerId) {
+      fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate);
+    }
+  }, [loadMasterData, loadPendingSettlements, activeCustomerId, dateFilterType, startDate, endDate, selectedDate, fetchCustomerHistory]);
+
   return {
     customers,
     vegetables,
@@ -354,6 +362,7 @@ export function useTransactions() {
     generateBill,
     generateStatement,
     deleteTransaction,
+    onBillUpdated: handleBillUpdated,
     refreshHistory: () => fetchCustomerHistory(activeCustomerId, dateFilterType, startDate, endDate, selectedDate)
   };
 }

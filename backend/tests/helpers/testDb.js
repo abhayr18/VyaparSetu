@@ -200,6 +200,7 @@ export function makeCustomer(ctx, overrides = {}) {
     name: `Test Customer ${mobileSeq}`,
     mobile: String(9000000000 + mobileSeq),
     address: 'APMC Market',
+    search_keywords: '',
     notes: '',
     ...overrides,
   });
