@@ -17,7 +17,7 @@ const { transaction } = require('../database/db');
  * @param {number|null} excludeId - skip this ID for mobile uniqueness check (edit case)
  * @throws {Error} with statusCode 400 if validation fails
  */
-function validate({ name, mobile }, excludeId = null) {
+function validate({ name, mobile, commission_rate }, excludeId = null) {
   const errors = [];
 
   if (!name || !name.trim()) {
@@ -33,6 +33,13 @@ function validate({ name, mobile }, excludeId = null) {
       if (existing) {
         errors.push(`Mobile number ${cleanMobile} is already registered.`);
       }
+    }
+  }
+
+  if (commission_rate !== undefined && commission_rate !== null && String(commission_rate).trim() !== '') {
+    const rateNum = Number(commission_rate);
+    if (!Number.isFinite(rateNum) || rateNum < 0 || rateNum > 100) {
+      errors.push('Commission rate must be a percentage between 0 and 100.');
     }
   }
 

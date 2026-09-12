@@ -135,7 +135,11 @@
     "viewHistory": "View Purchase History",
     "searchKeywords": "Search Keywords / Aliases",
     "searchKeywordsPlaceholder": "Typing aliases, nicknames, e.g. ramu, hotel nisarga",
-    "searchKeywordsHelp": "Add phonetic or English keywords, nicknames, or business names so you can find this customer quickly."
+    "searchKeywordsHelp": "Add phonetic or English keywords, nicknames, or business names so you can find this customer quickly.",
+    "commissionRate": "Default Commission Rate (%)",
+    "commissionRatePlaceholder": "e.g. 7 (leave empty for shop default)",
+    "commissionRateHint": "Specific commission rate for this customer (e.g. 7%). If left empty, shop setting applies.",
+    "commissionRateInvalid": "Commission rate must be between 0 and 100%."
   },
   "vegetables": {
     "title": "Vegetable Management",
@@ -359,6 +363,10 @@
     "openingBalanceSuccess": "Opening balance recorded.",
     "openingBalanceAlreadySet": "This customer's opening balance is already recorded.",
     "balanceAfter": "Balance",
+    "todaySubmit": "Today's Payment",
+    "lastBalanceUpdate": "Last Updated Date",
+    "paidTodayBadge": "Paid Today",
+    "noTransactionToday": "No transaction today",
     "amountRequired": "Amount is required.",
     "amountInvalid": "Amount must be greater than 0.",
     "amountExceeds": "Amount cannot exceed pending credit.",

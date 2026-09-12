@@ -157,6 +157,11 @@ export default function TransactionEntry({
       onCustomerSelectForHistory(customer.id);
     }
     if (customer) {
+      if (customer.commission_rate !== undefined && customer.commission_rate !== null && String(customer.commission_rate).trim() !== '') {
+        setCustomCommRate(String(customer.commission_rate));
+      } else {
+        setCustomCommRate(String(commissionRate || DEFAULT_COMMISSION_PERCENT));
+      }
       setErrors((prev) => ({ ...prev, customer: null }));
       // If vegetable is already selected from a previous entry, jump straight to weight input!
       if (selectedVegetable) {
@@ -168,6 +173,8 @@ export default function TransactionEntry({
           focusVegetable();
         }, 50);
       }
+    } else {
+      setCustomCommRate(String(commissionRate || DEFAULT_COMMISSION_PERCENT));
     }
   }
 

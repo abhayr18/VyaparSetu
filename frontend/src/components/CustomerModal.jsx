@@ -24,6 +24,7 @@ const EMPTY_FORM = {
   address: '',
   search_keywords: '',
   notes: '',
+  commission_rate: '',
   opening_balance: '',
   opening_balance_date: '',
 };
@@ -51,6 +52,10 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
           address: customer.address || '',
           search_keywords: customer.search_keywords || '',
           notes: customer.notes || '',
+          commission_rate:
+            customer.commission_rate !== undefined && customer.commission_rate !== null
+              ? String(customer.commission_rate)
+              : '',
           opening_balance:
             customer.opening_balance !== undefined &&
             customer.opening_balance !== null &&
@@ -75,6 +80,14 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     if (!form.name.trim()) errs.name = t('customers.nameRequired');
     if (form.mobile.trim() && !/^\d{10}$/.test(form.mobile.trim())) {
       errs.mobile = t('customers.mobileInvalid');
+    }
+
+    const comm = form.commission_rate ? String(form.commission_rate).trim() : '';
+    if (comm !== '') {
+      const num = Number(comm);
+      if (!Number.isFinite(num) || num < 0 || num > 100) {
+        errs.commission_rate = t('customers.commissionRateInvalid') || 'कमिशन दर ० ते १०० दरम्यान असावा (0-100%)';
+      }
     }
 
     const opening = form.opening_balance.trim();
@@ -103,12 +116,14 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
     setApiError('');
 
     const opening = form.opening_balance.trim();
+    const comm = form.commission_rate ? String(form.commission_rate).trim() : '';
     const payload = {
       name:            form.name.trim(),
       mobile:          form.mobile.trim(),
       address:         form.address.trim(),
       search_keywords: form.search_keywords.trim(),
       notes:           form.notes.trim(),
+      commission_rate: comm !== '' ? Number(comm) : null,
       opening_balance: opening !== '' ? opening : '0',
       opening_balance_date: form.opening_balance_date || undefined,
     };
@@ -229,6 +244,28 @@ export default function CustomerModal({ isOpen, onClose, onSubmit, customer }) {
               placeholder={t('customers.notesPlaceholder')}
               label={t('transliteration.suggestionsLabel')}
             />
+          </div>
+
+          {/* ── Commission Rate % ─────────────────────────────────────────── */}
+          <div className="form-group">
+            <label className="form-label" htmlFor="customer-commission-rate">
+              {t('customers.commissionRate') || 'डिफॉल्ट कमिशन दर (%) / Default Commission %'}
+            </label>
+            <input
+              id="customer-commission-rate"
+              name="commission_rate"
+              type="number"
+              min="0"
+              max="100"
+              step="any"
+              className={`form-input${errors.commission_rate ? ' input-error' : ''}`}
+              placeholder={t('customers.commissionRatePlaceholder') || 'उदा. 7 (रिकामे ठेवल्यास दुकानाचा 8% दर लागू होईल)'}
+              value={form.commission_rate}
+              onChange={handleChange}
+            />
+            {errors.commission_rate
+              ? <span className="field-error">{errors.commission_rate}</span>
+              : <span className="field-hint">{t('customers.commissionRateHint') || 'या ग्राहकासाठी ठरावीक कमिशन दर (उदा. 7%). रिकामे ठेवल्यास दुकानाचा दर लागू होईल.'}</span>}
           </div>
 
           {/* ── Opening Balance & Date ─────────────────────────────────── */}

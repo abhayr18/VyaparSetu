@@ -47,11 +47,26 @@ function getSummary() {
 /** Get customers with active credit balance */
 function getCustomersWithBalance() {
   return execSelect(
-    `SELECT id, name, mobile, address, search_keywords, credit_balance, updated_at
-     FROM customers
-     WHERE credit_balance > 0
-     ORDER BY credit_balance DESC, name ASC`
-  ).map((c) => rowToRupees(c, 'customers'));
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.credit_balance, c.updated_at,
+            (
+              SELECT COALESCE(SUM(ct.amount), 0)
+              FROM credit_transactions ct
+              WHERE ct.customer_id = c.id
+                AND ct.transaction_type = 'PAYMENT_RECEIVED'
+                AND ${localDateSql('ct.created_at')} = ${TODAY_LOCAL_SQL}
+            ) AS today_recovery,
+            COALESCE(
+              (SELECT MAX(ct.created_at) FROM credit_transactions ct WHERE ct.customer_id = c.id),
+              c.created_at
+            ) AS last_transaction_date
+     FROM customers c
+     WHERE c.credit_balance > 0 AND c.is_deleted = 0
+     ORDER BY c.credit_balance DESC, c.name ASC`
+  ).map((c) => ({
+    ...rowToRupees(c, 'customers'),
+    today_recovery: toRupees(c.today_recovery || 0),
+    last_transaction_date: c.last_transaction_date
+  }));
 }
 
 /** Get transaction logs for a single customer, newest first, opening balance pinned last. */

@@ -73,6 +73,7 @@ function createBaselineSchema(db) {
       search_keywords TEXT    DEFAULT '',
       notes           TEXT    DEFAULT '',
       credit_balance  INTEGER DEFAULT 0,
+      commission_rate REAL    DEFAULT NULL,
       is_deleted      INTEGER DEFAULT 0,
       created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP

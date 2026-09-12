@@ -375,7 +375,10 @@ function update(id, data) {
           const itemQty = Number(it.quantity || 0);
           const itemRate = Number(it.rate || 0);
           const itemBaseRupees = Number(it.total !== undefined ? it.total : Math.round(itemQty * itemRate * 100) / 100);
-          const itemCommRupees = Math.round(((itemBaseRupees * targetCommRate) / 100) * 100) / 100;
+          const lineCommRate = (it.commission_rate !== undefined && it.commission_rate !== null && String(it.commission_rate).trim() !== '')
+            ? normalizeCommissionPercent(it.commission_rate)
+            : targetCommRate;
+          const itemCommRupees = Math.round(((itemBaseRupees * lineCommRate) / 100) * 100) / 100;
           const itemFinalRupees = Math.round((itemBaseRupees + itemCommRupees) * 100) / 100;
 
           let itemPaidRupees = 0;
@@ -404,7 +407,7 @@ function update(id, data) {
               it.vegetable_unit || it.unit || 'kg',
               toPaise(itemRate),
               toPaise(itemBaseRupees),
-              targetCommRate,
+              lineCommRate,
               toPaise(itemCommRupees),
               toPaise(itemFinalRupees),
               targetPaymentType,

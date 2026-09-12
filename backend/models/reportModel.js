@@ -279,12 +279,24 @@ function getCreditSummary(dateVal) {
   );
   const creditRecovered = recoveredRes[0]?.credit_recovered || 0.0;
 
-  // Customer outstanding balance listing
+  // Customer outstanding balance listing with today's recovery and last update date
   const customers = execSelect(
-    `SELECT id, name, mobile, credit_balance 
-     FROM customers 
-     WHERE credit_balance > 0 AND is_deleted = 0
-     ORDER BY credit_balance DESC, name ASC`
+    `SELECT c.id, c.name, c.mobile, c.credit_balance,
+            (
+              SELECT COALESCE(SUM(ct.amount), 0)
+              FROM credit_transactions ct
+              WHERE ct.customer_id = c.id
+                AND ct.transaction_type = 'PAYMENT_RECEIVED'
+                AND ${localDateSql('ct.created_at')} = ?
+            ) AS today_recovery,
+            COALESCE(
+              (SELECT MAX(ct.created_at) FROM credit_transactions ct WHERE ct.customer_id = c.id),
+              c.created_at
+            ) AS last_transaction_date
+     FROM customers c 
+     WHERE c.credit_balance > 0 AND c.is_deleted = 0
+     ORDER BY c.credit_balance DESC, c.name ASC`,
+    [dateVal]
   );
 
   // Customer recoveries made on this specific date
@@ -316,7 +328,11 @@ function getCreditSummary(dateVal) {
       recoveries_count: recoveries.length,
     },
     recoveries,
-    customers: customers.map((c) => rowToRupees(c, 'customers'))
+    customers: customers.map((c) => ({
+      ...rowToRupees(c, 'customers'),
+      today_recovery: toRupees(c.today_recovery || 0),
+      last_transaction_date: c.last_transaction_date
+    }))
   };
 }
 

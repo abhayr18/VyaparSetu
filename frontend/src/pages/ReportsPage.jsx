@@ -35,6 +35,24 @@ function getDayName(dateStr, isMr) {
   return isMr ? daysMr[d.getDay()] : daysEn[d.getDay()];
 }
 
+function getDaysAgoLabel(dateStr, baseDateStr, isMr) {
+  if (!dateStr) return '';
+  const txDate = new Date(dateStr);
+  if (isNaN(txDate.getTime())) return '';
+  const baseDate = baseDateStr ? new Date(baseDateStr) : new Date();
+  const txDay = new Date(txDate.getFullYear(), txDate.getMonth(), txDate.getDate());
+  const baseDay = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate());
+  const diffDays = Math.round((baseDay - txDay) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) {
+    return isMr ? 'आज' : 'Today';
+  } else if (diffDays === 1) {
+    return isMr ? 'काल' : 'Yesterday';
+  } else {
+    return isMr ? `${diffDays} दिवसांपूर्वी` : `${diffDays} days ago`;
+  }
+}
+
 export default function ReportsPage() {
   const { t, language } = useTranslation();
   const {
@@ -114,26 +132,68 @@ export default function ReportsPage() {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      // Calculate pixels per mm to slice canvas cleanly per page
-      const pxPerMm = canvas.width / pdfWidth;
-      const pageHeightInPx = Math.floor(pageHeight * pxPerMm);
-      const totalPages = Math.ceil(canvas.height / pageHeightInPx);
+      // Collect clean break boundaries from table rows and cards to prevent cutting names/rows in half
+      const elRect = reportElement.getBoundingClientRect();
+      const scaleFactor = canvas.height / (elRect.height || reportElement.offsetHeight || 1);
+      const candidateBreakPoints = [];
 
-      for (let page = 0; page < totalPages; page++) {
-        setPdfProgressText(`Page ${page + 1}/${totalPages}...`);
+      const breakElements = reportElement.querySelectorAll('tr, .report-customer-card, .card, .kpi-grid, .print-header');
+      breakElements.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const bottomCanvasPx = Math.round((r.bottom - elRect.top) * scaleFactor);
+        if (bottomCanvasPx > 0 && bottomCanvasPx < canvas.height) {
+          candidateBreakPoints.push(bottomCanvasPx);
+        }
+      });
+
+      const sortedBreaks = Array.from(new Set(candidateBreakPoints)).sort((a, b) => a - b);
+
+      const topOffsetMm = 4;
+      const bottomOffsetMm = 6;
+      const usableHeightMm = pageHeight - (topOffsetMm + bottomOffsetMm);
+      const pxPerMm = canvas.width / pdfWidth;
+      const maxPageHeightPx = Math.floor(usableHeightMm * pxPerMm);
+
+      let currentY = 0;
+      let pageNum = 0;
+
+      while (currentY < canvas.height) {
+        setPdfProgressText(`Page ${pageNum + 1}...`);
         await new Promise((resolve) => setTimeout(resolve, 0)); // yield to UI thread so progress updates smoothly
 
-        if (page > 0) {
+        if (pageNum > 0) {
           pdf.addPage();
         }
 
-        const sourceY = page * pageHeightInPx;
-        const sourceHeight = Math.min(pageHeightInPx, canvas.height - sourceY);
+        const remainingHeight = canvas.height - currentY;
+        let sliceHeight = Math.min(maxPageHeightPx, remainingHeight);
+
+        // If more content remains after this page, find the best row/element break
+        if (currentY + sliceHeight < canvas.height) {
+          const minCut = currentY + Math.floor(maxPageHeightPx * 0.70);
+          const maxCut = currentY + maxPageHeightPx;
+
+          let validCut = sortedBreaks
+            .filter((b) => b >= minCut && b <= maxCut)
+            .pop(); // Highest row bottom that fits on this page
+
+          if (!validCut) {
+            validCut = sortedBreaks
+              .filter((b) => b > currentY && b <= maxCut)
+              .pop();
+          }
+
+          if (validCut) {
+            sliceHeight = validCut - currentY;
+          }
+        }
+
+        sliceHeight = Math.max(1, sliceHeight);
 
         // Render only the slice for this page to avoid duplicating entire canvas
         const pageCanvas = document.createElement('canvas');
         pageCanvas.width = canvas.width;
-        pageCanvas.height = sourceHeight;
+        pageCanvas.height = sliceHeight;
 
         const ctx = pageCanvas.getContext('2d');
         ctx.fillStyle = '#ffffff';
@@ -141,15 +201,19 @@ export default function ReportsPage() {
 
         ctx.drawImage(
           canvas,
-          0, sourceY, canvas.width, sourceHeight,
-          0, 0, canvas.width, sourceHeight
+          0, currentY, canvas.width, sliceHeight,
+          0, 0, canvas.width, sliceHeight
         );
 
         // JPEG at 0.85 quality keeps each page ~80-150KB instead of multi-megabyte uncompressed PNG
         const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.85);
-        const slicePdfHeight = (sourceHeight * pdfWidth) / canvas.width;
+        const slicePdfHeight = (sliceHeight * pdfWidth) / canvas.width;
+        const currentTopMm = pageNum === 0 ? 0 : topOffsetMm;
 
-        pdf.addImage(pageImgData, 'JPEG', 0, 0, pdfWidth, slicePdfHeight, undefined, 'FAST');
+        pdf.addImage(pageImgData, 'JPEG', 0, currentTopMm, pdfWidth, slicePdfHeight, undefined, 'FAST');
+
+        currentY += sliceHeight;
+        pageNum++;
       }
 
       setPdfProgressText('Saving...');
@@ -1175,25 +1239,72 @@ export default function ReportsPage() {
                     <tr>
                       <th className="table-th">{t('customers.name')}</th>
                       <th className="table-th">{t('customers.mobile')}</th>
+                      <th className="table-th" style={{ textAlign: 'center' }}>{t('credit.todaySubmit') || 'आज जमा / भरणा'}</th>
+                      <th className="table-th" style={{ textAlign: 'center' }}>{t('credit.lastBalanceUpdate') || 'शेवटचा व्यवहार दिनांक'}</th>
                       <th className="table-th" style={{ textAlign: 'right' }}>{t('credit.balanceAfter')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {list.map((c) => (
-                      <tr className="table-row" key={c.id}>
-                        <td className="table-cell" style={{ fontWeight: 600 }}>{c.name}</td>
-                        <td className="table-cell" style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PhoneIcon style={{ width: '12px', height: '12px' }} /> {c.mobile}</span>
-                        </td>
-                        <td className="table-cell" style={{ textAlign: 'right' }}>
-                          <span className="badge badge-warning">₹{Number(c.credit_balance).toFixed(2)}</span>
-                        </td>
-                      </tr>
-                    ))}
+                    {list.map((c) => {
+                      const todayPaid = Number(c.today_recovery || 0);
+                      const hasTodayPaid = todayPaid > 0;
+                      const lastDate = c.last_transaction_date;
+                      const daysAgo = getDaysAgoLabel(lastDate, date, language === 'mr');
+
+                      return (
+                        <tr className="table-row" key={c.id}>
+                          <td className="table-cell" style={{ fontWeight: 600 }}>{c.name}</td>
+                          <td className="table-cell" style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <PhoneIcon style={{ width: '12px', height: '12px' }} /> {c.mobile || '—'}
+                            </span>
+                          </td>
+                          <td className="table-cell" style={{ textAlign: 'center' }}>
+                            {hasTodayPaid ? (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                padding: '3px 8px', borderRadius: '12px',
+                                background: '#dcfce7', color: '#15803d',
+                                fontWeight: 700, fontSize: '0.82rem'
+                              }}>
+                                🟢 ₹{todayPaid.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
+                          <td className="table-cell" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {hasTodayPaid ? (
+                              <span style={{ fontWeight: 700, color: '#15803d', fontSize: '0.82rem' }}>
+                                {language === 'mr' ? 'आज' : 'Today'} ({formatDDMMYYYY(date)})
+                              </span>
+                            ) : lastDate ? (
+                              <span style={{ fontSize: '0.82rem', color: 'var(--color-text-primary)' }}>
+                                <strong>{formatDDMMYYYY(lastDate)}</strong>
+                                {daysAgo && (
+                                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.74rem', marginLeft: 4 }}>
+                                    ({daysAgo})
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
+                          <td className="table-cell" style={{ textAlign: 'right' }}>
+                            <span className="badge badge-warning">₹{Number(c.credit_balance).toFixed(2)}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr style={{ background: 'var(--color-bg-light)', fontWeight: 700 }}>
-                      <td className="table-cell" colSpan={2} style={{ textAlign: 'right' }}>Total Outstanding:</td>
+                      <td className="table-cell" colSpan={2} style={{ textAlign: 'right' }}>Total:</td>
+                      <td className="table-cell" style={{ textAlign: 'center', color: 'var(--color-success)', fontWeight: 700 }}>
+                        ₹{list.reduce((s, c) => s + Number(c.today_recovery || 0), 0).toFixed(2)}
+                      </td>
+                      <td className="table-cell"></td>
                       <td className="table-cell" style={{ textAlign: 'right' }}>
                         <span className="badge badge-warning" style={{ background: 'transparent', padding: 0 }}>
                           ₹{list.reduce((s, c) => s + Number(c.credit_balance), 0).toFixed(2)}

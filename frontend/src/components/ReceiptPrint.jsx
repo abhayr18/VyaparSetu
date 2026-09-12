@@ -32,7 +32,7 @@ export default function ReceiptPrint({ isOpen, onClose, bill, onEdit }) {
     const element = document.getElementById('receipt-print-area');
     if (!element) throw new Error('Receipt print element not found');
 
-    // Capture canvas representation at double scale for crisp high density output
+    // Capture canvas representation at scale 2 for crisp high density output
     const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
@@ -40,17 +40,95 @@ export default function ReceiptPrint({ isOpen, onClose, bill, onEdit }) {
       backgroundColor: '#ffffff',
     });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.88);
     const pdf = new jsPDF({
       orientation: 'p',
       unit: 'mm',
       format: 'a4',
       compress: true,
     });
-    const imgWidth = 190; // Fit inside page width with 10mm margins on A4 (210mm)
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    pdf.addImage(imgData, 'JPEG', 10, 10, imgWidth, imgHeight, undefined, 'FAST');
+    const pdfWidth = pdf.internal.pageSize.getWidth(); // 210mm
+    const pdfHeight = pdf.internal.pageSize.getHeight(); // 297mm
+    const marginX = 8; // 8mm left/right margin
+    const marginY = 8; // 8mm top/bottom margin
+    const usableWidthMm = pdfWidth - (marginX * 2); // 194mm
+    const usableHeightMm = pdfHeight - (marginY * 2); // 281mm
+
+    const pxPerMm = canvas.width / usableWidthMm;
+    const maxPageHeightPx = Math.floor(usableHeightMm * pxPerMm);
+
+    // If the entire bill fits cleanly on a single A4 page
+    if (canvas.height <= maxPageHeightPx) {
+      const imgData = canvas.toDataURL('image/jpeg', 0.90);
+      const imgHeightMm = (canvas.height * usableWidthMm) / canvas.width;
+      pdf.addImage(imgData, 'JPEG', marginX, marginY, usableWidthMm, imgHeightMm, undefined, 'FAST');
+      return pdf.output('blob');
+    }
+
+    // Multi-page bill: collect clean break candidates from table rows and major sections
+    const elRect = element.getBoundingClientRect();
+    const scaleFactor = canvas.height / (elRect.height || element.offsetHeight || 1);
+    const candidateBreakPoints = [];
+
+    const breakElements = element.querySelectorAll('tr, .bill-summary-wrap, .bill-footer-section');
+    breakElements.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const bottomCanvasPx = Math.round((r.bottom - elRect.top) * scaleFactor);
+      if (bottomCanvasPx > 0 && bottomCanvasPx < canvas.height) {
+        candidateBreakPoints.push(bottomCanvasPx);
+      }
+    });
+
+    const sortedBreaks = Array.from(new Set(candidateBreakPoints)).sort((a, b) => a - b);
+
+    let currentY = 0;
+    let pageNum = 0;
+
+    while (currentY < canvas.height) {
+      if (pageNum > 0) {
+        pdf.addPage();
+      }
+
+      const remainingHeight = canvas.height - currentY;
+      let sliceHeight = Math.min(maxPageHeightPx, remainingHeight);
+
+      // If more content remains after this page, pick the best row boundary to avoid slicing rows
+      if (currentY + sliceHeight < canvas.height) {
+        const minCut = currentY + Math.floor(maxPageHeightPx * 0.70);
+        const maxCut = currentY + maxPageHeightPx;
+        const validCut = sortedBreaks
+          .filter((b) => b >= minCut && b <= maxCut)
+          .pop(); // Highest row bottom that fits on this page
+
+        if (validCut) {
+          sliceHeight = validCut - currentY;
+        }
+      }
+
+      // Render only the slice for this page
+      const pageCanvas = document.createElement('canvas');
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = sliceHeight;
+
+      const ctx = pageCanvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+
+      ctx.drawImage(
+        canvas,
+        0, currentY, canvas.width, sliceHeight,
+        0, 0, canvas.width, sliceHeight
+      );
+
+      const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.90);
+      const sliceHeightMm = (sliceHeight * usableWidthMm) / canvas.width;
+
+      pdf.addImage(pageImgData, 'JPEG', marginX, marginY, usableWidthMm, sliceHeightMm, undefined, 'FAST');
+
+      currentY += sliceHeight;
+      pageNum++;
+    }
+
     return pdf.output('blob');
   };
 
@@ -134,7 +212,7 @@ export default function ReceiptPrint({ isOpen, onClose, bill, onEdit }) {
         }}
       >
         {/* Modal Scrollable Container */}
-        <div style={{ overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+        <div id="receipt-print-modal-scroll" style={{ overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
           {/* Printable Invoice Container */}
           <div id="receipt-print-area">
             <BillTemplate bill={bill} />

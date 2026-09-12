@@ -16,7 +16,7 @@ const { splitSigned } = require('../utils/creditLedger');
  */
 function findAll() {
   return execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.commission_rate, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -37,7 +37,7 @@ function findAll() {
  */
 function findById(id) {
   const rows = execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.commission_rate, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -78,7 +78,7 @@ function search(query) {
   const cleanQuery = (query || '').trim();
   const like = `%${cleanQuery}%`;
   return execSelect(
-    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.created_at, c.updated_at,
+    `SELECT c.id, c.name, c.mobile, c.address, c.search_keywords, c.notes, c.credit_balance, c.commission_rate, c.created_at, c.updated_at,
             ot.amount AS opening_balance,
             ot.created_at AS opening_balance_date
      FROM customers c
@@ -95,12 +95,15 @@ function search(query) {
 
 /**
  * Insert a new customer or reactivate a deleted one.
- * @param {{ name, mobile, address, search_keywords, notes }} data
+ * @param {{ name, mobile, address, search_keywords, notes, commission_rate }} data
  * @returns {Object} The newly created/updated customer
  */
-function create({ name, mobile = '', address = '', search_keywords = '', notes = '' }) {
+function create({ name, mobile = '', address = '', search_keywords = '', notes = '', commission_rate = null }) {
   const cleanMobile = (mobile || '').trim();
   const cleanKeywords = (search_keywords || '').trim();
+  const cleanCommRate = (commission_rate !== undefined && commission_rate !== null && commission_rate !== '' && !isNaN(Number(commission_rate)))
+    ? Number(commission_rate)
+    : null;
 
   if (cleanMobile) {
     // Check if a record already exists with this mobile (even if deleted)
@@ -111,9 +114,9 @@ function create({ name, mobile = '', address = '', search_keywords = '', notes =
       const existingId = rows[0].id;
       execRun(
         `UPDATE customers
-         SET name = ?, address = ?, search_keywords = ?, notes = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+         SET name = ?, address = ?, search_keywords = ?, notes = ?, commission_rate = ?, is_deleted = 0, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [name.trim(), (address || '').trim(), cleanKeywords, (notes || '').trim(), existingId]
+        [name.trim(), (address || '').trim(), cleanKeywords, (notes || '').trim(), cleanCommRate, existingId]
       );
       return findById(existingId);
     }
@@ -121,9 +124,9 @@ function create({ name, mobile = '', address = '', search_keywords = '', notes =
 
   // Insert fresh record
   const result = execRun(
-    `INSERT INTO customers (name, mobile, address, search_keywords, notes, credit_balance)
-     VALUES (?, ?, ?, ?, ?, 0)`,
-    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim()]
+    `INSERT INTO customers (name, mobile, address, search_keywords, notes, credit_balance, commission_rate)
+     VALUES (?, ?, ?, ?, ?, 0, ?)`,
+    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim(), cleanCommRate]
   );
 
   return findById(result.lastInsertRowid);
@@ -132,17 +135,20 @@ function create({ name, mobile = '', address = '', search_keywords = '', notes =
 /**
  * Update an existing customer.
  * @param {number} id
- * @param {{ name, mobile, address, search_keywords, notes }} data
+ * @param {{ name, mobile, address, search_keywords, notes, commission_rate }} data
  * @returns {Object|null} Updated customer or null if not found
  */
-function update(id, { name, mobile = '', address = '', search_keywords = '', notes = '' }) {
+function update(id, { name, mobile = '', address = '', search_keywords = '', notes = '', commission_rate = null }) {
   const cleanMobile = (mobile || '').trim();
   const cleanKeywords = (search_keywords || '').trim();
+  const cleanCommRate = (commission_rate !== undefined && commission_rate !== null && commission_rate !== '' && !isNaN(Number(commission_rate)))
+    ? Number(commission_rate)
+    : null;
   execRun(
     `UPDATE customers
-     SET name = ?, mobile = ?, address = ?, search_keywords = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+     SET name = ?, mobile = ?, address = ?, search_keywords = ?, notes = ?, commission_rate = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim(), id]
+    [name.trim(), cleanMobile, (address || '').trim(), cleanKeywords, (notes || '').trim(), cleanCommRate, id]
   );
   return findById(id);
 }

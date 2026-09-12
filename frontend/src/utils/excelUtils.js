@@ -13,15 +13,26 @@ import { formatDDMMYYYY } from './dates';
  */
 export function sanitizeSheetName(name, fallback = 'Sheet') {
   if (!name) return fallback;
-  const cleaned = String(name).replace(/[\\/?*:[\]]/g, '').trim();
-  return cleaned.slice(0, 31) || fallback;
+  // Replace slashes with dash (e.g. 12/09/2026 -> 12-09-2026), strip forbidden chars: \ / ? * : [ ]
+  let cleaned = String(name).replace(/[\\/]/g, '-').replace(/[?*:[\]]/g, '').replace(/\s+/g, ' ').trim();
+  if (cleaned.length > 31) {
+    cleaned = cleaned.slice(0, 31).trim();
+  }
+  return cleaned || fallback;
 }
 
 /**
- * Appends a worksheet to a workbook safely enforcing Excel's 31-character limit.
+ * Appends a worksheet to a workbook safely enforcing Excel's 31-character limit and uniqueness.
  */
 export function appendSheetSafely(wb, ws, name) {
-  const safeName = sanitizeSheetName(name);
+  let safeName = sanitizeSheetName(name);
+  if (wb.SheetNames.includes(safeName)) {
+    let counter = 1;
+    while (wb.SheetNames.includes(safeName.slice(0, 28) + `_${counter}`)) {
+      counter++;
+    }
+    safeName = safeName.slice(0, 28) + `_${counter}`;
+  }
   XLSX.utils.book_append_sheet(wb, ws, safeName);
 }
 
@@ -217,7 +228,8 @@ function matchField(rawHeader, headerMap) {
  * @param {string} [filename]
  */
 export function exportVegetablesToExcel(vegetables, filename) {
-  const defaultFilename = `VyapaarSetu_Vegetables_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const defaultFilename = `${todayStr}.xlsx`;
   const nameToUse = filename || defaultFilename;
 
   const rows = [
@@ -262,7 +274,8 @@ export function exportVegetablesToExcel(vegetables, filename) {
  * @param {string} [filename]
  */
 export function exportCustomersToExcel(customers, filename) {
-  const defaultFilename = `VyapaarSetu_Customers_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const defaultFilename = `${todayStr}.xlsx`;
   const nameToUse = filename || defaultFilename;
 
   const rows = [
@@ -715,7 +728,9 @@ export function exportAllInOneReportToExcel(reportData, filename) {
   const meta = reportData.meta || {};
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const defaultFilename = `VyapaarSetu_Master_Business_Report_${meta.start_date || 'AllTime'}_to_${meta.end_date || todayStr}.xlsx`;
+  const defaultFilename = meta.start_date && meta.end_date
+    ? `${meta.start_date}_to_${meta.end_date}.xlsx`
+    : `${todayStr}.xlsx`;
   const nameToUse = filename || defaultFilename;
 
   const wb = XLSX.utils.book_new();
@@ -1152,7 +1167,8 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 15 }, // Bill No
     { wch: 15 }, // Payment Type
   ];
-  appendSheetSafely(wb, wsDatewise, 'तारीखनिहाय विक्री (Datewise)');
+  const sheet1Name = sanitizeSheetName(dateStr.includes('_to_') ? dateStr.replace('_to_', ' to ') : dateStr);
+  appendSheetSafely(wb, wsDatewise, sheet1Name);
 
   // ─── Sheet 2: 👥 ग्राहकनिहाय दैनिक खरेदी व उधारी (Customer Detailed Purchases) ─
   const detailRows = [
@@ -1272,7 +1288,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 18 }, // Closing Udhar
     { wch: 14 }, // Bill No
   ];
-  appendSheetSafely(wb, wsDetail, 'ग्राहक तपशीलवार (Cust Sales)');
+  appendSheetSafely(wb, wsDetail, 'Customer Sales');
 
   // ─── Sheet 3: 📊 दैनिक गोषवारा (Day-by-Day Summary) ─────────────────────────
   const daySummaryRows = [
@@ -1340,7 +1356,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 16 }, // Comm
     { wch: 20 }, // Net Total
   ];
-  appendSheetSafely(wb, wsDaySummary, 'दैनिक गोषवारा (Day Summary)');
+  appendSheetSafely(wb, wsDaySummary, 'Day Summary');
 
   // ─── Sheet 4: 📋 ग्राहक गोषवारा (Customer Summary) ───────────────────────────
   const summaryRows = [
@@ -1414,7 +1430,7 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
     { wch: 16 }, // Paid
     { wch: 18 }, // Closing Udhar
   ];
-  appendSheetSafely(wb, wsSummary, 'ग्राहक गोषवारा (Cust Summary)');
+  appendSheetSafely(wb, wsSummary, 'Customer Summary');
 
   // ─── Sheet 5: 📈 कालावधी आर्थिक निर्देशक (Period Financial KPIs) ──────────────
   const kpiRows = [
@@ -1433,9 +1449,9 @@ export function exportDailyReportToExcel(reportData, selectedDate) {
   ];
   const wsKpis = XLSX.utils.aoa_to_sheet(kpiRows);
   wsKpis['!cols'] = [{ wch: 48 }, { wch: 24 }];
-  appendSheetSafely(wb, wsKpis, 'आर्थिक निर्देशक (KPIs)');
+  appendSheetSafely(wb, wsKpis, 'KPIs');
 
-  const filename = `VyapaarSetu_Sales_Report_${dateStr}.xlsx`;
+  const filename = `${dateStr}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 

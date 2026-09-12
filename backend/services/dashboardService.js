@@ -84,18 +84,23 @@ async function getDashboardSummary() {
   ).map((c) => rowToRupees(c, 'customers'));
 
   // ─── Backup and Connection Status ───────────────────────────────────────────
-  let lastBackup = null;
-  try {
-    lastBackup = await backupService.getLatestBackupStatus();
-  } catch (err) {
-    /* ignore status errors */
-  }
+  // Run both checks in parallel and cap internet probe at 2 s so a slow/absent
+  // network never stalls the dashboard past the axios timeout.
+  const internetWithTimeout = () =>
+    Promise.race([
+      backupService.checkInternetStatus(),
+      new Promise((resolve) => setTimeout(() => resolve(false), 2000)),
+    ]);
 
+  let lastBackup = null;
   let internetOnline = false;
   try {
-    internetOnline = await backupService.checkInternetStatus();
+    [lastBackup, internetOnline] = await Promise.all([
+      backupService.getLatestBackupStatus().catch(() => null),
+      internetWithTimeout().catch(() => false),
+    ]);
   } catch (err) {
-    /* ignore connectivity status errors */
+    /* ignore status errors — dashboard should still render */
   }
 
   // ─── Ledger Reconciliation ──────────────────────────────────────────────────

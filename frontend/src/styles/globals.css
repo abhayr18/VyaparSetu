@@ -1583,28 +1583,90 @@ html, body {
 
 /* ─── Print Media Styles ───────────────────────────────────────── */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 10mm;
+  }
+
+  html, body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
   body:not(.printing-report) * {
     visibility: hidden !important;
   }
+
   body:not(.printing-report) #receipt-print-area,
   body:not(.printing-report) #receipt-print-area * {
     visibility: visible !important;
   }
+
   body:not(.printing-report) #receipt-print-area {
-    position: absolute;
-    left: 0;
-    top: 0;
+    position: relative !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: 100% !important;
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
   }
+
+  #root,
+  .app-layout,
+  .main-content,
+  .page-container,
+  body:not(.printing-report) #receipt-print-modal-scroll,
   body:not(.printing-report) .modal-backdrop,
+  body:not(.printing-report) .modal {
+    position: static !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    display: block !important;
+  }
+
+  /* Multi-page table and section break controls */
+  #receipt-print-area table {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+
+  #receipt-print-area tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  #receipt-print-area thead {
+    display: table-header-group !important;
+  }
+
+  #receipt-print-area tfoot {
+    display: table-footer-group !important;
+  }
+
+  #receipt-print-area .bill-summary-wrap,
+  #receipt-print-area .bill-footer-section {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   body:not(.printing-report) .modal-actions,
   body:not(.printing-report) .modal-close-btn,
   body:not(.printing-report) .sidebar,
+  body:not(.printing-report) .topbar,
   body:not(.printing-report) .page-header-bar,
   body:not(.printing-report) .stats-row,
   body:not(.printing-report) .search-bar-container,

@@ -897,6 +897,85 @@ const MIGRATIONS = [
       logger.info('  ~ Migration 14: healed uncredited bills/transactions and reconciled customer balances');
     },
   },
+  {
+    version: 15,
+    name: 'customer_commission_rate_and_reconciliation',
+    up(db) {
+      // 1. Add commission_rate to customers table if not present
+      const custCols = db.prepare("PRAGMA table_info(customers)").all().map((c) => c.name);
+      if (!custCols.includes('commission_rate')) {
+        db.exec("ALTER TABLE customers ADD COLUMN commission_rate REAL DEFAULT NULL");
+      }
+
+      // 2. Set commission_rate = 7 for customer #119 (माऊली नेवसे)
+      const mauli = db.prepare("SELECT id FROM customers WHERE id = 119 OR name LIKE '%माऊली नेवसे%'").get();
+      if (mauli) {
+        db.prepare("UPDATE customers SET commission_rate = 7 WHERE id = ?").run(mauli.id);
+      }
+
+      // 3. Reconcile Bill #278 if present (subtotal: 2677500 paise, ₹26,775)
+      // At 7%, commission is 187425 paise (₹1,874.25), final_amount is 2864925 paise (₹28,649.25)
+      const b278 = db.prepare("SELECT * FROM bills WHERE id = 278").get();
+      if (b278) {
+        const correctComm = Math.round(b278.subtotal * 0.07);
+        const correctFinal = b278.subtotal + correctComm;
+        const correctRem = correctFinal - (b278.paid_amount || 0);
+
+        db.prepare(`
+          UPDATE bills
+          SET commission_rate = 7,
+              commission_amount = ?,
+              final_amount = ?,
+              remaining_amount = ?
+          WHERE id = 278
+        `).run(correctComm, correctFinal, correctRem);
+
+        // Update credit_transactions row for bill 278 if it exists
+        const ctRows = db.prepare("SELECT id FROM credit_transactions WHERE bill_id = 278 AND transaction_type = 'CREDIT_ADDED'").all();
+        for (const ct of ctRows) {
+          db.prepare("UPDATE credit_transactions SET amount = ? WHERE id = ?").run(correctRem, ct.id);
+        }
+
+        // Also normalize transactions tied to bill 278 to 7%
+        const txs = db.prepare("SELECT id, base_amount FROM transactions WHERE bill_id = 278").all();
+        for (const t of txs) {
+          const tComm = Math.round(t.base_amount * 0.07);
+          const tFinal = t.base_amount + tComm;
+          db.prepare(`
+            UPDATE transactions
+            SET commission_rate = 7,
+                commission_amount = ?,
+                final_amount = ?,
+                remaining_amount = ?
+            WHERE id = ?
+          `).run(tComm, tFinal, tFinal, t.id);
+        }
+
+        // Reconcile ledger running balances for bill customer
+        const custId = b278.customer_id;
+        const rows = db.prepare(`
+          SELECT id, transaction_type, amount FROM credit_transactions
+          WHERE customer_id = ?
+          ORDER BY CASE WHEN transaction_type = 'OPENING_BALANCE' THEN 0 ELSE 1 END ASC,
+                   created_at ASC, id ASC
+        `).all(custId);
+
+        let runningPaise = 0;
+        for (const r of rows) {
+          const amt = Number(r.amount || 0);
+          if (r.transaction_type === 'CREDIT_ADDED' || r.transaction_type === 'OPENING_BALANCE' || r.transaction_type === 'CREDIT_ADJUSTMENT') {
+            runningPaise += amt;
+          } else if (r.transaction_type === 'PAYMENT_RECEIVED' || r.transaction_type === 'DISCOUNT') {
+            runningPaise -= amt;
+          }
+          db.prepare("UPDATE credit_transactions SET balance_after_transaction = ? WHERE id = ?").run(runningPaise, r.id);
+        }
+        db.prepare("UPDATE customers SET credit_balance = ? WHERE id = ?").run(Math.max(0, runningPaise), custId);
+      }
+
+      logger.info('  ~ Migration 15: customer commission_rate added and Bill #278 reconciled');
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

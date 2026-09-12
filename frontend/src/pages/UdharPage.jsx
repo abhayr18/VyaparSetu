@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useCredit } from '../hooks/useCredit';
 import { useTranslation } from '../hooks/useTranslation';
 import { splitSigned, displayAmount } from '../utils/creditLedger';
+import { formatDDMMYYYY } from '../utils/dates';
 import MarathiInput from '../components/MarathiInput';
 import {
   ReceiptIcon, AlertIcon, ChartIcon, HistoryIcon, CheckIcon,
@@ -233,7 +234,7 @@ function PaymentModal({ isOpen, onClose, customers, preselectedCustomerId, onSub
 
 // ─── Main Udhar Page ──────────────────────────────────────────────────────────
 export default function UdharPage() {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const {
     summary, customers, loading, error,
     searchQuery, setSearchQuery,
@@ -412,7 +413,18 @@ export default function UdharPage() {
                   <div className="udhar-customer-name">{c.name}</div>
                   <div className="udhar-customer-mobile">{c.mobile}</div>
                 </div>
-                <span className="udhar-balance-badge">₹{Number(c.credit_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                  <span className="udhar-balance-badge">₹{Number(c.credit_balance).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                  {Number(c.today_recovery || 0) > 0 ? (
+                    <span style={{ fontSize: '0.68rem', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '1px 6px', borderRadius: '10px' }}>
+                      🟢 ₹{Number(c.today_recovery).toLocaleString('en-IN', { maximumFractionDigits: 0 })} {language === 'mr' ? 'आज जमा' : 'Paid Today'}
+                    </span>
+                  ) : c.last_transaction_date ? (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--color-text-muted)' }}>
+                      {formatDDMMYYYY(c.last_transaction_date)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>

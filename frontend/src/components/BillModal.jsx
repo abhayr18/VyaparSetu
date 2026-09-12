@@ -174,11 +174,18 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
         setNotes(bill.notes || '');
         setDiscountType(bill.discount_type || 'fixed');
         setDiscountValue(bill.discount_value || 0);
-        setCustomCommissionRate(
-          bill.commission_rate !== undefined && bill.commission_rate !== null
-            ? String(bill.commission_rate)
-            : String(settings?.commission_rate ?? 8)
-        );
+
+        const billCust = customers.find((c) => c.id === Number(bill.customer_id));
+        let initComm = '';
+        if (bill.commission_rate !== undefined && bill.commission_rate !== null && bill.commission_rate !== '') {
+          initComm = String(bill.commission_rate);
+        } else if (billCust?.commission_rate !== undefined && billCust?.commission_rate !== null && String(billCust.commission_rate).trim() !== '') {
+          initComm = String(billCust.commission_rate);
+        } else {
+          initComm = String(settings?.commission_rate ?? 8);
+        }
+        setCustomCommissionRate(initComm);
+
         setPaymentType(bill.payment_type || 'Cash');
         setPaymentStatus(bill.payment_status || 'Paid');
         setPaidAmount(bill.paid_amount || 0);
@@ -198,7 +205,7 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
       setErrors({});
       setApiError('');
     }
-  }, [isOpen, bill, settings]);
+  }, [isOpen, bill]);
 
   // Modal visibility will be checked right before returning JSX.
   // ─── Line Item Operations ─────────────────────────────────────────────────
@@ -288,13 +295,16 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
   }
 
   const amountAfterDiscount = Number((subtotal - discountAmount).toFixed(2));
-  // Use custom commission rate entered by user, or bill's rate, or shop setting
+  // Use custom commission rate entered by user, or bill's rate, or customer setting, or shop setting
   const parsedComm = parseFloat(customCommissionRate);
+  const currentCust = customers.find(c => c.id === Number(customerId));
   const commissionRate = (!isNaN(parsedComm) && parsedComm >= 0)
     ? parsedComm
     : (isEdit && bill?.commission_rate !== undefined && bill?.commission_rate !== null
         ? normalizeCommissionPercent(bill.commission_rate)
-        : normalizeCommissionPercent(settings?.commission_rate));
+        : (currentCust?.commission_rate !== undefined && currentCust?.commission_rate !== null && String(currentCust.commission_rate).trim() !== ''
+            ? normalizeCommissionPercent(currentCust.commission_rate)
+            : normalizeCommissionPercent(settings?.commission_rate)));
   const commissionAmount = round2((amountAfterDiscount * commissionRate) / 100);
 
   const finalAmount = Number((amountAfterDiscount + commissionAmount).toFixed(2));
@@ -433,6 +443,14 @@ export default function BillModal({ isOpen, onClose, onSubmit, bill }) {
                 onChange={(id) => {
                   setCustomerId(id);
                   if (errors.customer_id) setErrors(prev => ({ ...prev, customer_id: '' }));
+                  if (!isEdit && id) {
+                    const sel = customers.find(c => c.id === Number(id));
+                    if (sel?.commission_rate !== undefined && sel?.commission_rate !== null && String(sel.commission_rate).trim() !== '') {
+                      setCustomCommissionRate(String(sel.commission_rate));
+                    } else {
+                      setCustomCommissionRate(String(settings?.commission_rate ?? 8));
+                    }
+                  }
                 }}
                 placeholder={`-- ${t('billing.selectCustomer')} --`}
                 t={t}

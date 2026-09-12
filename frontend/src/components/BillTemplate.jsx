@@ -443,10 +443,13 @@ export default function BillTemplate({ bill }) {
 
       {/* Bottom Financial Reconciliation Summary */}
       <div
+        className="bill-summary-wrap"
         style={{
           display: 'flex',
           justifyContent: 'flex-end',
-          marginBottom: '10px'
+          marginBottom: '10px',
+          pageBreakInside: 'avoid',
+          breakInside: 'avoid',
         }}
       >
         <table style={{ width: '360px', borderCollapse: 'collapse', border: `1.5px solid ${themeColor}` }}>
@@ -509,62 +512,65 @@ export default function BillTemplate({ bill }) {
         </table>
       </div>
 
-      {/* Amount in words */}
-      <div
-        style={{
-          borderBottom: '1px dotted #555',
-          padding: '10px 0 4px 0',
-          fontSize: '0.88rem',
-          display: 'flex',
-          gap: '8px',
-        }}
-      >
-        <span style={{ fontWeight: 'bold', color: themeColor }}>
-          {isMarathi ? 'अक्षरी रू. :' : 'Amount in Words :'}
-        </span>
-        <span style={{ fontStyle: 'italic', fontWeight: 600 }}>
-          {getAmountInWords(netDueAmount > 0 ? netDueAmount : totalPayableAmount, isMarathi)}
-        </span>
-      </div>
-
-      {/* Signatures & Footer */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginTop: '25px',
-          fontSize: '0.8rem',
-          fontWeight: 'bold',
-          color: themeColor,
-        }}
-      >
-        <div style={{ textAlign: 'center', width: '160px' }}>
-          <div style={{ borderBottom: '1.5px dotted #555', height: '24px', marginBottom: '4px' }} />
-          <span>{isMarathi ? 'ग्राहकाची सही' : 'Customer Signature'}</span>
+      {/* Footer Section: Amount in words, Signatures & Note */}
+      <div className="bill-footer-section" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+        {/* Amount in words */}
+        <div
+          style={{
+            borderBottom: '1px dotted #555',
+            padding: '10px 0 4px 0',
+            fontSize: '0.88rem',
+            display: 'flex',
+            gap: '8px',
+          }}
+        >
+          <span style={{ fontWeight: 'bold', color: themeColor }}>
+            {isMarathi ? 'अक्षरी रू. :' : 'Amount in Words :'}
+          </span>
+          <span style={{ fontStyle: 'italic', fontWeight: 600 }}>
+            {getAmountInWords(netDueAmount > 0 ? netDueAmount : totalPayableAmount, isMarathi)}
+          </span>
         </div>
 
-        <div style={{ textAlign: 'center', width: '160px' }}>
-          <div style={{ borderBottom: '1.5px dotted #555', height: '24px', marginBottom: '4px' }} />
-          <span>{isMarathi ? 'अधिकृत सही (अडतदार)' : 'Authorized Signature'}</span>
-        </div>
-      </div>
-
-      <div
-        style={{
-          textAlign: 'center',
-          marginTop: '20px',
-          fontSize: '0.78rem',
-          color: '#555',
-        }}
-      >
-        <div style={{ fontStyle: 'italic', marginBottom: settings.upi_id ? 4 : 0 }}>
-          {settings.bill_footer_note || t('billing.thankYou')}
-        </div>
-        {settings.upi_id && (
-          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: themeColor }}>
-            {isMarathi ? 'युपीआय आयडी (UPI ID)' : 'UPI ID'}: {settings.upi_id}
+        {/* Signatures & Footer */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            marginTop: '25px',
+            fontSize: '0.8rem',
+            fontWeight: 'bold',
+            color: themeColor,
+          }}
+        >
+          <div style={{ textAlign: 'center', width: '160px' }}>
+            <div style={{ borderBottom: '1.5px dotted #555', height: '24px', marginBottom: '4px' }} />
+            <span>{isMarathi ? 'ग्राहकाची सही' : 'Customer Signature'}</span>
           </div>
-        )}
+
+          <div style={{ textAlign: 'center', width: '160px' }}>
+            <div style={{ borderBottom: '1.5px dotted #555', height: '24px', marginBottom: '4px' }} />
+            <span>{isMarathi ? 'अधिकृत सही (अडतदार)' : 'Authorized Signature'}</span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            textAlign: 'center',
+            marginTop: '20px',
+            fontSize: '0.78rem',
+            color: '#555',
+          }}
+        >
+          <div style={{ fontStyle: 'italic', marginBottom: settings.upi_id ? 4 : 0 }}>
+            {settings.bill_footer_note || t('billing.thankYou')}
+          </div>
+          {settings.upi_id && (
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: themeColor }}>
+              {isMarathi ? 'युपीआय आयडी (UPI ID)' : 'UPI ID'}: {settings.upi_id}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
