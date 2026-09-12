@@ -8,6 +8,7 @@ const transactionModel = require('../models/transactionModel');
 const customerModel = require('../models/customerModel');
 const vegetableModel = require('../models/vegetableModel');
 const billModel = require('../models/billModel');
+const creditModel = require('../models/creditModel');
 const settingsModel = require('../models/settingsModel');
 const {
   calculateTransactionTotals,
@@ -398,13 +399,45 @@ async function generateBillFromTransactions({ customerId, date, startDate, endDa
       }
 
       // Point the existing ledger rows at this bill so the passbook and the bill
-      // agree, without adding rows that would inflate the balance.
-      const placeholders = transactionIds.map(() => '?').join(', ');
-      execRun(
-        `UPDATE credit_transactions SET bill_id = ?
-         WHERE transaction_id IN (${placeholders}) AND transaction_type = 'CREDIT_ADDED'`,
-        [bill.id, ...transactionIds]
-      );
+      // agree, and heal any transaction that was missing a ledger row.
+      for (const t of transactions) {
+        const tRem = Number(t.remaining_amount || 0);
+        if (tRem > 0) {
+          const ctRow = execSelect(
+            `SELECT id FROM credit_transactions WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+            [t.id]
+          );
+          if (ctRow.length === 0) {
+            const createdAt = t.created_at || (t.transaction_date ? `${t.transaction_date} 06:00:00` : new Date().toISOString().replace('T', ' ').slice(0, 19));
+            execRun(
+              `INSERT INTO credit_transactions
+                 (customer_id, transaction_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction, created_at)
+               VALUES (?, ?, ?, 'CREDIT_ADDED', ?, ?, ?, 0, ?)`,
+              [
+                Number(customerId),
+                t.id,
+                bill.id,
+                toPaise(tRem),
+                t.payment_mode || 'Credit',
+                `Udhar added: ${t.vegetable_name_snapshot || ''}${t.weight ? ` (${t.weight}${t.unit || 'kg'})` : ''}`,
+                createdAt
+              ]
+            );
+            execRun(`UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?`, [
+              toPaise(tRem),
+              Number(customerId),
+            ]);
+          } else {
+            execRun(
+              `UPDATE credit_transactions SET bill_id = ?
+               WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+              [bill.id, t.id]
+            );
+          }
+        }
+      }
+
+      creditModel.recalculateCustomerBalances(Number(customerId));
 
       return billModel.findById(bill.id);
     });

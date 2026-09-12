@@ -420,6 +420,11 @@ function update(id, data) {
       }
     }
 
+    recalculateCustomerBalances(newCustId);
+    if (newCustId !== oldBill.customer_id) {
+      recalculateCustomerBalances(oldBill.customer_id);
+    }
+
     return findById(id);
   });
 }
