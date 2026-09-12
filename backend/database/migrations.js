@@ -749,6 +749,154 @@ const MIGRATIONS = [
       logger.info('  ~ added search_keywords column to customers');
     },
   },
+
+  {
+    version: 14,
+    name: 'reconcile-uncredited-bills-and-corrupted-ledger',
+    up(db) {
+      // 1. Find bills with remaining_amount > 0 that have NO CREDIT_ADDED rows in credit_transactions
+      // (happens when a consolidated bill was edited, deleted, and re-billed under the bookCredit: false assumption).
+      const uncreditedBills = db.prepare(`
+        SELECT b.id, b.bill_number, b.customer_id, b.remaining_amount, b.created_at, b.date
+        FROM bills b
+        WHERE b.remaining_amount > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM credit_transactions ct
+            WHERE ct.bill_id = b.id AND ct.transaction_type = 'CREDIT_ADDED'
+          )
+      `).all();
+
+      for (const bill of uncreditedBills) {
+        const remPaise = Number(bill.remaining_amount || 0);
+        if (remPaise > 0) {
+          const txs = db.prepare(`
+            SELECT t.id, t.remaining_amount, t.vegetable_name_snapshot, t.weight, t.unit, t.payment_mode, t.created_at, t.transaction_date
+            FROM transactions t
+            WHERE t.bill_id = ?
+          `).all(bill.id);
+
+          let txCreditTotal = 0;
+          for (const t of txs) {
+            const hasCt = db.prepare(`
+              SELECT 1 FROM credit_transactions WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'
+            `).get(t.id);
+
+            const tRem = Number(t.remaining_amount || 0);
+            if (!hasCt && tRem > 0) {
+              const createdAt = t.created_at || (t.transaction_date ? `${t.transaction_date} 06:00:00` : bill.created_at || `${bill.date} 06:00:00`);
+              db.prepare(`
+                INSERT INTO credit_transactions
+                  (customer_id, transaction_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction, created_at)
+                VALUES (?, ?, ?, 'CREDIT_ADDED', ?, ?, ?, 0, ?)
+              `).run(
+                bill.customer_id,
+                t.id,
+                bill.id,
+                tRem,
+                t.payment_mode || 'Credit',
+                `Udhar added: ${t.vegetable_name_snapshot || ''}${t.weight ? ` (${t.weight}${t.unit || 'kg'})` : ''}`,
+                createdAt
+              );
+              txCreditTotal += tRem;
+            } else if (hasCt) {
+              db.prepare(`
+                UPDATE credit_transactions SET bill_id = ?
+                WHERE transaction_id = ? AND bill_id IS NULL
+              `).run(bill.id, t.id);
+              txCreditTotal += tRem;
+            }
+          }
+
+          const missingRem = remPaise - txCreditTotal;
+          if (missingRem > 0) {
+            const createdAt = bill.created_at || (bill.date ? `${bill.date} 06:00:00` : new Date().toISOString().replace('T', ' ').slice(0, 19));
+            db.prepare(`
+              INSERT INTO credit_transactions
+                (customer_id, bill_id, transaction_type, amount, payment_mode, note, balance_after_transaction, created_at)
+              VALUES (?, ?, 'CREDIT_ADDED', ?, 'Other', ?, 0, ?)
+            `).run(
+              bill.customer_id,
+              bill.id,
+              missingRem,
+              `Udhar added: Bill #${bill.bill_number}`,
+              createdAt
+            );
+          }
+        }
+      }
+
+      // 2. Find any unbilled transactions (bill_id IS NULL) with remaining_amount > 0 lacking CREDIT_ADDED
+      const uncreditedUnbilledTxs = db.prepare(`
+        SELECT t.id, t.customer_id, t.remaining_amount, t.vegetable_name_snapshot, t.weight, t.unit, t.payment_mode, t.created_at, t.transaction_date
+        FROM transactions t
+        WHERE t.bill_id IS NULL AND t.remaining_amount > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM credit_transactions ct
+            WHERE ct.transaction_id = t.id AND ct.transaction_type = 'CREDIT_ADDED'
+          )
+      `).all();
+
+      for (const t of uncreditedUnbilledTxs) {
+        const tRem = Number(t.remaining_amount || 0);
+        if (tRem > 0) {
+          const createdAt = t.created_at || (t.transaction_date ? `${t.transaction_date} 06:00:00` : new Date().toISOString().replace('T', ' ').slice(0, 19));
+          db.prepare(`
+            INSERT INTO credit_transactions
+              (customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction, created_at)
+            VALUES (?, ?, 'CREDIT_ADDED', ?, ?, ?, 0, ?)
+          `).run(
+            t.customer_id,
+            t.id,
+            tRem,
+            t.payment_mode || 'Credit',
+            `Udhar added: ${t.vegetable_name_snapshot || ''}${t.weight ? ` (${t.weight}${t.unit || 'kg'})` : ''}`,
+            createdAt
+          );
+        }
+      }
+
+      // 3. Recalculate balance_after_transaction chronologically for all customers and reconcile credit_balance
+      const customers = db.prepare(`SELECT id, is_deleted, credit_balance FROM customers`).all();
+      for (const cust of customers) {
+        const rows = db.prepare(`
+          SELECT id, transaction_type, amount FROM credit_transactions
+          WHERE customer_id = ?
+          ORDER BY CASE WHEN transaction_type = 'OPENING_BALANCE' THEN 0 ELSE 1 END ASC,
+                   created_at ASC, id ASC
+        `).all(cust.id);
+
+        let runningPaise = 0;
+        for (const r of rows) {
+          const amt = Number(r.amount || 0);
+          if (r.transaction_type === 'CREDIT_ADDED' || r.transaction_type === 'OPENING_BALANCE' || r.transaction_type === 'CREDIT_ADJUSTMENT') {
+            runningPaise += amt;
+          } else if (r.transaction_type === 'PAYMENT_RECEIVED' || r.transaction_type === 'DISCOUNT') {
+            runningPaise -= amt;
+          }
+          db.prepare(`UPDATE credit_transactions SET balance_after_transaction = ? WHERE id = ?`).run(runningPaise, r.id);
+        }
+
+        if (cust.is_deleted === 0) {
+          const ledgerPaise = Math.max(0, runningPaise);
+          if (Number(cust.credit_balance) !== ledgerPaise) {
+            db.prepare(`UPDATE customers SET credit_balance = ? WHERE id = ?`).run(ledgerPaise, cust.id);
+          }
+        } else {
+          // For deleted customers, ensure no phantom balance
+          if (rows.length === 0 && cust.credit_balance > 0) {
+            db.prepare(`UPDATE customers SET credit_balance = 0 WHERE id = ?`).run(cust.id);
+          } else if (rows.length > 0) {
+            const ledgerPaise = Math.max(0, runningPaise);
+            if (Number(cust.credit_balance) !== ledgerPaise) {
+              db.prepare(`UPDATE customers SET credit_balance = ? WHERE id = ?`).run(ledgerPaise, cust.id);
+            }
+          }
+        }
+      }
+
+      logger.info('  ~ Migration 14: healed uncredited bills/transactions and reconciled customer balances');
+    },
+  },
 ];
 
 // ─── Runner ──────────────────────────────────────────────────────────────────

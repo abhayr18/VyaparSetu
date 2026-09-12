@@ -5,6 +5,7 @@ const { normalizeCommissionPercent } = require('../utils/calculation');
 const { toPaise, rowToRupees, toRupees } = require('../utils/money');
 const { localDateSql } = require('../utils/businessDay');
 const { getByBillId, createMany, deleteByBillId } = require('./billItemModel');
+const { recalculateCustomerBalances } = require('./creditModel');
 
 /** Attach items, payments received, and accurate previous balance to a bill */
 function attachBillDetails(bill) {
@@ -433,27 +434,82 @@ function remove(id) {
   const oldBill = findById(id);
   if (!oldBill) return false;
 
+  const existingTxs = execSelect(
+    `SELECT id, remaining_amount, customer_id, vegetable_name_snapshot, weight, unit, payment_mode
+     FROM transactions WHERE bill_id = ?`,
+    [id]
+  );
+  const hasTransactions = existingTxs.length > 0;
   const ownCredit = selfBookedCredit(id);
 
   return transaction(() => {
-    if (ownCredit > 0) {
-      execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
-        ownCredit,
-        oldBill.customer_id,
-      ]);
+    if (hasTransactions) {
+      // Consolidated bill: its transactions return to unbilled so the vendor can re-bill them.
+      // Invariant: The sales still happened and the customer still owes for them.
+      // Therefore, the transactions' debt must NOT be deducted from the customer's balance.
+
+      // Calculate total transaction debt in paise
+      const txDebtPaise = existingTxs.reduce((s, t) => s + Number(t.remaining_amount || 0), 0);
+
+      // If the bill had standalone bill-level fees exceeding transaction debt (e.g. hamali/transport),
+      // deduct only that bill-level excess.
+      const billLevelExcessPaise = Math.max(0, ownCredit - txDebtPaise);
+      if (billLevelExcessPaise > 0) {
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+          billLevelExcessPaise,
+          oldBill.customer_id,
+        ]);
+      }
+
+      // Ensure every returning transaction has its credit_transactions entry
+      for (const tx of existingTxs) {
+        const txRemPaise = Number(tx.remaining_amount || 0);
+        if (txRemPaise > 0) {
+          const ctRow = execSelect(
+            `SELECT id FROM credit_transactions WHERE transaction_id = ? AND transaction_type = 'CREDIT_ADDED'`,
+            [tx.id]
+          );
+          if (ctRow.length === 0) {
+            // Re-create transaction-tied credit row so the unbilled transaction has its audit trail
+            execRun(
+              `INSERT INTO credit_transactions
+                 (customer_id, transaction_id, transaction_type, amount, payment_mode, note, balance_after_transaction)
+               VALUES (?, ?, 'CREDIT_ADDED', ?, ?, ?, 0)`,
+              [
+                oldBill.customer_id,
+                tx.id,
+                txRemPaise,
+                tx.payment_mode || 'Credit',
+                `Udhar: ${tx.vegetable_name_snapshot || ''} (${tx.weight || ''}${tx.unit || 'kg'})`
+              ]
+            );
+          }
+        }
+      }
+
+      // Delete self-booked ledger rows for this bill, and unlink transaction-tied ledger rows
+      deleteSelfBookedLedgerRows(id);
+      execRun(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+
+      // Return the source transactions to unbilled
+      execRun(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
+    } else {
+      // Pure standalone bill: originated its own debt and has no underlying transactions
+      if (ownCredit > 0) {
+        execRun(`UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?`, [
+          ownCredit,
+          oldBill.customer_id,
+        ]);
+      }
+
+      deleteSelfBookedLedgerRows(id);
+      execRun(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
     }
-
-    // Rows this bill originated are gone with it. Rows a transaction originated
-    // stay — that debt is still owed, because the transaction still exists — and
-    // are simply unlinked.
-    deleteSelfBookedLedgerRows(id);
-    execRun(`UPDATE credit_transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
-
-    // Return the source transactions to unbilled so the day can be re-billed.
-    execRun(`UPDATE transactions SET bill_id = NULL WHERE bill_id = ?`, [id]);
 
     execRun(`DELETE FROM bill_items WHERE bill_id = ?`, [id]);
     execRun(`DELETE FROM bills WHERE id = ?`, [id]);
+
+    recalculateCustomerBalances(oldBill.customer_id);
 
     return true;
   });

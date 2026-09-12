@@ -539,4 +539,5 @@ module.exports = {
   hasOpeningBalance,
   recordOpeningBalance,
   updateOpeningBalance,
+  recalculateCustomerBalances,
 };
